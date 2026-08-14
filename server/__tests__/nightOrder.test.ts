@@ -1,0 +1,196 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { DOMAIN_EVENT_SCHEMA_VERSION } from '../../shared/events';
+import { InMemoryEventStore } from '../events/store';
+import { GameSession } from '../session/gameSession';
+import { createPlayers, dispatch } from './fixtures';
+
+test('night order is guard_seer then wolf discussion/vote then witch then resolve', async () => {
+  const players = createPlayers();
+  const session = new GameSession(
+    'room-1',
+    players,
+    new InMemoryEventStore(),
+  );
+  await session.initialize();
+
+  const guardian = players.find((player) => player.role === 'guardian')!;
+  const seer = players.find((player) => player.role === 'seer')!;
+  const wolves = players.filter((player) => player.role === 'wolf');
+  const witch = players.find((player) => player.role === 'witch')!;
+  const villager = players.find((player) => player.role === 'villager')!;
+
+  const earlyWolfVote = await dispatch(session, wolves[0].id, {
+    type: 'game.wolf_vote',
+    payload: { targetId: villager.id },
+  });
+  assert.equal(earlyWolfVote.ok, false);
+  assert.equal(session.serialize().state.night.stage, 'guard_seer');
+
+  assert.equal(
+    (
+      await dispatch(session, guardian.id, {
+        type: 'game.night_action',
+        payload: {
+          playerId: guardian.id,
+          action: 'guard',
+          targetId: guardian.id,
+        },
+      })
+    ).ok,
+    true,
+  );
+  assert.equal(session.serialize().state.night.stage, 'guard_seer');
+
+  assert.equal(
+    (
+      await dispatch(session, seer.id, {
+        type: 'game.night_action',
+        payload: {
+          playerId: seer.id,
+          action: 'check',
+          targetId: wolves[0].id,
+        },
+      })
+    ).ok,
+    true,
+  );
+  assert.equal(session.serialize().state.night.stage, 'wolf_discussion');
+
+  for (const wolf of wolves) {
+    const result = await dispatch(session, wolf.id, {
+      type: 'game.wolf_vote',
+      payload: { targetId: villager.id },
+    });
+    assert.equal(result.ok, true);
+  }
+  assert.equal(session.serialize().state.night.stage, 'witch');
+
+  const witchResult = await dispatch(session, witch.id, {
+    type: 'game.skip_night',
+    payload: { action: 'heal' },
+  });
+  assert.equal(witchResult.ok, true);
+  assert.equal(session.serialize().state.gameState.phase, 'day');
+  assert.equal(session.serialize().state.night.stage, 'resolve');
+  assert.equal(
+    session.players.find((player) => player.id === villager.id)?.isAlive,
+    false,
+  );
+});
+
+test('command ids and stage revisions are enforced', async () => {
+  const players = createPlayers();
+  const session = new GameSession(
+    'room-1',
+    players,
+    new InMemoryEventStore(),
+  );
+  await session.initialize();
+  const guardian = players.find((player) => player.role === 'guardian')!;
+  const command = {
+    type: 'game.skip_night' as const,
+    payload: { action: 'guard' as const },
+  };
+  const baseMeta = {
+    commandId: 'same-id',
+    actorId: guardian.id,
+    sentAt: Date.now(),
+    roomId: 'room-1',
+    gameId: session.gameId,
+    expectedStageRevision: session.stageRevision,
+  };
+
+  const firstResult = await session.dispatch(baseMeta, command);
+  assert.equal(firstResult.ok, true);
+  assert.equal(firstResult.events.length > 0, true);
+  for (const event of firstResult.events) {
+    assert.equal(event.actorId, guardian.id);
+    assert.equal(event.correlationId, baseMeta.commandId);
+    assert.equal(event.schemaVersion, DOMAIN_EVENT_SCHEMA_VERSION);
+    assert.equal(event.phase, 'night');
+    assert.equal(event.stage, 'guard_seer');
+  }
+  const beforeRetry = session.serialize().state.sequence;
+  const retry = await session.dispatch(baseMeta, command);
+  assert.equal(retry.ok, true);
+  assert.equal(session.serialize().state.sequence, beforeRetry);
+  assert.equal(
+    (
+      await session.dispatch(
+        { ...baseMeta, commandId: 'stale-id', expectedStageRevision: 0 },
+        command,
+      )
+    ).code,
+    'STALE_STAGE_REVISION',
+  );
+});
+
+test('wolf vote tie randomly kills a tied target without revote or empty kill', async () => {
+  const killedTargets = new Set<string>();
+
+  for (const [run, randomValue] of [0, 0.999999].entries()) {
+    const players = createPlayers(`room-tie-${run}`);
+    const session = new GameSession(
+      `room-tie-${run}`,
+      players,
+      new InMemoryEventStore(),
+      undefined,
+      { rng: () => randomValue },
+    );
+    await session.initialize();
+    const guardian = players.find((player) => player.role === 'guardian')!;
+    const seer = players.find((player) => player.role === 'seer')!;
+    const wolves = players.filter((player) => player.role === 'wolf');
+    const witch = players.find((player) => player.role === 'witch')!;
+    const tiedTargets = players
+      .filter((player) => player.role === 'villager')
+      .slice(0, 2);
+
+    await dispatch(session, guardian.id, {
+      type: 'game.skip_night',
+      payload: { action: 'guard' },
+    });
+    await dispatch(session, seer.id, {
+      type: 'game.skip_night',
+      payload: { action: 'check' },
+    });
+
+    for (const [index, wolf] of wolves.entries()) {
+      const result = await dispatch(session, wolf.id, {
+        type: 'game.wolf_vote',
+        payload: { targetId: tiedTargets[index % 2].id },
+      });
+      assert.equal(result.ok, true);
+    }
+
+    const lockedTarget = session.serialize().state.night.actions.wolfKillTargetId;
+    assert.equal(session.serialize().state.night.stage, 'witch');
+    assert.notEqual(lockedTarget, null);
+    assert.equal(
+      tiedTargets.some((player) => player.id === lockedTarget),
+      true,
+    );
+
+    const witchResult = await dispatch(session, witch.id, {
+      type: 'game.skip_night',
+      payload: { action: 'heal' },
+    });
+    assert.equal(witchResult.ok, true);
+    assert.equal(session.serialize().state.gameState.phase, 'day');
+    assert.deepEqual(
+      session.players.filter((player) => !player.isAlive).map((player) => player.id),
+      [lockedTarget],
+    );
+    killedTargets.add(lockedTarget!);
+  }
+
+  assert.deepEqual(
+    [...killedTargets].sort(),
+    createPlayers('room-reference')
+      .filter((player) => player.role === 'villager')
+      .slice(0, 2)
+      .map((player) => player.id)
+      .sort(),
+  );
+});

@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "skipLibCheck": true,
+    "strict": false,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "types": ["node", "vite/client"],
+    "lib": ["ES2022", "DOM"],
+    "verbatimModuleSyntax": false,
+    "baseUrl": ".",
+    "paths": {
+      "shared/*": ["../shared/*"]
+    }
+  },
+  "include": [
+    "index.ts",
+    "rooms/**/*.ts",
+    "session/**/*.ts",
+    "events/**/*.ts",
+    "transport/**/*.ts",
+    "ai/**/*.ts",
+    "../shared/**/*.ts",
+    "../src/core/**/*.ts"
+  ]
+}

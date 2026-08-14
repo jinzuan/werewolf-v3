@@ -1,0 +1,204 @@
+{
+  "version": 1,
+  "count": 33,
+  "files": [
+    {
+      "path": "common_1.md",
+      "role": "common",
+      "bytes": 2437,
+      "sha256": "5c2878f3cbbac3eb66f9531e36b294b031e3c3f7e9d4c4f61a99467f03b8c471"
+    },
+    {
+      "path": "common_2.md",
+      "role": "common",
+      "bytes": 2354,
+      "sha256": "e76fe4662a510d766862796e3af11c6b68e3eafed00819a85b0bd55e16e1b447"
+    },
+    {
+      "path": "common_3.md",
+      "role": "common",
+      "bytes": 2617,
+      "sha256": "db097a9fae7d663dab331566d017c1a8440df85420d31c5676380aaf0df3bc31"
+    },
+    {
+      "path": "guard_1.md",
+      "role": "guardian",
+      "bytes": 2536,
+      "sha256": "1e5ddece06c9aaf45f745392852aa3de0d0d1c8ed91a84abe6eaa7b613ff6020"
+    },
+    {
+      "path": "guard_2.md",
+      "role": "guardian",
+      "bytes": 2304,
+      "sha256": "6eba95871c20e8c0d4026608ed05f1498f08b3772e3e4bd72f9d19ccb8e42bff"
+    },
+    {
+      "path": "guard_3.md",
+      "role": "guardian",
+      "bytes": 2412,
+      "sha256": "ef839455a0292f9368c1e13a83998be5d9a867fdbba10d21b78f4abd28fce909"
+    },
+    {
+      "path": "guard_4.md",
+      "role": "guardian",
+      "bytes": 2365,
+      "sha256": "3b8740d0ec240f4b0f4274cf309b32ee123a54e3830345eb379eac37467d3921"
+    },
+    {
+      "path": "hunter_1.md",
+      "role": "hunter",
+      "bytes": 2533,
+      "sha256": "94fde8efedcb16a15aedc735d5be88804a6ace8cdd0c2395fd651612af62cdd6"
+    },
+    {
+      "path": "hunter_2.md",
+      "role": "hunter",
+      "bytes": 2131,
+      "sha256": "a9b9ca33896db5e2c2361dc44f5320526a39952740889fa63125ad44ac36e94f"
+    },
+    {
+      "path": "hunter_3.md",
+      "role": "hunter",
+      "bytes": 2207,
+      "sha256": "61ba42d7634afbf554817c518f77325cac19075355017b83283878ddbd2ca47e"
+    },
+    {
+      "path": "hunter_4.md",
+      "role": "hunter",
+      "bytes": 2064,
+      "sha256": "2bd9eb9ec25324195db8cb65238ad1ae9b5b5fa16b4fbaef08b9dbcb0e203642"
+    },
+    {
+      "path": "seer_1.md",
+      "role": "seer",
+      "bytes": 2589,
+      "sha256": "9d3ec9dc999b80884cb2e4a06b413f16f1463b2c06be906c597cf12a9cd23609"
+    },
+    {
+      "path": "seer_2.md",
+      "role": "seer",
+      "bytes": 2260,
+      "sha256": "a9fd55e138afca529ea0d17686cf32cff335b8372da6f76bcc415f7f8633725e"
+    },
+    {
+      "path": "seer_3.md",
+      "role": "seer",
+      "bytes": 2308,
+      "sha256": "006aaba696a2578af6e8d1acb059976c43227325029d6d30d4f1a4b94da7a52d"
+    },
+    {
+      "path": "seer_4.md",
+      "role": "seer",
+      "bytes": 2200,
+      "sha256": "9644e1eab551af6b8acfa9b50547c81eceeceb0ee5972bd93c712aaef6f16ec3"
+    },
+    {
+      "path": "seer_5.md",
+      "role": "seer",
+      "bytes": 2537,
+      "sha256": "5bc7f1a9e8b5b7ecf31b3450c18c9dd6e2f09cfc8b632ed59057ac58032ae391"
+    },
+    {
+      "path": "villager_1.md",
+      "role": "villager",
+      "bytes": 2400,
+      "sha256": "7b2a8d6fafbba41cefcfe19e5af400b02464b41a0771a308707ef827a8cb7927"
+    },
+    {
+      "path": "villager_2.md",
+      "role": "villager",
+      "bytes": 2184,
+      "sha256": "4b47b37d09c9386a71ca8c6bef4547777bae810cd3539d906ee4b34a1390d240"
+    },
+    {
+      "path": "villager_3.md",
+      "role": "villager",
+      "bytes": 2291,
+      "sha256": "beff92f1bd58efa0dfa753f0e9aed597f665ccb347fb6da0714697a32995d8d4"
+    },
+    {
+      "path": "villager_4.md",
+      "role": "villager",
+      "bytes": 2230,
+      "sha256": "632ebef1a65a10ec5032d46719712a9341619911a3a7f6754e3a67ff983d1e60"
+    },
+    {
+      "path": "villager_5.md",
+      "role": "villager",
+      "bytes": 2218,
+      "sha256": "7dea03de32917fc88487ea6d5c5124e6c220b30f3b67688ea638cc423bf1367a"
+    },
+    {
+      "path": "villager_6.md",
+      "role": "villager",
+      "bytes": 2174,
+      "sha256": "6a0d715ae58e8e4b6320660d35e57a1772ec517c9f217aa35810f17800511db9"
+    },
+    {
+      "path": "witch_1.md",
+      "role": "witch",
+      "bytes": 2529,
+      "sha256": "dcc9381c1aa65e32a337e1d77819ca92d082a7b25d95e434019a9382ec3787bb"
+    },
+    {
+      "path": "witch_2.md",
+      "role": "witch",
+      "bytes": 2198,
+      "sha256": "bb638a2bae305e125572de0bd56d53ae883796e072e6528579b05ac3a05dd587"
+    },
+    {
+      "path": "witch_3.md",
+      "role": "witch",
+      "bytes": 2312,
+      "sha256": "828e3b4d42329c12ef1109f761f8d0c6a54a95394a42022fc38d9f98a215785d"
+    },
+    {
+      "path": "witch_4.md",
+      "role": "witch",
+      "bytes": 2398,
+      "sha256": "cd10e4dba007edf1e2317db8b9266d96263777aefe014e831760f0dc0aa503b0"
+    },
+    {
+      "path": "wolf_1.md",
+      "role": "wolf",
+      "bytes": 2384,
+      "sha256": "bebbaae3c55302ec90a4231870d1f124d415abe6cc4ce2954ad42b93bf220cbd"
+    },
+    {
+      "path": "wolf_2.md",
+      "role": "wolf",
+      "bytes": 2299,
+      "sha256": "3d2abf5e2194e87d77ff3cc3dd3364d160db083f4908ca2f5eab7392c2835203"
+    },
+    {
+      "path": "wolf_3.md",
+      "role": "wolf",
+      "bytes": 2306,
+      "sha256": "108900c0d0129aaa2807fe2ba0b4b06149a94cb5cb4940f493b80db483d4cd44"
+    },
+    {
+      "path": "wolf_4.md",
+      "role": "wolf",
+      "bytes": 2360,
+      "sha256": "9b342be6da651d2e3e94a6358a89134991c258508e2428b89d1264caa1444c0b"
+    },
+    {
+      "path": "wolf_5.md",
+      "role": "wolf",
+      "bytes": 2294,
+      "sha256": "af3a762404f1252c8043b6c5d380d1ec2f37907ec74d55ca25822d932b20f072"
+    },
+    {
+      "path": "wolf_6.md",
+      "role": "wolf",
+      "bytes": 2257,
+      "sha256": "76d34cec6622c2c25fa7efb7b330a500e7484f4c3ba6876f03a4d8fe6e9271e3"
+    },
+    {
+      "path": "wolf_7.md",
+      "role": "wolf",
+      "bytes": 2391,
+      "sha256": "76aff735b36269b9ad97af4e4c2638fb09614041f6c480c04e9f61fb8d7abe13"
+    }
+  ]
+}

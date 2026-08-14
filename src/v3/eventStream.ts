@@ -1,0 +1,59 @@
+import type {
+  DomainEvent,
+  ViewerContext,
+} from '../../shared/events';
+import type { GameEventsMessage } from '../../shared/protocol';
+import { containsSensitiveKeys } from './session';
+import { filterVisibleEvents } from './visibility';
+
+export interface EventStreamState {
+  roomId: string;
+  gameId: string;
+  lastSeenSeq: number;
+  events: DomainEvent[];
+}
+
+export interface EventStreamMergeResult extends EventStreamState {
+  accepted: boolean;
+}
+
+export const mergeEventEnvelope = (
+  state: EventStreamState,
+  envelope: GameEventsMessage,
+  viewer: ViewerContext,
+): EventStreamMergeResult => {
+  if (
+    envelope.roomId !== state.roomId ||
+    envelope.gameId !== state.gameId ||
+    envelope.afterSequence < state.lastSeenSeq ||
+    containsSensitiveKeys(envelope)
+  ) {
+    return { ...state, accepted: false };
+  }
+
+  const scoped = envelope.events.filter(
+    (event) =>
+      event.roomId === state.roomId &&
+      event.gameId === state.gameId &&
+      event.sequence > state.lastSeenSeq,
+  );
+  const visible = filterVisibleEvents(scoped, viewer);
+  const merged = new Map(
+    state.events.map((event) => [event.eventId, event]),
+  );
+  for (const event of visible) merged.set(event.eventId, event);
+
+  return {
+    roomId: state.roomId,
+    gameId: state.gameId,
+    lastSeenSeq: Math.max(
+      state.lastSeenSeq,
+      envelope.afterSequence,
+      ...scoped.map((event) => event.sequence),
+    ),
+    events: [...merged.values()]
+      .sort((left, right) => left.sequence - right.sequence)
+      .slice(-300),
+    accepted: true,
+  };
+};

@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "lib": ["ES2022", "DOM"],
+    "verbatimModuleSyntax": false
+  },
+  "include": [
+    "architecture.skeleton.test.ts",
+    "../shared/types.ts",
+    "../shared/protocol.ts",
+    "../shared/events.ts",
+    "../shared/rulesetContract.ts"
+  ]
+}

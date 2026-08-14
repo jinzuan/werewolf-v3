@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "noEmit": true,
+    "lib": ["ES2022", "DOM"],
+    "types": ["node", "vite/client"],
+    "isolatedModules": false,
+    "resolveJsonModule": true
+  },
+  "include": [
+    "test-drive.ts",
+    "src/utils/gameLogic.ts",
+    "src/utils/roleConfig.ts",
+    "src/types/index.ts"
+  ]
+}

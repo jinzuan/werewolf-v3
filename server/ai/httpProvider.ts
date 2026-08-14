@@ -1,0 +1,417 @@
+import type { GameCommand } from '../../shared/protocol';
+import type { AIConfig, GameAction } from '../../shared/types';
+import { AI_TIMEOUT_MS } from '../../shared/config/aiDefaults';
+import { loadAIConfig } from '../config';
+import type {
+  AIProvider,
+  AIProviderError,
+  AIRequestContext,
+  AISuggestion,
+} from './types';
+import { AIProviderError as ProviderError } from './types';
+
+interface ProviderSettings {
+  key: string;
+  endpoint: string;
+  apiKey: string;
+  model: string;
+  temperature: number;
+  maxTokens: number;
+}
+
+export interface HttpAIProviderOptions {
+  fetch?: typeof fetch;
+  sleep?: (delayMs: number) => Promise<void>;
+  now?: () => number;
+  timeoutMs?: number;
+  maxRetries?: number;
+  baseDelayMs?: number;
+}
+
+interface ResponseEnvelope {
+  status: number;
+  headers: Headers;
+  data?: unknown;
+}
+
+class ConcurrencyGate {
+  private active = 0;
+  private readonly queue: Array<{
+    task: () => Promise<unknown>;
+    resolve: (value: unknown) => void;
+    reject: (error: unknown) => void;
+  }> = [];
+
+  constructor(private readonly limit: number) {}
+
+  run<T>(task: () => Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      this.queue.push({
+        task,
+        resolve: resolve as (value: unknown) => void,
+        reject,
+      });
+      this.drain();
+    });
+  }
+
+  private drain(): void {
+    while (this.active < this.limit && this.queue.length > 0) {
+      const item = this.queue.shift()!;
+      this.active += 1;
+      void item.task()
+        .then(item.resolve, item.reject)
+        .finally(() => {
+          this.active -= 1;
+          this.drain();
+        });
+    }
+  }
+}
+
+const gates = new Map<string, ConcurrencyGate>();
+
+const gateFor = (key: string): ConcurrencyGate => {
+  const existing = gates.get(key);
+  if (existing) return existing;
+  const created = new ConcurrencyGate(2);
+  gates.set(key, created);
+  return created;
+};
+
+const endpointFor = (config: AIConfig): string => {
+  if (config.apiType === 'siliconflow') {
+    return 'https://api.siliconflow.cn/v1/chat/completions';
+  }
+  if (config.apiType === 'deepseek') {
+    return 'https://api.deepseek.com/v1/chat/completions';
+  }
+  return config.local.apiUrl;
+};
+
+const settingsFor = (config: AIConfig): ProviderSettings => {
+  const endpoint = endpointFor(config);
+  const selected =
+    config.apiType === 'siliconflow'
+      ? config.siliconflow
+      : config.apiType === 'deepseek'
+        ? config.deepseek
+        : config.local;
+  return {
+    key: `${config.apiType}:${endpoint}:${selected.model}`,
+    endpoint,
+    apiKey: selected.apiKey,
+    model: selected.model,
+    temperature: selected.temperature,
+    maxTokens: selected.maxTokens,
+  };
+};
+
+const defaultSleep = (delayMs: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, delayMs));
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const parseRetryAfter = (
+  value: string | null,
+  now: () => number,
+): number => {
+  if (!value) return 0;
+  const seconds = Number(value.trim());
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return seconds * 1_000;
+  }
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? 0 : Math.max(0, timestamp - now());
+};
+
+const actionForCommand = (
+  command: GameCommand,
+): GameAction | undefined => {
+  switch (command.type) {
+    case 'game.night_action':
+      return command.payload.action === 'kill'
+        ? undefined
+        : command.payload.action;
+    case 'game.wolf_speak':
+      return 'wolf_speak';
+    case 'game.wolf_vote':
+      return 'wolf_vote';
+    case 'game.skip_night':
+      return 'skip_night';
+    case 'game.speak':
+      return 'speak';
+    case 'game.skip_speech':
+      return 'skip_speech';
+    case 'game.vote':
+      return command.payload.targetId === null ? 'abstain' : 'vote';
+    case 'game.hunter_shoot':
+      return command.payload.targetId === null
+        ? 'skip_hunter_shot'
+        : 'hunter_shoot';
+  }
+};
+
+const validTarget = (value: unknown): value is string | null =>
+  value === null || typeof value === 'string';
+
+const validCommandPayload = (
+  command: GameCommand,
+  context: AIRequestContext,
+): boolean => {
+  if (!isRecord(command.payload)) return false;
+  switch (command.type) {
+    case 'game.speak':
+    case 'game.wolf_speak':
+      return typeof command.payload.content === 'string';
+    case 'game.skip_speech':
+      return Object.keys(command.payload).length === 0;
+    case 'game.vote':
+    case 'game.wolf_vote':
+    case 'game.hunter_shoot':
+      return validTarget(command.payload.targetId);
+    case 'game.night_action':
+      return (
+        command.payload.playerId === context.playerId &&
+        ['kill', 'check', 'heal', 'poison', 'guard'].includes(
+          command.payload.action,
+        ) &&
+        validTarget(command.payload.targetId)
+      );
+    case 'game.skip_night':
+      return (
+        typeof command.payload.action === 'string' &&
+        ['guard', 'check', 'heal', 'poison'].includes(
+          command.payload.action,
+        )
+      );
+  }
+};
+
+const parseSuggestion = (
+  data: unknown,
+  context: AIRequestContext,
+  retryCount: number,
+): AISuggestion => {
+  if (!isRecord(data)) {
+    throw new ProviderError('invalid_response', retryCount);
+  }
+  const choices = data.choices;
+  if (!Array.isArray(choices) || !isRecord(choices[0])) {
+    throw new ProviderError('invalid_response', retryCount);
+  }
+  const message = choices[0].message;
+  if (!isRecord(message) || typeof message.content !== 'string') {
+    throw new ProviderError('invalid_response', retryCount);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(message.content);
+  } catch {
+    throw new ProviderError('invalid_output', retryCount);
+  }
+  if (!isRecord(parsed) || !isRecord(parsed.command)) {
+    throw new ProviderError('invalid_output', retryCount);
+  }
+  const command = parsed.command as Partial<GameCommand>;
+  if (
+    typeof command.type !== 'string' ||
+    !context.allowedCommandTypes.includes(
+      command.type as GameCommand['type'],
+    ) ||
+    !validCommandPayload(command as GameCommand, context)
+  ) {
+    throw new ProviderError('invalid_output', retryCount);
+  }
+  const allowedActions = context.allowedActions ?? [];
+  const action = actionForCommand(command as GameCommand);
+  if (allowedActions.length > 0 && (!action || !allowedActions.includes(action))) {
+    throw new ProviderError('invalid_output', retryCount);
+  }
+  return {
+    command: command as GameCommand,
+    reason:
+      typeof parsed.reason === 'string'
+        ? parsed.reason.slice(0, 300)
+        : 'provider suggestion',
+    providerMeta: { retryCount },
+  };
+};
+
+const normalizeError = (
+  error: unknown,
+  retryCount: number,
+): AIProviderError => {
+  if (error instanceof ProviderError) {
+    return new ProviderError(error.errorClass, retryCount, error.status);
+  }
+  if (error instanceof Error && error.name === 'AbortError') {
+    return new ProviderError('timeout', retryCount);
+  }
+  return new ProviderError('network', retryCount);
+};
+
+const promptFor = (context: AIRequestContext) => {
+  const projection = context.projectedContext;
+  const snapshot = projection?.snapshot;
+  const players =
+    snapshot?.players ??
+    context.players.map((player) => ({
+      ...player,
+      role:
+        player.id === context.playerId ||
+        (context.role === 'wolf' && player.role === 'wolf')
+          ? player.role
+          : null,
+      aiConfig: undefined,
+    }));
+  const gameState = snapshot?.gameState;
+  const publicEvents = projection?.publicEvents ?? [];
+  const privateEvents = projection?.privateEvents ?? [];
+  const rules = projection?.rules ?? {
+    id: 'werewolf.v3.default-12p',
+    version: 'unknown',
+    values: {},
+  };
+  const experience = projection?.experience ?? '';
+
+  return {
+    system: [
+      'You are a server-side werewolf game action planner.',
+      `Role: ${context.role}.`,
+      'Use only the supplied role-visible context. Do not infer hidden roles.',
+      `Ruleset ${rules.id} ${rules.version}: ${JSON.stringify(rules.values)}`,
+      experience ? `Behavior reference:\n${experience}` : '',
+      'Return JSON only: {"command":{"type":"...","payload":{...}},"reason":"..."}',
+      `Allowed command types: ${JSON.stringify(context.allowedCommandTypes)}`,
+      `Allowed actions: ${JSON.stringify(context.allowedActions ?? [])}`,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    user: JSON.stringify({
+      playerId: context.playerId,
+      phase: context.phase,
+      stage: context.stage,
+      stageRevision: context.stageRevision,
+      players: players.map((player) => ({
+        id: player.id,
+        name: player.name,
+        role: player.role,
+        isAlive: player.isAlive,
+      })),
+      gameState,
+      publicEvents,
+      privateEvents,
+    }),
+  };
+};
+
+export class HttpAIProvider implements AIProvider {
+  private readonly settings: ProviderSettings;
+  private readonly gate: ConcurrencyGate;
+  private readonly fetchImpl: typeof fetch;
+  private readonly sleep: (delayMs: number) => Promise<void>;
+  private readonly now: () => number;
+  private readonly timeoutMs: number;
+  private readonly maxRetries: number;
+  private readonly baseDelayMs: number;
+
+  constructor(
+    config: AIConfig = loadAIConfig(),
+    options: HttpAIProviderOptions = {},
+  ) {
+    this.settings = settingsFor(config);
+    this.gate = gateFor(this.settings.key);
+    this.fetchImpl = options.fetch ?? globalThis.fetch;
+    this.sleep = options.sleep ?? defaultSleep;
+    this.now = options.now ?? Date.now;
+    this.timeoutMs = options.timeoutMs ?? AI_TIMEOUT_MS;
+    this.maxRetries = options.maxRetries ?? 2;
+    this.baseDelayMs = options.baseDelayMs ?? 250;
+  }
+
+  async suggest(context: AIRequestContext): Promise<AISuggestion> {
+    const prompt = promptFor(context);
+    return this.gate.run(async () => {
+      let retryCount = 0;
+      for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
+        try {
+          const response = await this.requestOnce(prompt);
+          if (response.status === 429) {
+            if (attempt < this.maxRetries) {
+              const retryAfterMs = parseRetryAfter(
+                response.headers.get('retry-after'),
+                this.now,
+              );
+              const exponentialMs = this.baseDelayMs * 2 ** attempt;
+              retryCount += 1;
+              await this.sleep(Math.max(retryAfterMs, exponentialMs));
+              continue;
+            }
+            throw new ProviderError('rate_limited', retryCount, 429);
+          }
+          return parseSuggestion(response.data, context, retryCount);
+        } catch (error) {
+          throw normalizeError(error, retryCount);
+        }
+      }
+      throw new ProviderError('rate_limited', retryCount, 429);
+    });
+  }
+
+  private async requestOnce(
+    prompt: { system: string; user: string },
+  ): Promise<ResponseEnvelope> {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(new ProviderError('timeout', 0));
+      }, this.timeoutMs);
+    });
+    try {
+      const response = await Promise.race([
+        this.fetchImpl(this.settings.endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(this.settings.apiKey
+              ? { Authorization: `Bearer ${this.settings.apiKey}` }
+              : {}),
+          },
+          body: JSON.stringify({
+            model: this.settings.model,
+            temperature: this.settings.temperature,
+            max_tokens: this.settings.maxTokens,
+            response_format: { type: 'json_object' },
+            messages: [
+              { role: 'system', content: prompt.system },
+              { role: 'user', content: prompt.user },
+            ],
+          }),
+          signal: controller.signal,
+        }),
+        timeout,
+      ]);
+      if (response.status === 429) {
+        return { status: response.status, headers: response.headers };
+      }
+      if (!response.ok) {
+        throw new ProviderError('http_error', 0, response.status);
+      }
+      let data: unknown;
+      try {
+        data = await Promise.race([response.json(), timeout]);
+      } catch (error) {
+        if (error instanceof ProviderError) throw error;
+        throw new ProviderError('invalid_response', 0);
+      }
+      return { status: response.status, headers: response.headers, data };
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  }
+}

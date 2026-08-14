@@ -1,0 +1,9 @@
+{
+  "apiType": "siliconflow",
+  "siliconflow": {
+    "apiKey": "",
+    "model": "deepseek-ai/DeepSeek-V3",
+    "temperature": 0.9,
+    "maxTokens": 512
+  }
+}
