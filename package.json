@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test": "tsx --test test/architecture.skeleton.test.ts src/core/__tests__/*.test.ts src/v3/__tests__/*.test.ts server/__tests__/*.test.ts",
+    "test": "tsx --test test/architecture.skeleton.test.ts src/core/__tests__/*.test.ts src/v3/__tests__/*.test.ts src/features/**/__tests__/*.test.ts server/__tests__/*.test.ts",
     "test:contract": "tsx --test test/architecture.skeleton.test.ts",
     "test:ui": "tsx --test src/v3/__tests__/*.test.ts",
     "test:server": "tsx --test server/__tests__/*.test.ts",
