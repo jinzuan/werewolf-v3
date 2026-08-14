@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { RoomLayout } from '../features/room-shell/RoomLayout';
 import { RoomResultPage } from '../features/room-shell/RoomResultPage';
+import { RoomWizardPage } from '../features/room-wizard';
 import { GamePage } from '../pages/v3/GamePage';
 import { LobbyPage } from '../pages/v3/LobbyPage';
 import { MonitorPage } from '../pages/v3/MonitorPage';
@@ -37,9 +38,12 @@ export function AppRouter() {
       <Route path="/lobby" element={<LobbyPage />} />
       <Route path="/settings" element={<SettingsPage />} />
 
-      {/* M8 owns the final wizard/join pages; these stable URLs remain reachable. */}
+      {/* M8 owns the four deep-linkable creation steps. */}
       <Route path="/rooms/join" element={<LobbyPage />} />
-      <Route path="/rooms/new/*" element={<LobbyPage />} />
+      <Route path="/rooms/new">
+        <Route index element={<Navigate to="/rooms/new/players" replace />} />
+        <Route path=":step" element={<RoomWizardPage />} />
+      </Route>
 
       <Route path="/rooms/:roomCode">
         <Route index element={<RoomResolverPage />} />

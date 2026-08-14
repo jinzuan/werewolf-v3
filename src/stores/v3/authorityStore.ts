@@ -4,6 +4,7 @@ import type {
   ProjectedSnapshot,
 } from '../../../shared/events';
 import type {
+  CreateRoomAck,
   CreateRoomOptionsV31,
   GameCommand,
   GameEventsMessage,
@@ -133,6 +134,8 @@ export interface V3Store {
     roomName: string,
     auto: boolean,
   ) => Promise<boolean>;
+  /** Full V3.1 create action used by the four-step room wizard. */
+  createRoomWithOptions: (options: CreateRoomOptionsV31) => Promise<CreateRoomAck>;
   joinRoom: (
     name: string,
     roomCode: string,
@@ -647,6 +650,31 @@ export const useV3Store = create<V3Store>()((set, get) => {
       }
       await get().refreshRooms();
       return accepted;
+    },
+
+    createRoomWithOptions: async (options) => {
+      ensureTransportSubscriptions();
+      clearAuthority();
+      set({ loading: true, authorityStatus: 'resolving' });
+      const actorName = options.creator.name.trim() || '玩家';
+      const response = await createV3Room(
+        newActorId(),
+        actorName,
+        options,
+      );
+      if (response.ok === false) {
+        set({ loading: false, error: getErrorMessage(response.code) });
+        return response;
+      }
+      const accepted = establish(
+        response.room,
+        response.credentials,
+        actorName,
+      );
+      if (accepted && isRoomStatusWithGame(response.room.status)) {
+        await recoverGameProjection();
+      }
+      return response;
     },
 
     joinRoom: async (name, roomCode, joinToken) => {

@@ -1,4 +1,4 @@
-import { ArrowRight, Bot, DoorOpen, Plus, Radio, Users } from 'lucide-react';
+import { ArrowRight, DoorOpen, Plus, Radio, Users } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppShell } from '../../components/shell/AppShell';
@@ -7,7 +7,6 @@ import { Badge } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { Input } from '../../ui/Input';
-import { Modal } from '../../ui/Modal';
 import type { RoomStatus } from '../../../shared/roomContract';
 
 const roomState: Record<RoomStatus, { label: string; tone: 'gold' | 'purple' | 'neutral' | 'warning' }> = {
@@ -33,12 +32,9 @@ export function LobbyPage() {
   const error = useV3Store((state) => state.error);
   const rooms = useV3Store((state) => state.rooms);
   const refreshRooms = useV3Store((state) => state.refreshRooms);
-  const createRoom = useV3Store((state) => state.createRoom);
   const joinRoom = useV3Store((state) => state.joinRoom);
   const spectateRoom = useV3Store((state) => state.spectateRoom);
-  const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState('玩家');
-  const [roomName, setRoomName] = useState('V3 竞技房');
   const [roomCode, setRoomCode] = useState('');
   const [joinToken, setJoinToken] = useState('');
 
@@ -50,12 +46,6 @@ export function LobbyPage() {
       const code = useV3Store.getState().session?.roomCode;
       if (code) navigate(`/room/${code}`);
     }
-  };
-
-  const create = async (auto: boolean) => {
-    const ok = await createRoom(name, roomName, auto);
-    const code = useV3Store.getState().session?.roomCode;
-    if (ok && code) navigate(`/room/${code}`);
   };
 
   return (
@@ -157,40 +147,15 @@ export function LobbyPage() {
               </div>
             </div>
             <div className="v3-action-stack">
-              <Button variant="secondary" onClick={() => setCreateOpen(true)}>
-                <Users size={17} />创建普通房
+              <Button onClick={() => navigate('/rooms/new/players')}>
+                <Users size={17} />进入开房向导
               </Button>
-              <Button disabled={loading} onClick={() => void create(true)}>
-                <Bot size={17} />创建快速 AI 房
-              </Button>
+              <span style={{ color: 'var(--ww-text-muted)', fontSize: 'var(--ww-text-caption-size)' }}>在向导中选择朋友房、混合房或快速电脑局。</span>
             </div>
           </Card>
         </aside>
       </div>
 
-      <Modal
-        open={createOpen}
-        title="创建普通房"
-        context="创建结果与房间令牌来自 V3 服务端。"
-        onClose={() => setCreateOpen(false)}
-        footer={
-          <>
-            <Button variant="quiet" onClick={() => setCreateOpen(false)}>取消</Button>
-            <Button disabled={loading || !name.trim() || !roomName.trim()} onClick={() => void create(false)}>
-              创建并进入
-            </Button>
-          </>
-        }
-      >
-        <label className="v3-field">
-          <span>显示名称</span>
-          <Input value={name} onChange={(event) => setName(event.target.value)} />
-        </label>
-        <label className="v3-field">
-          <span>房间名称</span>
-          <Input value={roomName} onChange={(event) => setRoomName(event.target.value)} />
-        </label>
-      </Modal>
     </AppShell>
   );
 }
