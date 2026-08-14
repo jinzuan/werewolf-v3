@@ -7,7 +7,8 @@
  */
 
 export * from './types';
-export * from './roomContract';
+// protocol.ts re-exports the room contract. Keeping a single public path here
+// avoids duplicate RoomCommand/RoomSnapshotMessage symbols in TypeScript.
 export * from './protocol';
 export * from './events';
 export * from './rulesetContract';

@@ -215,6 +215,7 @@ export type RoomSnapshotReason = (typeof ROOM_SNAPSHOT_REASONS)[number];
 export type EmptyRoomCommandPayload = Record<string, never>;
 
 export type RoomReadCommand =
+  | { type: 'catalog.get'; payload: EmptyRoomCommandPayload }
   | { type: 'room.create'; payload: CreateRoomOptionsV31 }
   | { type: 'room.join'; payload: { roomCode: string; joinToken?: string } }
   | { type: 'room.resume'; payload: { roomCode: string } }

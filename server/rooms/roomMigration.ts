@@ -207,7 +207,9 @@ const deriveConfig = (room: RoomRecord): RoomConfigRecord => {
     visibility: source?.visibility ?? 'invite_only',
     maxPlayers,
     minHumanPlayers:
-      isFinitePositiveInteger(source?.minHumanPlayers) &&
+      typeof source?.minHumanPlayers === 'number' &&
+      Number.isInteger(source.minHumanPlayers) &&
+      source.minHumanPlayers >= 0 &&
       source.minHumanPlayers <= maxPlayers
         ? source.minHumanPlayers
         : 1,

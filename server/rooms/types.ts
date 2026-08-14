@@ -1,8 +1,7 @@
 import type {
+  CreateRoomOptionsV31,
   IdentityCredentials,
   RoomAccess,
-  RoomCreateOptions,
-  RoomSummary,
   RoomView,
 } from '../../shared/protocol';
 import type { Player, Role } from '../../shared/types';
@@ -96,7 +95,7 @@ export interface RoomRecord {
   hostId: string;
   maxPlayers: number;
   /** Runtime values include ready_check/starting; kept broad for legacy DTOs. */
-  status: RoomStatus | RoomSummary['status'] | any;
+  status: RoomStatus;
   auto: boolean;
   debugMode: boolean;
   members: RoomMember[];
@@ -123,12 +122,13 @@ export interface RoomRecord {
 
 export interface CreateRoomRequest {
   actorId: string;
-  options: RoomCreateOptions;
+  options: CreateRoomOptionsV31;
 }
 
 export interface JoinRoomRequest {
   actorId: string;
   name: string;
+  avatarId?: string;
   roomCode: string;
   joinToken?: string;
   spectator?: boolean;

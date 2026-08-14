@@ -1,5 +1,5 @@
 import type { EventStore } from '../../shared/events';
-import type { StartCheck } from '../../shared/roomContract';
+import type { RoomSnapshotReason, StartCheck } from '../../shared/roomContract';
 import type { Player, Role } from '../../shared/types';
 import { GameSession } from '../session/gameSession';
 import type {
@@ -93,6 +93,11 @@ export interface GameStartCoordinatorOptions {
   now?: () => number;
   /** Test seam; production uses crypto.randomInt through roleDeckBuilder. */
   randomIndex?: SecureRandomIndex;
+  /** Notification seam for the application/transport layer. */
+  onRoomChange?: (
+    room: RoomRecord,
+    reason: RoomSnapshotReason,
+  ) => void | Promise<void>;
 }
 
 export interface GameStartResult {
@@ -599,6 +604,7 @@ export class GameStartCoordinator {
     if (!startingRoom) {
       throw new GameStartError('ROOM_NOT_FOUND', 'Room disappeared while starting.');
     }
+    await this.options.onRoomChange?.(clone(startingRoom), 'status_changed');
 
     let session: StartableGameSession | undefined;
     try {
@@ -718,7 +724,7 @@ export class GameStartCoordinator {
     failure: GameStartError,
   ): Promise<void> {
     try {
-      await this.repository.mutate(
+      const rolledBack = await this.repository.mutate(
         roomCode,
         startingRevision,
         (room) => {
@@ -737,7 +743,12 @@ export class GameStartCoordinator {
               ? { details: { startCheck: failure.details.startCheck } }
               : {}),
           };
+          return room;
         },
+      );
+      await this.options.onRoomChange?.(
+        clone(rolledBack),
+        'status_changed',
       );
     } catch (rollbackError) {
       throw new GameStartError(

@@ -5,7 +5,7 @@ import type {
   StoredEvent,
   ViewerContext,
 } from '../../shared/events';
-import type { GameState, Player } from '../../shared/types';
+import type { GameState, Player, ProjectedGameState } from '../../shared/types';
 
 interface StateEventPayload extends Record<string, unknown> {
   gameState: GameState;
@@ -59,8 +59,16 @@ const projectPlayers = (
 const projectGameState = (
   state: GameState,
   viewer: ViewerContext,
-): GameState => {
-  if (isOmniscient(viewer)) return structuredClone(state);
+): ProjectedGameState => {
+  if (isOmniscient(viewer)) {
+    return {
+      ...structuredClone(state),
+      allowedActors: [...(state.allowedActors ?? [])],
+      allowedActions: [...(state.allowedActions ?? [])],
+      deadlineTs: state.deadlineTs ?? null,
+      stageStartedAt: state.stageStartedAt ?? null,
+    };
+  }
 
   const playerId = viewer.kind === 'player' ? viewer.playerId : null;
   const role = viewer.kind === 'player' ? viewer.role : null;
@@ -72,6 +80,8 @@ const projectGameState = (
     ...structuredClone(state),
     allowedActors: ownActor ? [structuredClone(ownActor)] : [],
     allowedActions: ownActor ? [...ownActor.actions] : [],
+    deadlineTs: state.deadlineTs ?? null,
+    stageStartedAt: state.stageStartedAt ?? null,
   };
   delete projected.votes;
   if (playerId === null) {
@@ -127,8 +137,14 @@ export class VisibilityProjector implements EventProjector {
       roomId: stateEvent.event.roomId,
       gameId: stateEvent.event.gameId,
       viewer,
-      gameState: projectGameState(payload.gameState, viewer),
+      gameState: {
+        ...projectGameState(payload.gameState, viewer),
+        // Older persisted state events do not carry this authority field. The
+        // session projector still has to emit the complete V3.1 shape.
+        stageStartedAt: payload.gameState.stageStartedAt ?? null,
+      },
       players: projectPlayers(payload.players, viewer),
+      serverTime: Date.now(),
       lastSequence: events.at(-1)?.event.sequence ?? 0,
     };
   }

@@ -1070,6 +1070,7 @@ export class GameSession {
   }
 
   private setDeadline(): void {
+    this.state.gameState.stageStartedAt = this.now();
     this.state.gameState.deadlineTs =
       this.state.gameState.phase === 'ended'
         ? null
@@ -1366,6 +1367,7 @@ export class GameSession {
     legacy.dayFlow ??= emptyDayFlow();
     const gameState = legacy.gameState as AuthorityGameState;
     gameState.deadlineTs ??= null;
+    gameState.stageStartedAt ??= null;
     gameState.dayStage ??= null;
   }
 

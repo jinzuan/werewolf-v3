@@ -44,6 +44,10 @@ export class RoomPolicyError extends Error {
     return this.failure.code;
   }
 
+  get messageKey(): string {
+    return this.failure.messageKey;
+  }
+
   get affectedMemberIds(): string[] {
     return [...(this.failure.affectedMemberIds ?? [])];
   }

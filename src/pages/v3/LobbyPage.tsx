@@ -8,9 +8,12 @@ import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { Input } from '../../ui/Input';
 import { Modal } from '../../ui/Modal';
+import type { RoomStatus } from '../../../shared/roomContract';
 
-const roomState = {
+const roomState: Record<RoomStatus, { label: string; tone: 'gold' | 'purple' | 'neutral' | 'warning' }> = {
   waiting: { label: '等待中', tone: 'gold' as const },
+  ready_check: { label: '等待准备', tone: 'warning' as const },
+  starting: { label: '正在开局', tone: 'purple' as const },
   playing: { label: '进行中', tone: 'purple' as const },
   ended: { label: '已结束', tone: 'neutral' as const },
 };

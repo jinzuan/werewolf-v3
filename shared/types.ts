@@ -115,6 +115,8 @@ export interface GameState {
   allowedActors?: AllowedActor[];
   allowedActions?: GameAction[];
   deadlineTs?: number | null;
+  /** Absolute start of the current authoritative stage. */
+  stageStartedAt?: number | null;
   day: number;
   turn: number;
   votes: Record<string, string>;

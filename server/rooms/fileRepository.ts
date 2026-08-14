@@ -201,7 +201,7 @@ export class FileRoomRepository implements RoomRepository {
           'code' in returned &&
           'members' in returned &&
           'players' in returned
-          ? (returned as RoomRecord)
+          ? (returned as unknown as RoomRecord)
           : draft,
       );
       const changed = !isDeepStrictEqual(factsOf(current), factsOf(next));
