@@ -1,11 +1,11 @@
 import { Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { RoomLayout } from '../features/room-shell/RoomLayout';
 import { RoomResultPage } from '../features/room-shell/RoomResultPage';
+import { WaitingRoomPage } from '../features/waiting-room';
 import { RoomWizardPage } from '../features/room-wizard';
 import { GamePage } from '../pages/v3/GamePage';
 import { LobbyPage } from '../pages/v3/LobbyPage';
 import { MonitorPage } from '../pages/v3/MonitorPage';
-import { RoomPage } from '../pages/v3/RoomPage';
 import { SettingsPage } from '../pages/v3/SettingsPage';
 import { SpectatePage } from '../pages/v3/SpectatePage';
 import { useV3Store } from '../stores/v3Store';
@@ -49,7 +49,7 @@ export function AppRouter() {
         <Route index element={<RoomResolverPage />} />
         <Route element={<RoomRouteGuard />}>
           <Route element={<RoomLayout />}>
-            <Route path="waiting" element={<RoomPage />} />
+            <Route path="waiting" element={<WaitingRoomPage />} />
             <Route path="play" element={<GamePage />} />
             <Route path="watch" element={<SpectatePage />} />
             <Route path="monitor" element={<MonitorPage />} />
@@ -68,4 +68,3 @@ export function AppRouter() {
     </Routes>
   );
 }
-

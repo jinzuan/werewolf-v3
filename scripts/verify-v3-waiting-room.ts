@@ -196,24 +196,20 @@ try {
   await page.addInitScript((url) => {
     localStorage.setItem('wolf-server-url', url);
   }, serverUrl);
-  await page.goto(appUrl, { waitUntil: 'networkidle' });
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
 
-  await page.getByRole('button', { name: /创建普通房/ }).click();
-  const createDialog = page.getByRole('dialog', {
-    name: '创建普通房',
-  });
-  await createDialog.getByLabel('显示名称').fill('W3-P2 Host');
-  await createDialog
-    .getByLabel('房间名称')
-    .fill('W3-P2 Waiting Room');
-  await createDialog
-    .getByRole('button', { name: '创建并进入' })
-    .click();
-  await page.waitForURL(/\/room\/[A-Z2-9]{6}$/, {
+  await page.goto(`${appUrl}/rooms/new/players`, { waitUntil: 'domcontentloaded' });
+  await page.getByLabel('显示名称').fill('W3-P2 Host');
+  await page.getByLabel('房间名称').fill('W3-P2 Waiting Room');
+  await page.getByRole('button', { name: '继续选择角色' }).click();
+  await page.getByRole('button', { name: '继续选择规则' }).click();
+  await page.getByRole('button', { name: '查看确认' }).click();
+  await page.getByRole('button', { name: '创建并进入等待房' }).click();
+  await page.waitForURL(/\/rooms\/[A-Z2-9]{6}\/waiting$/, {
     timeout: 10_000,
   });
-  await page.getByRole('heading', { name: '等待房间' }).waitFor();
-  await page.getByText(/1\s*\/\s*12/).waitFor();
+  await page.getByRole('heading', { name: '玩家席' }).waitFor();
+  await page.locator('.waiting-room__meta-item').first().getByText(/1\s*\/\s*12/).waitFor();
 
   const access = await page.evaluate(async () => {
     const module = await import('/src/stores/v3Store.ts');
@@ -254,24 +250,24 @@ try {
   });
   assert.equal(joined.ok, true);
 
-  await page.getByText(/2\s*\/\s*12/).waitFor({
+  await page.locator('.waiting-room__meta-item').first().getByText(/2\s*\/\s*12/).waitFor({
     timeout: 5_000,
   });
-  const memberRows = page.locator('.v3-summary-list > div');
-  assert.equal(await memberRows.count(), 2);
+  const memberSeats = page.locator('.ww-seat--player');
+  assert.equal(await memberSeats.count(), 2);
   assert.equal(
-    await memberRows.filter({ hasText: '离线' }).count(),
+    await page.getByText('离线 · 未准备').count(),
     0,
   );
   await captureLayout(page, 'joined');
 
   guest.disconnect();
-  await page.getByText(/玩家 02.*离线/).waitFor({
+  await page.getByText('离线 · 未准备').waitFor({
     timeout: 5_000,
   });
-  assert.equal(await memberRows.count(), 2);
+  assert.equal(await memberSeats.count(), 2);
   assert.equal(
-    await memberRows.filter({ hasText: '离线' }).count(),
+    await page.getByText('离线 · 未准备').count(),
     1,
   );
   await captureLayout(page, 'offline');
