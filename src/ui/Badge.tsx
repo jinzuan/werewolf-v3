@@ -8,5 +8,10 @@ type BadgeProps = HTMLAttributes<HTMLSpanElement> & {
 };
 
 export function Badge({ tone = 'neutral', className, ...props }: BadgeProps) {
-  return <span className={cn('v3-badge', `v3-badge--${tone}`, className)} {...props} />;
+  return (
+    <span
+      className={cn('v3-badge', `v3-badge--${tone}`, className)}
+      {...props}
+    />
+  );
 }

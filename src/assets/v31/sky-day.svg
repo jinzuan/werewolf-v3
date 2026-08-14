@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 720" role="img" aria-labelledby="title">
+  <title id="title">月光森林日间天空</title>
+  <defs>
+    <linearGradient id="day" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#DDEBFF"/>
+      <stop offset="0.64" stop-color="#FFF4D6"/>
+      <stop offset="1" stop-color="#F2E4C2"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="72%" cy="22%" r="18%">
+      <stop offset="0" stop-color="#FFF9E8" stop-opacity=".95"/>
+      <stop offset="1" stop-color="#FFF9E8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1600" height="720" fill="url(#day)"/>
+  <rect width="1600" height="720" fill="url(#sun)"/>
+  <path d="M0 366c180-66 304-63 473 6 156 64 298 64 462-2 206-99 409-71 665 15v335H0Z" fill="#CFE4D0" opacity=".58"/>
+  <path d="M0 476c206-68 391-42 567 32 187 78 353 68 510-4 166-76 332-69 523 2v214H0Z" fill="#9BC7A7" opacity=".48"/>
+</svg>

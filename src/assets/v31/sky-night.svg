@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 720" role="img" aria-labelledby="title">
+  <title id="title">月光森林夜间天空</title>
+  <defs>
+    <linearGradient id="night" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#10172C"/>
+      <stop offset="0.62" stop-color="#17213B"/>
+      <stop offset="1" stop-color="#202C48"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="73%" cy="22%" r="20%">
+      <stop offset="0" stop-color="#FFD166" stop-opacity=".26"/>
+      <stop offset="1" stop-color="#FFD166" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1600" height="720" fill="url(#night)"/>
+  <rect width="1600" height="720" fill="url(#halo)"/>
+  <g fill="#FFF4D6" opacity=".7">
+    <circle cx="168" cy="138" r="3"/><circle cx="382" cy="92" r="2"/><circle cx="570" cy="174" r="3"/>
+    <circle cx="1010" cy="102" r="2"/><circle cx="1260" cy="166" r="3"/><circle cx="1450" cy="84" r="2"/>
+  </g>
+  <path d="M0 382c180-66 304-63 473 6 156 64 298 64 462-2 206-99 409-71 665 15v319H0Z" fill="#263453" opacity=".78"/>
+  <path d="M0 492c206-68 391-42 567 32 187 78 353 68 510-4 166-76 332-69 523 2v200H0Z" fill="#10172C" opacity=".72"/>
+</svg>

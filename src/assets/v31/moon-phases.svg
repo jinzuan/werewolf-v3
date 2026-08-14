@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80" role="img" aria-labelledby="title">
+  <title id="title">月相阶段</title>
+  <g fill="#FFD166" stroke="#8B6B4A" stroke-width="4">
+    <circle cx="40" cy="40" r="25"/><path d="M40 15a25 25 0 0 0 0 50 25 25 0 0 1 0-50Z" fill="#17213B"/>
+    <circle cx="120" cy="40" r="25"/><path d="M120 15a25 25 0 0 0 0 50 25 25 0 0 0 0-50Z" fill="#17213B"/>
+    <circle cx="200" cy="40" r="25"/><path d="M200 15a25 25 0 0 1 0 50 25 25 0 0 1 0-50Z" fill="#17213B"/>
+    <circle cx="280" cy="40" r="25" fill="#17213B"/><path d="M280 15a25 25 0 0 1 0 50 25 25 0 0 1 0-50Z" fill="#FFD166"/>
+  </g>
+</svg>

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" role="img" aria-labelledby="title">
+  <title id="title">月光森林村庄</title>
+  <g stroke="#8B6B4A" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M35 328c58-82 85-153 111-252 27 75 48 148 91 252" fill="#356B52" stroke-width="8"/>
+    <path d="M1065 328c48-99 74-177 96-276 34 91 54 178 94 276" fill="#356B52" stroke-width="8"/>
+    <path d="M350 328V197l113-84 114 84v131Z" fill="#C98962" stroke-width="7"/>
+    <path d="m327 202 136-110 137 110" fill="#8E4A6B" stroke-width="9"/>
+    <path d="M415 328v-75h67v75M514 200h30v43h-30Z" fill="#FFF4D6" stroke-width="6"/>
+    <path d="M720 328V202l89-70 91 70v126Z" fill="#E3B96F" stroke-width="7"/>
+    <path d="m695 206 114-100 115 100" fill="#356B52" stroke-width="9"/>
+    <path d="M778 328v-72h62v72M829 221h26v37h-26Z" fill="#FFF4D6" stroke-width="6"/>
+    <path d="M245 330h730" fill="none" stroke="#8B6B4A" stroke-width="13"/>
+  </g>
+  <g fill="#FFD166" stroke="#8B6B4A" stroke-width="5">
+    <circle cx="600" cy="260" r="25"/><path d="M600 215v-18M600 303v18M555 260h-18M645 260h18"/>
+  </g>
+</svg>
