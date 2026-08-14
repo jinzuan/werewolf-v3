@@ -1,13 +1,7 @@
 {
   "version": 1,
-  "count": 34,
+  "count": 33,
   "files": [
-    {
-      "path": "README.md",
-      "role": "common",
-      "bytes": 4355,
-      "sha256": "0e820e805ac511f98e0176f717c50a5dc16896be14487c4f6017ace02660120a"
-    },
     {
       "path": "common_1.md",
       "role": "common",
