@@ -4,7 +4,7 @@ import { Badge } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { ProgressBar } from '../../ui/ProgressBar';
 
-interface TopStatusBarProps {
+export interface TopStatusBarProps {
   eyebrow?: string;
   title: string;
   phase?: string;
@@ -38,7 +38,7 @@ export function TopStatusBar({
           <div className="v3-phase-track__meta">
             <Badge tone="purple">{phase}</Badge>
             {countdown ? <strong className="v3-numeric">{countdown}</strong> : null}
-            {live ? <Badge tone="danger">LIVE</Badge> : null}
+            {live ? <Badge tone="danger">实时</Badge> : null}
           </div>
             {typeof progress === 'number' ? (
               <ProgressBar value={progress} label={`${phase}阶段进度`} />

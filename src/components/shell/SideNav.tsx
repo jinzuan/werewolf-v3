@@ -1,14 +1,15 @@
 import { Gamepad2, House, Settings } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { useV3Store } from '../../stores/v3Store';
+import { roomPath } from '../../app/routes/roomRouting';
 
 export function SideNav() {
   const roomCode = useV3Store((state) => state.session?.roomCode);
   const navItems = [
-    { to: '/', label: '大厅', icon: House },
+    { to: '/lobby', label: '大厅', icon: House },
     ...(roomCode
       ? [{
-          to: `/room/${roomCode}`,
+          to: roomPath(roomCode),
           label: '房间',
           icon: Gamepad2,
         }]
@@ -22,7 +23,7 @@ export function SideNav() {
         <NavLink
           key={to}
           to={to}
-          end={to === '/'}
+          end={to === '/lobby'}
           title={label}
           className={({ isActive }) => isActive ? 'is-active' : undefined}
         >

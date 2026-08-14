@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react';
+import { RoomHeader } from '../../features/room-shell/RoomHeader';
+import { useRoomShell } from '../../features/room-shell/RoomLayout';
 import { SideNav } from './SideNav';
 import { TopStatusBar } from './TopStatusBar';
 
@@ -14,9 +16,11 @@ interface AppShellProps {
 }
 
 export function AppShell({ children, ...status }: AppShellProps) {
+  const inRoom = useRoomShell();
+
   return (
     <div className="v3-app-shell">
-      <TopStatusBar {...status} />
+      {inRoom ? <RoomHeader {...status} /> : <TopStatusBar {...status} />}
       <div className="v3-app-shell__body">
         <SideNav />
         <main className="v3-page">{children}</main>
