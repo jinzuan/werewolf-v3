@@ -1,0 +1,118 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import {
+  DOMAIN_EVENT_MESSAGES,
+  DOMAIN_EVENT_MESSAGE_KEYS,
+  UNKNOWN_EVENT_MESSAGE,
+  describeEvent,
+} from '../eventMessages';
+import {
+  ACTION_LABELS,
+  EVENT_VISIBILITY_LABELS,
+  NIGHT_STAGE_LABELS,
+  ROLE_LABELS,
+  ROOM_ACTION_LABELS,
+  ROOM_MODE_LABELS,
+  ROOM_STATUS_LABELS,
+  WIZARD_STATUS_LABELS,
+} from '../domainLabels';
+import {
+  PROTOCOL_ERROR_MESSAGES,
+  getErrorMessage,
+  getErrorPresentation,
+} from '../errorMessages';
+import { formatEventTime, phaseLabel } from '../messageFormatter';
+import { scanI18nText } from '../i18nScan';
+import { DOMAIN_EVENT_TYPES } from '../../../../shared/events';
+import { PROTOCOL_ERROR_CODES } from '../../../../shared/protocol';
+import { GAME_ACTIONS, NIGHT_STAGES } from '../../../../shared/types';
+
+const event = (eventType: string, payload: Record<string, unknown> = {}) => ({
+  eventId: 'event-1',
+  roomId: 'room-1',
+  gameId: 'game-1',
+  sequence: 1,
+  occurredAt: 0,
+  phase: 'night' as const,
+  stage: 'resolve' as const,
+  eventType,
+  payload,
+  visibility: 'public_timeline' as const,
+  correlationId: 'test',
+  schemaVersion: 1 as const,
+}) as Parameters<typeof describeEvent>[0];
+
+test('领域枚举均有中文展示值', () => {
+  for (const value of Object.values(ROLE_LABELS)) assert.match(value, /[\u4e00-\u9fff]/);
+  for (const value of Object.values(ROOM_STATUS_LABELS)) assert.match(value, /[\u4e00-\u9fff]/);
+  for (const value of Object.values(WIZARD_STATUS_LABELS)) assert.match(value, /[\u4e00-\u9fff]/);
+  for (const value of Object.values(ROOM_MODE_LABELS)) assert.match(value, /[\u4e00-\u9fff]/);
+  for (const value of Object.values(ROOM_ACTION_LABELS)) assert.match(value, /[\u4e00-\u9fff]/);
+  for (const value of Object.values(ACTION_LABELS)) assert.match(value, /[\u4e00-\u9fff]/);
+  for (const value of Object.values(NIGHT_STAGE_LABELS)) assert.match(value, /[\u4e00-\u9fff]/);
+  for (const value of Object.values(EVENT_VISIBILITY_LABELS)) assert.match(value, /[\u4e00-\u9fff]/);
+
+  assert.deepEqual(Object.keys(ACTION_LABELS).sort(), [...GAME_ACTIONS].sort());
+  assert.deepEqual(Object.keys(NIGHT_STAGE_LABELS).sort(), [...NIGHT_STAGES].sort());
+});
+
+test('当前事件和协议错误均有穷举 presentation', () => {
+  for (const type of DOMAIN_EVENT_TYPES) {
+    assert.ok(DOMAIN_EVENT_MESSAGE_KEYS[type]);
+    assert.ok(DOMAIN_EVENT_MESSAGES[type]);
+  }
+  for (const code of PROTOCOL_ERROR_CODES) {
+    assert.ok(PROTOCOL_ERROR_MESSAGES[code]);
+    assert.notEqual(getErrorMessage(code), code);
+  }
+});
+
+test('事件模板只显示安全中文，未知事件不回显原始值', () => {
+  const playerName = (id: string | null) => id === 'p1' ? '一号玩家' : '未知目标';
+  assert.equal(
+    describeEvent(event('game.started', { day: 2 }), playerName),
+    '对局开始，进入第 2 夜。',
+  );
+  assert.equal(
+    describeEvent(event('night.resolved', { peacefulNight: true }), playerName),
+    '天亮了，昨夜是平安夜。',
+  );
+  assert.equal(
+    describeEvent(event('future.internal_event'), playerName),
+    UNKNOWN_EVENT_MESSAGE,
+  );
+  assert.equal(
+    describeEvent(event('night.resolution_detail'), playerName),
+    UNKNOWN_EVENT_MESSAGE,
+  );
+  assert.match(
+    describeEvent(event('night.resolution_detail'), playerName, { advanced: true }),
+    /夜间结算明细/,
+  );
+});
+
+test('未知错误码使用安全兜底并提供恢复意图', () => {
+  assert.equal(getErrorMessage('not-a-protocol-code'), '请求未完成，请稍后重试。');
+  assert.equal(getErrorMessage('__proto__'), '请求未完成，请稍后重试。');
+  assert.deepEqual(getErrorPresentation('ROOM_REVISION_CONFLICT'), {
+    message: '房间设置刚刚发生变化，请确认最新内容。',
+    recovery: 'refresh_room',
+  });
+});
+
+test('时间和阶段格式化不暴露内部值', () => {
+  assert.equal(formatEventTime(Number.NaN), '时间未知');
+  assert.match(formatEventTime(0), /^\d{2}:\d{2}:\d{2}$/);
+  assert.equal(phaseLabel(null), '等待数据');
+  assert.equal(phaseLabel({ phase: 'night', day: 2 } as never), '第 2 夜');
+});
+
+test('汉化扫描能拦截原始枚举和技术词', () => {
+  assert.deepEqual(scanI18nText('当前页面显示 alive、snapshot 和 ViewerContext'), [
+    { value: 'alive', index: 7 },
+    { value: 'snapshot', index: 13 },
+    { value: 'ViewerContext', index: 24 },
+  ]);
+  assert.deepEqual(scanI18nText('当前页面显示：已准备、对局中。'), []);
+});
