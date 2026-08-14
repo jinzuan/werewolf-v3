@@ -13,7 +13,6 @@ import type {
   RoomMutationCommand,
   RoomSummary,
   RoomView,
-  V3ServerMessage,
 } from '../../../shared/protocol';
 import {
   adoptV3Identity,
@@ -167,11 +166,6 @@ let transportCleanup: (() => void) | null = null;
 let bufferedGameMessages: GameEventsMessage[] = [];
 
 export const useV3Store = create<V3Store>()((set, get) => {
-  const setSession = (session: V3Session | null): void => {
-    persistSession(session);
-    set({ session });
-  };
-
   const setCursor = (
     session: V3Session,
     gameId: string | undefined,

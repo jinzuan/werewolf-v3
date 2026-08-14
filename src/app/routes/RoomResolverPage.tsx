@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { AppShell } from '../../components/shell/AppShell';
 import { useV3Store } from '../../stores/v3Store';
 import { Card } from '../../ui/Card';

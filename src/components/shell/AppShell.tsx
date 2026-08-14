@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { RoomHeader } from '../../features/room-shell/RoomHeader';
-import { useRoomShell } from '../../features/room-shell/RoomLayout';
+import { useRoomShell } from '../../features/room-shell/RoomShellContext';
 import { SideNav } from './SideNav';
 import { TopStatusBar } from './TopStatusBar';
 

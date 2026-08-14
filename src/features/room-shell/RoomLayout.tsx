@@ -1,7 +1,6 @@
-import { createContext, useContext, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { Outlet } from 'react-router-dom';
-
-const RoomShellContext = createContext(false);
+import { RoomShellContext } from './RoomShellContext';
 
 /** Marks the nested route so existing V3 pages consume the shared header. */
 export function RoomLayout({ children }: { children?: ReactNode }) {
@@ -11,6 +10,3 @@ export function RoomLayout({ children }: { children?: ReactNode }) {
     </RoomShellContext.Provider>
   );
 }
-
-export const useRoomShell = (): boolean => useContext(RoomShellContext);
-

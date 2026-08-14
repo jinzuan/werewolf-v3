@@ -554,16 +554,22 @@ export function RoomWizardPage() {
     return validateWizardStep(draft, currentStep, catalog);
   }, [catalog, currentStep, draft]);
 
-  const visibleIssues = currentStep === 'confirm'
-    ? [...localIssues, ...serverIssues]
-    : [...localIssues.filter((item) => item.step === currentStep), ...serverIssues.filter((item) => item.step === currentStep)];
+  const visibleIssues = useMemo(
+    () => currentStep === 'confirm'
+      ? [...localIssues, ...serverIssues]
+      : [
+          ...localIssues.filter((item) => item.step === currentStep),
+          ...serverIssues.filter((item) => item.step === currentStep),
+        ],
+    [currentStep, localIssues, serverIssues],
+  );
 
   useEffect(() => {
     if (visibleIssues.length === 0 || typeof document === 'undefined') return;
     const block = document.querySelector<HTMLElement>(`[data-wizard-block="${issueBlock(visibleIssues[0].path)}"]`);
     block?.focus({ preventScroll: true });
     block?.scrollIntoView({ block: 'nearest' });
-  }, [currentStep, visibleIssues.length]);
+  }, [currentStep, visibleIssues]);
 
   useEffect(() => {
     if (!draft || !catalog || currentStep === 'players') return;
