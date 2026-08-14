@@ -1,204 +1,210 @@
 {
   "version": 1,
-  "count": 33,
+  "count": 34,
   "files": [
+    {
+      "path": "README.md",
+      "role": "common",
+      "bytes": 4355,
+      "sha256": "0e820e805ac511f98e0176f717c50a5dc16896be14487c4f6017ace02660120a"
+    },
     {
       "path": "common_1.md",
       "role": "common",
-      "bytes": 2437,
-      "sha256": "5c2878f3cbbac3eb66f9531e36b294b031e3c3f7e9d4c4f61a99467f03b8c471"
+      "bytes": 2396,
+      "sha256": "0b774dd2ba381bfddf216bbf74e84fee5a5b9c9ac1704fda0a5b7934c29b9471"
     },
     {
       "path": "common_2.md",
       "role": "common",
-      "bytes": 2354,
-      "sha256": "e76fe4662a510d766862796e3af11c6b68e3eafed00819a85b0bd55e16e1b447"
+      "bytes": 2314,
+      "sha256": "803666fc0ccbd978de1d4f4b2ae5197328c61b3efcf361640c5ab49ca08f45cf"
     },
     {
       "path": "common_3.md",
       "role": "common",
-      "bytes": 2617,
-      "sha256": "db097a9fae7d663dab331566d017c1a8440df85420d31c5676380aaf0df3bc31"
+      "bytes": 2573,
+      "sha256": "922890c372fd04ada90a67fc46a45ee57b66463767d9a41079dc4c1c3bb25425"
     },
     {
       "path": "guard_1.md",
       "role": "guardian",
-      "bytes": 2536,
-      "sha256": "1e5ddece06c9aaf45f745392852aa3de0d0d1c8ed91a84abe6eaa7b613ff6020"
+      "bytes": 2493,
+      "sha256": "3a17ab0a4977c43d6535fdece72edfd54b377a0c8c829c17d0c5dbbac4dda899"
     },
     {
       "path": "guard_2.md",
       "role": "guardian",
-      "bytes": 2304,
-      "sha256": "6eba95871c20e8c0d4026608ed05f1498f08b3772e3e4bd72f9d19ccb8e42bff"
+      "bytes": 2266,
+      "sha256": "fa241a62f6283e86a71cb7933a76c087c165af4a4c0bbd6a21e5452740f8ac19"
     },
     {
       "path": "guard_3.md",
       "role": "guardian",
-      "bytes": 2412,
-      "sha256": "ef839455a0292f9368c1e13a83998be5d9a867fdbba10d21b78f4abd28fce909"
+      "bytes": 2371,
+      "sha256": "8d450e3efc6a18ff4760684b7b2548e2d521b1a6dcdf228bdb52f13825c96d54"
     },
     {
       "path": "guard_4.md",
       "role": "guardian",
-      "bytes": 2365,
-      "sha256": "3b8740d0ec240f4b0f4274cf309b32ee123a54e3830345eb379eac37467d3921"
+      "bytes": 2321,
+      "sha256": "d20faeb22f47bf3ff9ed3f4abb1b24cf5f645131ebc7ad2a12cb257deb4e300f"
     },
     {
       "path": "hunter_1.md",
       "role": "hunter",
-      "bytes": 2533,
-      "sha256": "94fde8efedcb16a15aedc735d5be88804a6ace8cdd0c2395fd651612af62cdd6"
+      "bytes": 2491,
+      "sha256": "fac75008dc2545abecd8430f5286e94cdd8d285a6bb7714788a96fc8c7657570"
     },
     {
       "path": "hunter_2.md",
       "role": "hunter",
-      "bytes": 2131,
-      "sha256": "a9b9ca33896db5e2c2361dc44f5320526a39952740889fa63125ad44ac36e94f"
+      "bytes": 2093,
+      "sha256": "4979c9b49b7361b0b7c0dc8523bba081bdfe711418c3d0ebae3ea92357daec3c"
     },
     {
       "path": "hunter_3.md",
       "role": "hunter",
-      "bytes": 2207,
-      "sha256": "61ba42d7634afbf554817c518f77325cac19075355017b83283878ddbd2ca47e"
+      "bytes": 2166,
+      "sha256": "caaa294eebab90bcc665770075b7a8c52590dbac8b972162cf1dce041901ac48"
     },
     {
       "path": "hunter_4.md",
       "role": "hunter",
-      "bytes": 2064,
-      "sha256": "2bd9eb9ec25324195db8cb65238ad1ae9b5b5fa16b4fbaef08b9dbcb0e203642"
+      "bytes": 2022,
+      "sha256": "c893613849196adcac6172d8b9c71d2c985bf1393a8c1b8bd2e4027ceefb3f40"
     },
     {
       "path": "seer_1.md",
       "role": "seer",
-      "bytes": 2589,
-      "sha256": "9d3ec9dc999b80884cb2e4a06b413f16f1463b2c06be906c597cf12a9cd23609"
+      "bytes": 2547,
+      "sha256": "d0a664b2c64d6c8cd480160b04d7676fd921c5e71778cacc8c11ef5060ac4e02"
     },
     {
       "path": "seer_2.md",
       "role": "seer",
-      "bytes": 2260,
-      "sha256": "a9fd55e138afca529ea0d17686cf32cff335b8372da6f76bcc415f7f8633725e"
+      "bytes": 2222,
+      "sha256": "2d68f3caf0ba3d3b635df54855699b273f752fd408b13ceaaf1fe76586d34ecf"
     },
     {
       "path": "seer_3.md",
       "role": "seer",
-      "bytes": 2308,
-      "sha256": "006aaba696a2578af6e8d1acb059976c43227325029d6d30d4f1a4b94da7a52d"
+      "bytes": 2268,
+      "sha256": "ac35af224af33022c692b934b227b57513740baee88c2e7dad80e577326e37a5"
     },
     {
       "path": "seer_4.md",
       "role": "seer",
-      "bytes": 2200,
-      "sha256": "9644e1eab551af6b8acfa9b50547c81eceeceb0ee5972bd93c712aaef6f16ec3"
+      "bytes": 2159,
+      "sha256": "89226824e435df91511ed346e5d70bafb3a0202c8367a655c370e5fbc1261f47"
     },
     {
       "path": "seer_5.md",
       "role": "seer",
-      "bytes": 2537,
-      "sha256": "5bc7f1a9e8b5b7ecf31b3450c18c9dd6e2f09cfc8b632ed59057ac58032ae391"
+      "bytes": 2494,
+      "sha256": "59dc594f1b941894e4edfe87bfdcc5723ef468dd9c607221a778a5f786d17e50"
     },
     {
       "path": "villager_1.md",
       "role": "villager",
-      "bytes": 2400,
-      "sha256": "7b2a8d6fafbba41cefcfe19e5af400b02464b41a0771a308707ef827a8cb7927"
+      "bytes": 2359,
+      "sha256": "034d9edb3110649db8bae93aa9389c60a64bfe08fcd0d4da8e5a5bf2088a9a2c"
     },
     {
       "path": "villager_2.md",
       "role": "villager",
-      "bytes": 2184,
-      "sha256": "4b47b37d09c9386a71ca8c6bef4547777bae810cd3539d906ee4b34a1390d240"
+      "bytes": 2146,
+      "sha256": "29fdf0876f02f07d5c5ba74cf3dac7ee03b953b45b4abdc5e7ff7639dcb4e553"
     },
     {
       "path": "villager_3.md",
       "role": "villager",
-      "bytes": 2291,
-      "sha256": "beff92f1bd58efa0dfa753f0e9aed597f665ccb347fb6da0714697a32995d8d4"
+      "bytes": 2250,
+      "sha256": "676c4ca534192d935e7dbf6a84ae16db1910ffadf759727ffaa4c9e7cbcb0fa2"
     },
     {
       "path": "villager_4.md",
       "role": "villager",
-      "bytes": 2230,
-      "sha256": "632ebef1a65a10ec5032d46719712a9341619911a3a7f6754e3a67ff983d1e60"
+      "bytes": 2190,
+      "sha256": "edb52aa5a1a2d858b28813a8fffff9fd4bb63a32526c87332cf1bdfd237c2b65"
     },
     {
       "path": "villager_5.md",
       "role": "villager",
-      "bytes": 2218,
-      "sha256": "7dea03de32917fc88487ea6d5c5124e6c220b30f3b67688ea638cc423bf1367a"
+      "bytes": 2177,
+      "sha256": "809ea7eda10fc44fa954dae8de2f94167a3190a0fa1c8011a105d6c015eed32f"
     },
     {
       "path": "villager_6.md",
       "role": "villager",
-      "bytes": 2174,
-      "sha256": "6a0d715ae58e8e4b6320660d35e57a1772ec517c9f217aa35810f17800511db9"
+      "bytes": 2133,
+      "sha256": "5879ab93dfb0405b39e8c2460eff661ca00d57d7ce8220d034294adf61346ab3"
     },
     {
       "path": "witch_1.md",
       "role": "witch",
-      "bytes": 2529,
-      "sha256": "dcc9381c1aa65e32a337e1d77819ca92d082a7b25d95e434019a9382ec3787bb"
+      "bytes": 2488,
+      "sha256": "6b7b32d9a3fc448a7d58cb34215fd691d061fab5576c90f552fb63fe2f5158ec"
     },
     {
       "path": "witch_2.md",
       "role": "witch",
-      "bytes": 2198,
-      "sha256": "bb638a2bae305e125572de0bd56d53ae883796e072e6528579b05ac3a05dd587"
+      "bytes": 2160,
+      "sha256": "d791ffeaf7c44f4ae044a20178803f7db5e75eeb9ebb095dea29af299ba540ba"
     },
     {
       "path": "witch_3.md",
       "role": "witch",
-      "bytes": 2312,
-      "sha256": "828e3b4d42329c12ef1109f761f8d0c6a54a95394a42022fc38d9f98a215785d"
+      "bytes": 2272,
+      "sha256": "484ceb86ffbcec866594f832629047e4cbb129a4a21f180dd71be50682bfb4e9"
     },
     {
       "path": "witch_4.md",
       "role": "witch",
-      "bytes": 2398,
-      "sha256": "cd10e4dba007edf1e2317db8b9266d96263777aefe014e831760f0dc0aa503b0"
+      "bytes": 2356,
+      "sha256": "514a46aee24f6147c6b81c238dbd5711fb92c1059649b5f48b7ec87deee57f87"
     },
     {
       "path": "wolf_1.md",
       "role": "wolf",
-      "bytes": 2384,
-      "sha256": "bebbaae3c55302ec90a4231870d1f124d415abe6cc4ce2954ad42b93bf220cbd"
+      "bytes": 2345,
+      "sha256": "3aed7a49b07ee9494a18d50f4d3ec1642129ad77b5eb1c0c6fd7e712a0c0cd90"
     },
     {
       "path": "wolf_2.md",
       "role": "wolf",
-      "bytes": 2299,
-      "sha256": "3d2abf5e2194e87d77ff3cc3dd3364d160db083f4908ca2f5eab7392c2835203"
+      "bytes": 2261,
+      "sha256": "7c36d77b7c15eedd78ba64ade15fb4277e5edeae712eba7d582edbc01df1acdd"
     },
     {
       "path": "wolf_3.md",
       "role": "wolf",
-      "bytes": 2306,
-      "sha256": "108900c0d0129aaa2807fe2ba0b4b06149a94cb5cb4940f493b80db483d4cd44"
+      "bytes": 2266,
+      "sha256": "b61c7f34fcfa6d32c2ad4013bd430622e9f1f31c9e848a8befd46d1bd3176d0f"
     },
     {
       "path": "wolf_4.md",
       "role": "wolf",
-      "bytes": 2360,
-      "sha256": "9b342be6da651d2e3e94a6358a89134991c258508e2428b89d1264caa1444c0b"
+      "bytes": 2320,
+      "sha256": "691ec166742989e3484300d59b33b823a15f7ccc5782b64998e0adc42d798723"
     },
     {
       "path": "wolf_5.md",
       "role": "wolf",
-      "bytes": 2294,
-      "sha256": "af3a762404f1252c8043b6c5d380d1ec2f37907ec74d55ca25822d932b20f072"
+      "bytes": 2254,
+      "sha256": "89e80ab35749de3f269c01fcbf258ff73d0d5370677a21484e6892346bf1139f"
     },
     {
       "path": "wolf_6.md",
       "role": "wolf",
-      "bytes": 2257,
-      "sha256": "76d34cec6622c2c25fa7efb7b330a500e7484f4c3ba6876f03a4d8fe6e9271e3"
+      "bytes": 2216,
+      "sha256": "bc306204f188b6172d3bed346c1e503cfb82a681c2abf5169516239276c5ac03"
     },
     {
       "path": "wolf_7.md",
       "role": "wolf",
-      "bytes": 2391,
-      "sha256": "76aff735b36269b9ad97af4e4c2638fb09614041f6c480c04e9f61fb8d7abe13"
+      "bytes": 2350,
+      "sha256": "c9e612932c3e5c04a03bfa7da31c43501eea66d2047e46e9aa7188dde59195fb"
     }
   ]
 }
