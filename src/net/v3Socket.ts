@@ -2,17 +2,22 @@ import { io, type Socket } from 'socket.io-client';
 import type {
   GameEventsMessage,
   GameSnapshotMessage,
+  RoomSnapshotMessage,
+  V3ServerMessage,
 } from '../../shared/protocol';
 import type {
   CreateRoomAck,
+  CreateRoomOptionsV31,
   GameCommand,
   GameCommandAck,
   JoinRoomAck,
   ProtocolAck,
+  ProtocolAckError,
   ResumeRoomAck,
   RoomCommand,
-  RoomCreateOptions,
   RoomListAck,
+  RoomMutationCommand,
+  RoomReadCommand,
   RoomViewAck,
   SnapshotAck,
   SpectatorCommand,
@@ -20,31 +25,75 @@ import type {
 } from '../../shared/protocol';
 import { getServerUrl } from './socket';
 
+/**
+ * The V3 socket adapter is deliberately the only place that knows socket.io
+ * event names.  Server pushes keep their discriminant all the way to the
+ * store; the discriminant is preserved on every incoming envelope.
+ */
+
 type SocketAuth = {
   joinToken?: string;
   resumeToken?: string;
 };
 
-type ErrorMessage = Extract<
-  ProtocolAck,
-  { ok: false }
->;
+type ClientCommand = V3Command & {
+  actorName?: string;
+  avatarId?: string;
+};
+
+type RoomCommandAck = ProtocolAck<{ room?: RoomSnapshotMessage['room'] }>;
 
 let socket: Socket | null = null;
 let authKey = '';
 let currentAuth: SocketAuth = {};
+
 const connectionListeners = new Set<(connected: boolean) => void>();
+const roomListeners = new Set<(message: RoomSnapshotMessage) => void>();
 const eventListeners = new Set<(message: GameEventsMessage) => void>();
-const snapshotListeners = new Set<
-  (snapshot: GameSnapshotMessage['snapshot']) => void
->();
-const errorListeners = new Set<(error: ErrorMessage) => void>();
+const snapshotListeners = new Set<(message: GameSnapshotMessage) => void>();
+const messageListeners = new Set<(message: V3ServerMessage) => void>();
+const errorListeners = new Set<(error: ProtocolAckError) => void>();
 
 const keyFor = (auth: SocketAuth): string =>
   JSON.stringify({
     joinToken: auth.joinToken ?? '',
     resumeToken: auth.resumeToken ?? '',
   });
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const isRoomSnapshotMessage = (
+  message: unknown,
+): message is RoomSnapshotMessage =>
+  isRecord(message) && message.type === 'room.snapshot' && 'room' in message;
+
+const isGameEventsMessage = (
+  message: unknown,
+): message is GameEventsMessage =>
+  isRecord(message) &&
+  message.type === 'game.events' &&
+  typeof message.roomId === 'string' &&
+  typeof message.gameId === 'string' &&
+  Array.isArray(message.events);
+
+const isGameSnapshotMessage = (
+  message: unknown,
+): message is GameSnapshotMessage =>
+  isRecord(message) &&
+  message.type === 'game.snapshot' &&
+  'snapshot' in message;
+
+const emitMessage = (message: V3ServerMessage): void => {
+  for (const listener of messageListeners) listener(message);
+  if (message.type === 'room.snapshot') {
+    for (const listener of roomListeners) listener(message);
+  } else if (message.type === 'game.events') {
+    for (const listener of eventListeners) listener(message);
+  } else if (message.type === 'game.snapshot') {
+    for (const listener of snapshotListeners) listener(message);
+  }
+};
 
 const attachListeners = (active: Socket): void => {
   active.on('connect', () => {
@@ -53,33 +102,24 @@ const attachListeners = (active: Socket): void => {
   active.on('disconnect', () => {
     for (const listener of connectionListeners) listener(false);
   });
-  active.on(
-    'v3:events',
-    (message: Omit<GameEventsMessage, 'type'>) => {
-      const normalized: GameEventsMessage = {
-        type: 'game.events',
-        ...message,
-      };
-      for (const listener of eventListeners) listener(normalized);
-    },
-  );
-  active.on(
-    'v3:snapshot',
-    (message: Omit<GameSnapshotMessage, 'type'>) => {
-      for (const listener of snapshotListeners) {
-        listener(message.snapshot);
-      }
-    },
-  );
-  active.on('v3:error', (error: ErrorMessage) => {
-    for (const listener of errorListeners) listener(error);
+  active.on('v3:room', (message: unknown) => {
+    if (isRoomSnapshotMessage(message)) emitMessage(message);
+  });
+  active.on('v3:events', (message: unknown) => {
+    if (isGameEventsMessage(message)) emitMessage(message);
+  });
+  active.on('v3:snapshot', (message: unknown) => {
+    if (isGameSnapshotMessage(message)) emitMessage(message);
+  });
+  active.on('v3:error', (error: unknown) => {
+    if (!isRecord(error) || error.ok !== false) return;
+    for (const listener of errorListeners) {
+      listener(error as unknown as ProtocolAckError);
+    }
   });
 };
 
-const openConnection = (
-  auth?: SocketAuth,
-  forceFresh = false,
-): Socket => {
+const openConnection = (auth?: SocketAuth, forceFresh = false): Socket => {
   if (socket && auth === undefined && !forceFresh) return socket;
   const nextAuth = auth ?? currentAuth;
   const nextKey = keyFor(nextAuth);
@@ -90,7 +130,7 @@ const openConnection = (
     socket.disconnect();
   }
   authKey = nextKey;
-  currentAuth = nextAuth;
+  currentAuth = { ...nextAuth };
   socket = io(getServerUrl(), {
     auth: nextAuth,
     transports: ['websocket', 'polling'],
@@ -116,18 +156,17 @@ export const resetV3Connection = (): void => {
 };
 
 export const adoptV3Identity = (resumeToken: string): void => {
-  if (!socket) return;
   const auth = { resumeToken };
-  socket.auth = auth;
   currentAuth = auth;
   authKey = keyFor(auth);
+  if (socket) socket.auth = auth;
 };
 
 const commandMeta = (actorId: string, roomId?: string) => ({
   commandId: crypto.randomUUID(),
   actorId,
   sentAt: Date.now(),
-  roomId,
+  ...(roomId ? { roomId } : {}),
 });
 
 const emitAck = <TAck extends { ok: boolean }>(
@@ -139,6 +178,29 @@ const emitAck = <TAck extends { ok: boolean }>(
     active.emit(event, payload, (response: TAck) => resolve(response));
   });
 
+const roomReadRequest = (
+  actorId: string,
+  command: RoomReadCommand,
+  actorName?: string,
+): ClientCommand => ({
+  meta: commandMeta(actorId),
+  command,
+  ...(actorName ? { actorName } : {}),
+});
+
+const roomMutationRequest = (
+  actorId: string,
+  roomId: string,
+  expectedRoomRevision: number,
+  command: RoomMutationCommand,
+): ClientCommand => ({
+  meta: {
+    ...commandMeta(actorId, roomId),
+    expectedRoomRevision,
+  },
+  command,
+});
+
 export const subscribeV3Connection = (
   onChange: (connected: boolean) => void,
 ): (() => void) => {
@@ -148,52 +210,72 @@ export const subscribeV3Connection = (
   return () => connectionListeners.delete(onChange);
 };
 
+export const subscribeV3Messages = (
+  onMessage: (message: V3ServerMessage) => void,
+): (() => void) => {
+  messageListeners.add(onMessage);
+  openConnection();
+  return () => messageListeners.delete(onMessage);
+};
+
+export const subscribeV3RoomSnapshots = (
+  onMessage: (message: RoomSnapshotMessage) => void,
+): (() => void) => {
+  roomListeners.add(onMessage);
+  openConnection();
+  return () => roomListeners.delete(onMessage);
+};
+
 export const subscribeV3Events = (
   onMessage: (message: GameEventsMessage) => void,
 ): (() => void) => {
   eventListeners.add(onMessage);
+  openConnection();
   return () => eventListeners.delete(onMessage);
 };
 
 export const subscribeV3Snapshots = (
-  onSnapshot: (snapshot: GameSnapshotMessage['snapshot']) => void,
+  onMessage: (message: GameSnapshotMessage) => void,
 ): (() => void) => {
-  snapshotListeners.add(onSnapshot);
-  return () => snapshotListeners.delete(onSnapshot);
+  snapshotListeners.add(onMessage);
+  openConnection();
+  return () => snapshotListeners.delete(onMessage);
 };
 
 export const subscribeV3Errors = (
-  onError: (error: ErrorMessage) => void,
+  onError: (error: ProtocolAckError) => void,
 ): (() => void) => {
   errorListeners.add(onError);
+  openConnection();
   return () => errorListeners.delete(onError);
 };
 
 export const listV3Rooms = async (): Promise<RoomListAck> =>
   emitAck<RoomListAck>(openConnection(), 'v3:rooms', {});
 
-const roomRequest = (
-  actorId: string,
-  actorName: string,
-  command: RoomCommand,
-): V3Command & { actorName: string } => ({
-  meta: commandMeta(actorId),
-  command,
-  actorName,
-});
+export const getV3Catalog = async (): Promise<
+  ProtocolAck<{ catalog: import('../../shared/roomContract').RoomCreationCatalog }>
+> =>
+  emitAck(openConnection(), 'v3:command', {
+    ...roomReadRequest('catalog-reader', {
+      type: 'catalog.get',
+      payload: {},
+    }),
+  });
 
 export const createV3Room = (
   actorId: string,
   actorName: string,
-  options: RoomCreateOptions,
+  options: CreateRoomOptionsV31,
 ): Promise<CreateRoomAck> =>
   emitAck<CreateRoomAck>(
     openConnection({}, true),
     'v3:command',
-    roomRequest(actorId, actorName, {
-      type: 'room.create',
-      payload: options,
-    }),
+    roomReadRequest(
+      actorId,
+      { type: 'room.create', payload: options },
+      actorName,
+    ),
   );
 
 export const joinV3Room = (
@@ -205,10 +287,14 @@ export const joinV3Room = (
   emitAck<JoinRoomAck>(
     openConnection({}, true),
     'v3:command',
-    roomRequest(actorId, actorName, {
-      type: 'room.join',
-      payload: { roomCode, joinToken },
-    }),
+    roomReadRequest(
+      actorId,
+      {
+        type: 'room.join',
+        payload: { roomCode, joinToken },
+      },
+      actorName,
+    ),
   );
 
 export const spectateV3Room = (
@@ -222,11 +308,11 @@ export const spectateV3Room = (
     type: 'spectator.join',
     payload: { roomCode, omniscientToken },
   };
-  const request: V3Command & { actorName: string } = {
+  const request: ClientCommand = {
     meta: commandMeta(actorId),
     command,
     actorName,
-  };
+  } as ClientCommand;
   return emitAck<JoinRoomAck>(
     openConnection({ joinToken }, true),
     'v3:command',
@@ -234,44 +320,71 @@ export const spectateV3Room = (
   );
 };
 
+/** Room recovery is room-scoped. It never borrows the spectator game replay command. */
 export const resumeV3Room = (
   actorId: string,
   actorName: string,
   roomCode: string,
-  roomId: string,
-  resumeToken: string,
-  afterSequence: number,
-): Promise<ResumeRoomAck> => {
-  const command: SpectatorCommand = {
-    type: 'spectator.resume',
-    payload: { roomCode, afterSequence },
-  };
-  const request: V3Command & { actorName: string } = {
-    meta: commandMeta(actorId, roomId),
-    command,
-    actorName,
-  };
-  return emitAck<ResumeRoomAck>(
-    openConnection({ resumeToken }),
+  _roomId?: string,
+  resumeToken?: string,
+  _afterSequence?: number,
+): Promise<ResumeRoomAck> =>
+  emitAck<ResumeRoomAck>(
+    openConnection({ resumeToken }, true),
     'v3:command',
-    request,
+    roomReadRequest(
+      actorId,
+      { type: 'room.resume', payload: { roomCode } },
+      actorName,
+    ),
   );
-};
+
+export const getV3Room = (
+  actorId: string,
+  roomCode: string,
+  roomId?: string,
+): Promise<RoomViewAck> =>
+  emitAck<RoomViewAck>(
+    openConnection(),
+    'v3:command',
+    {
+      meta: commandMeta(actorId, roomId),
+      command: { type: 'room.get', payload: { roomCode } },
+    } satisfies ClientCommand,
+  );
+
+export const sendV3RoomCommand = (
+  actorId: string,
+  roomId: string,
+  expectedRoomRevision: number,
+  command: RoomMutationCommand,
+): Promise<RoomCommandAck> =>
+  emitAck<RoomCommandAck>(
+    openConnection(),
+    'v3:command',
+    roomMutationRequest(
+      actorId,
+      roomId,
+      expectedRoomRevision,
+      command,
+    ),
+  );
 
 export const startV3Game = (
   actorId: string,
   roomId: string,
-): Promise<RoomViewAck> => {
-  const request: V3Command = {
-    meta: commandMeta(actorId, roomId),
-    command: { type: 'room.start_game', payload: {} },
-  };
-  return emitAck<RoomViewAck>(
+  expectedRoomRevision: number,
+): Promise<RoomViewAck> =>
+  emitAck<RoomViewAck>(
     openConnection(),
     'v3:command',
-    request,
+    roomMutationRequest(
+      actorId,
+      roomId,
+      expectedRoomRevision,
+      { type: 'room.start_game', payload: {} },
+    ),
   );
-};
 
 export const sendGameCommand = (
   actorId: string,
@@ -279,22 +392,20 @@ export const sendGameCommand = (
   gameId: string,
   expectedStageRevision: number,
   command: GameCommand,
-): Promise<GameCommandAck> => {
-  const request: V3Command = {
-    meta: {
-      ...commandMeta(actorId, roomId),
-      roomId,
-      gameId,
-      expectedStageRevision,
-    },
-    command,
-  };
-  return emitAck<GameCommandAck>(
+): Promise<GameCommandAck> =>
+  emitAck<GameCommandAck>(
     openConnection(),
     'v3:command',
-    request,
+    {
+      meta: {
+        ...commandMeta(actorId, roomId),
+        roomId,
+        gameId,
+        expectedStageRevision,
+      },
+      command,
+    } satisfies ClientCommand,
   );
-};
 
 export const fetchV3Snapshot = (
   roomCode: string,

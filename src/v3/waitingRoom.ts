@@ -5,12 +5,19 @@ import type {
   RoomView,
 } from '../../shared/protocol';
 
+/**
+ * RoomSummary is a lobby projection.  It can tell us that a room changed,
+ * but it cannot tell us who is in the room.  Waiting-room authority therefore
+ * comes only from RoomView broadcasts or the explicit room.get fallback.
+ */
 export const waitingRoomNeedsRefresh = (
   room: RoomView,
   summary: RoomSummary | undefined,
 ): boolean => {
-  if (room.status !== 'waiting') return false;
-  if (!summary || summary.status !== 'waiting') return true;
+  if (!['waiting', 'ready_check', 'starting'].includes(room.status)) {
+    return false;
+  }
+  if (!summary || summary.status !== room.status) return true;
 
   const playerCount = room.members.filter(
     (member) => member.kind === 'player',
@@ -21,76 +28,34 @@ export const waitingRoomNeedsRefresh = (
   const spectatorCount = room.members.filter(
     (member) => member.kind === 'spectator',
   ).length;
+  const readyCount = room.members.filter(
+    (member) => member.kind === 'player' && member.ready === true,
+  ).length;
 
   return (
     summary.playerCount !== playerCount ||
     summary.onlinePlayers !== onlinePlayers ||
-    summary.spectatorCount !== spectatorCount
+    summary.spectatorCount !== spectatorCount ||
+    summary.readyCount !== readyCount
   );
 };
 
-const reconcileMembers = (
-  room: RoomView,
-  kind: RoomMemberKind,
-  targetCount: number,
-  targetOnline?: number,
-): RoomMemberView[] => {
-  const viewerId = room.viewer.actorId;
-  const existing = room.members
-    .filter((member) => member.kind === kind)
-    .map((member) => ({ ...member }));
-  const members = [
-    ...existing.filter((member) => member.id === viewerId),
-    ...existing.filter(
-      (member) => member.id !== viewerId && member.isHost,
-    ),
-    ...existing.filter(
-      (member) =>
-        member.id !== viewerId && !member.isHost && member.connected,
-    ),
-    ...existing.filter(
-      (member) =>
-        member.id !== viewerId && !member.isHost && !member.connected,
-    ),
-  ].slice(0, targetCount);
-
-  while (members.length < targetCount) {
-    const order = members.length + 1;
-    members.push({
-      id: `summary:${room.id}:${kind}:${order}`,
-      name:
-        kind === 'player'
-          ? `玩家 ${order.toString().padStart(2, '0')}`
-          : `观战者 ${order.toString().padStart(2, '0')}`,
-      kind,
-      connected: true,
-      isHost: false,
-    });
-  }
-
-  if (targetOnline === undefined) return members;
-  return members.map((member, index) => ({
-    ...member,
-    connected: index < targetOnline,
-  }));
-};
-
+/**
+ * Kept as a source-compatible no-op for callers from the pre-M6 store.  A
+ * V3.1 summary is never allowed to manufacture members, names, seats, or
+ * connection state.  The M6 coordinator does not call this function.
+ */
 export const projectWaitingRoomSummary = (
   room: RoomView,
-  summary: RoomSummary,
-): RoomView => ({
-  ...room,
-  name: summary.roomName,
-  maxPlayers: summary.maxPlayers,
-  auto: summary.auto,
-  debugMode: summary.debugMode,
-  members: [
-    ...reconcileMembers(
-      room,
-      'player',
-      summary.playerCount,
-      summary.onlinePlayers,
-    ),
-    ...reconcileMembers(room, 'spectator', summary.spectatorCount),
-  ],
-});
+  _summary: RoomSummary,
+): RoomView => room;
+
+/** True when a member is a real player seat rather than a spectator. */
+export const isPlayerMember = (
+  member: RoomMemberView,
+): boolean => member.kind === 'player' && member.seatIndex !== null;
+
+export const membersOfKind = (
+  room: RoomView,
+  kind: RoomMemberKind,
+): RoomMemberView[] => room.members.filter((member) => member.kind === kind);

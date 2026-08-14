@@ -1,5 +1,5 @@
 import { Eye, Radio, ShieldQuestion } from 'lucide-react';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '../../components/shell/AppShell';
 import { MatchShell } from '../../components/shell/MatchShell';
 import { useV3Store } from '../../stores/v3Store';
@@ -12,6 +12,13 @@ import {
   VISIBILITY_LABELS,
 } from '../../v3/presentation';
 import { publicSpectatorEvents } from '../../v3/visibility';
+import {
+  remainingServerMs,
+  sampleServerClock,
+  stageProgress,
+  type ServerClockSample,
+} from '../../v3/serverClock';
+import { formatCountdown } from '../../utils/countdown';
 
 export function SpectatePage() {
   const connected = useV3Store((state) => state.connected);
@@ -19,6 +26,16 @@ export function SpectatePage() {
   const room = useV3Store((state) => state.room);
   const snapshot = useV3Store((state) => state.snapshot);
   const events = useV3Store((state) => state.events);
+  const clockRef = useRef<ServerClockSample | null>(null);
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (snapshot) clockRef.current = sampleServerClock(snapshot);
+  }, [snapshot?.serverTime]);
+  useEffect(() => {
+    if (typeof snapshot?.gameState.deadlineTs !== 'number') return;
+    const timer = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(timer);
+  }, [snapshot?.gameState.deadlineTs]);
   const publicEvents = useMemo(() => publicSpectatorEvents(events), [events]);
   const players = snapshot?.players ?? [];
   const playerName = (id: string | null) =>
@@ -41,8 +58,21 @@ export function SpectatePage() {
       title="公开观战"
       eyebrow={room ? `${room.name} · ${room.code}` : session.roomCode}
       phase={phaseLabel(snapshot.gameState)}
+      countdown={(() => {
+        const value = formatCountdown(remainingServerMs(
+          snapshot.gameState.deadlineTs,
+          clockRef.current,
+          now,
+        ));
+        return value === '—' ? undefined : value;
+      })()}
       live
-      progress={Math.min(100, ((snapshot.gameState.stageRevision ?? 1) % 8) * 12.5)}
+      progress={stageProgress(
+        snapshot.gameState.stageStartedAt,
+        snapshot.gameState.deadlineTs,
+        clockRef.current,
+        now,
+      ) ?? undefined}
       connected={connected}
     >
       <div className="v3-playback-bar">

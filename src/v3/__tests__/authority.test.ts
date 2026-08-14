@@ -16,6 +16,7 @@ import {
   type GameAction,
   type GameState,
   type Player,
+  type ProjectedGameState,
   type Role,
 } from '../../../shared/types';
 import {
@@ -49,27 +50,59 @@ const roomView = (
   id: 'room-1',
   code: 'ABC123',
   name: 'Authority room',
-  hostId: 'p1',
-  maxPlayers: 12,
+  roomRevision: 1,
   status: 'playing',
-  auto: false,
-  debugMode: false,
+  config: {
+    catalogVersion: 'catalog-v31-1',
+    mode: 'human',
+    visibility: 'invite_only',
+    maxPlayers: 12,
+    minHumanPlayers: 12,
+    computerSeats: 0,
+    aiFillPolicy: 'none',
+    roleSetup: {
+      wolf: 4,
+      seer: 1,
+      witch: 1,
+      hunter: 1,
+      guardian: 1,
+      villager: 4,
+    },
+    rolePresetId: 'werewolf.v3.default-12p',
+    rulesetId: 'werewolf.v3',
+    rulesetVersion: '3.1.0',
+    readyPolicy: 'all_connected_humans',
+    allowPublicSpectators: false,
+    reviewEnabled: true,
+  },
+  configRevision: 1,
+  configLocked: true,
   members: [
     {
       id: actorId,
       name: 'Viewer',
       kind,
+      seatIndex: kind === 'player' ? 0 : null,
+      isAI: false,
       connected: true,
       isHost: actorId === 'p1',
+      ready: kind === 'player' ? true : null,
+      avatarId: 'avatar-player',
     },
   ],
+  counts: {
+    playerSeats: kind === 'player' ? 1 : 0,
+    humanPlayers: kind === 'player' ? 1 : 0,
+    onlineHumanPlayers: kind === 'player' ? 1 : 0,
+    readyHumanPlayers: kind === 'player' ? 1 : 0,
+    spectators: kind === 'spectator' ? 1 : 0,
+  },
+  startCheck: { passed: true, items: [] },
   viewer: {
     actorId,
     kind,
     omniscient: false,
-    canStart: false,
-    canSubmitGameCommands: kind === 'player',
-    allowedActions: [],
+    allowedRoomActions: [],
   },
   gameId: 'game-1',
   createdAt: 1,
@@ -93,7 +126,7 @@ const player = (
 
 const gameState = (
   overrides: Partial<GameState> = {},
-): GameState => ({
+): ProjectedGameState => ({
   roomId: 'room-1',
   phase: 'night',
   nightStage: 'guard_seer',
@@ -135,6 +168,7 @@ const gameState = (
     sorterId: null,
   },
   lastSorterId: null,
+  stageStartedAt: null,
   ...overrides,
 });
 
@@ -151,6 +185,7 @@ const snapshot = (
     player('p2', null, 2),
     player('p3', null, 3),
   ],
+  serverTime: 1,
   lastSequence: 0,
   ...overrides,
 });
@@ -158,7 +193,7 @@ const snapshot = (
 const publicSpectatorSnapshot = (
   overrides: Partial<ProjectedSnapshot> = {},
 ): ProjectedSnapshot => {
-  const projectedState = structuredClone(gameState()) as GameState &
+  const projectedState = structuredClone(gameState()) as ProjectedGameState &
     Record<string, unknown>;
   for (const key of [
     'nightActions',
@@ -294,22 +329,34 @@ test('waiting room summaries detect joins, disconnects, and spectator changes', 
         id: 'p1',
         name: 'Host',
         kind: 'player',
+        seatIndex: 0,
+        isAI: false,
         connected: true,
         isHost: true,
+        ready: false,
+        avatarId: 'avatar-player',
       },
       {
         id: 'p2',
         name: 'Guest',
         kind: 'player',
+        seatIndex: 1,
+        isAI: false,
         connected: true,
         isHost: false,
+        ready: false,
+        avatarId: 'avatar-player',
       },
       {
         id: 's1',
         name: 'Watcher',
         kind: 'spectator',
+        seatIndex: null,
+        isAI: false,
         connected: true,
         isHost: false,
+        ready: null,
+        avatarId: 'avatar-spectator',
       },
     ],
   };
@@ -317,12 +364,14 @@ test('waiting room summaries detect joins, disconnects, and spectator changes', 
     roomCode: waitingRoom.code,
     roomName: waitingRoom.name,
     status: 'waiting' as const,
+    mode: 'human' as const,
+    minHumanPlayers: 12,
     playerCount: 2,
-    maxPlayers: waitingRoom.maxPlayers,
+    maxPlayers: waitingRoom.config.maxPlayers,
     onlinePlayers: 2,
+    onlineCount: 2,
+    readyCount: 0,
     spectatorCount: 1,
-    auto: false,
-    debugMode: false,
   };
 
   assert.equal(
@@ -362,17 +411,17 @@ test('waiting room summaries detect joins, disconnects, and spectator changes', 
 
   const joinedProjection = projectWaitingRoomSummary(waitingRoom, {
     ...matchingSummary,
-    playerCount: 3,
-    onlinePlayers: 3,
+    playerCount: 2,
+    onlinePlayers: 2,
   });
   assert.equal(
     joinedProjection.members.filter((member) => member.kind === 'player')
       .length,
-    3,
+    2,
   );
   assert.equal(
     joinedProjection.members.find(
-      (member) => member.id === 'summary:room-1:player:3',
+      (member) => member.id === 'p2',
     )?.connected,
     true,
   );
@@ -381,15 +430,15 @@ test('waiting room summaries detect joins, disconnects, and spectator changes', 
     joinedProjection,
     {
       ...matchingSummary,
-      playerCount: 3,
-      onlinePlayers: 2,
+      playerCount: 2,
+      onlinePlayers: 1,
     },
   );
   assert.equal(
     disconnectedProjection.members.find(
-      (member) => member.id === 'summary:room-1:player:3',
+      (member) => member.id === 'p2',
     )?.connected,
-    false,
+    true,
   );
 });
 

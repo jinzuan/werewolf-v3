@@ -1,5 +1,5 @@
 import { Bot, EyeOff, Radio } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '../../components/shell/AppShell';
 import { MatchShell } from '../../components/shell/MatchShell';
 import { useV3Store } from '../../stores/v3Store';
@@ -13,12 +13,29 @@ import {
   ROLE_LABELS,
   VISIBILITY_LABELS,
 } from '../../v3/presentation';
+import {
+  remainingServerMs,
+  sampleServerClock,
+  stageProgress,
+  type ServerClockSample,
+} from '../../v3/serverClock';
+import { formatCountdown } from '../../utils/countdown';
 
 export function MonitorPage() {
   const connected = useV3Store((state) => state.connected);
   const room = useV3Store((state) => state.room);
   const snapshot = useV3Store((state) => state.snapshot);
   const events = useV3Store((state) => state.events);
+  const clockRef = useRef<ServerClockSample | null>(null);
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (snapshot) clockRef.current = sampleServerClock(snapshot);
+  }, [snapshot?.serverTime]);
+  useEffect(() => {
+    if (typeof snapshot?.gameState.deadlineTs !== 'number') return;
+    const timer = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(timer);
+  }, [snapshot?.gameState.deadlineTs]);
   const [visibility, setVisibility] = useState('all');
   const [query, setQuery] = useState('');
   const omniscient =
@@ -51,8 +68,21 @@ export function MonitorPage() {
       title={room?.name ?? 'AI 快速局'}
       eyebrow="Match Console"
       phase={phaseLabel(snapshot.gameState)}
+      countdown={(() => {
+        const value = formatCountdown(remainingServerMs(
+          snapshot.gameState.deadlineTs,
+          clockRef.current,
+          now,
+        ));
+        return value === '—' ? undefined : value;
+      })()}
       live
-      progress={Math.min(100, ((snapshot.gameState.stageRevision ?? 1) % 8) * 12.5)}
+      progress={stageProgress(
+        snapshot.gameState.stageStartedAt,
+        snapshot.gameState.deadlineTs,
+        clockRef.current,
+        now,
+      ) ?? undefined}
       connected={connected}
     >
       <div className="v3-playback-bar">

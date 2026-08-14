@@ -18,6 +18,14 @@ const roomState: Record<RoomStatus, { label: string; tone: 'gold' | 'purple' | '
   ended: { label: '已结束', tone: 'neutral' as const },
 };
 
+const roomStateDetail = (status: RoomStatus, readyCount: number, playerCount: number): string => {
+  if (status === 'ready_check') return `${readyCount} / ${playerCount} 人已准备`;
+  if (status === 'starting') return '正在同步开局状态';
+  if (status === 'playing') return '可以进入观战';
+  if (status === 'ended') return '本局已结束';
+  return '等待玩家入座';
+};
+
 export function LobbyPage() {
   const navigate = useNavigate();
   const connected = useV3Store((state) => state.connected);
@@ -87,7 +95,11 @@ export function LobbyPage() {
                   <div className="v3-room-row__mark"><Users size={20} /></div>
                   <div className="v3-room-row__body">
                     <strong>{room.roomName}</strong>
-                    <span>{room.roomCode} · {room.spectatorCount} 人观战</span>
+                    <span>
+                      {room.roomCode} · {room.spectatorCount} 人观战 ·{' '}
+                      {room.onlineCount} 人在线 ·{' '}
+                      {roomStateDetail(room.status, room.readyCount, room.playerCount)}
+                    </span>
                   </div>
                   <span className="v3-numeric">{room.playerCount} / {room.maxPlayers}</span>
                   <Badge tone={state.tone}>{state.label}</Badge>

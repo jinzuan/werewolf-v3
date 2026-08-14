@@ -7,7 +7,7 @@ import {
   Skull,
   UserRound,
 } from 'lucide-react';
-import { useLayoutEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { GameAction } from '../../../shared/types';
 import { AppShell } from '../../components/shell/AppShell';
 import { MatchShell } from '../../components/shell/MatchShell';
@@ -32,6 +32,13 @@ import {
   phaseLabel,
   ROLE_LABELS,
 } from '../../v3/presentation';
+import {
+  remainingServerMs,
+  sampleServerClock,
+  stageProgress,
+  type ServerClockSample,
+} from '../../v3/serverClock';
+import { formatCountdown } from '../../utils/countdown';
 
 const ACTION_HELP: Record<GameAction, string> = {
   guard: '可守自己，不能连续两晚守同一名玩家。',
@@ -74,7 +81,28 @@ export function GamePage() {
   const myId = session?.actorId ?? '';
   const myPlayer = players.find((player) => player.id === myId);
   const allowedActions = orderedAllowedActions(
-    state?.allowedActions ?? room?.viewer.allowedActions ?? [],
+    state?.allowedActions ?? [],
+  );
+  const clockRef = useRef<ServerClockSample | null>(null);
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (snapshot) {
+      clockRef.current = sampleServerClock(snapshot);
+    }
+  }, [snapshot?.serverTime]);
+  useEffect(() => {
+    if (typeof state?.deadlineTs !== 'number') return;
+    const timer = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(timer);
+  }, [state?.deadlineTs]);
+  const progress = stageProgress(
+    state?.stageStartedAt,
+    state?.deadlineTs,
+    clockRef.current,
+    now,
+  );
+  const countdown = formatCountdown(
+    remainingServerMs(state?.deadlineTs, clockRef.current, now),
   );
   const actionKey = allowedActions.join('|');
   const voteRound = snapshot
@@ -111,7 +139,9 @@ export function GamePage() {
     });
   }, [draftScopeKey]);
 
-  const waiting = room?.status === 'waiting' && !snapshot;
+  const waiting =
+    ['waiting', 'ready_check', 'starting'].includes(room?.status ?? '') &&
+    !snapshot;
   const definition = activeAction
     ? ACTION_DEFINITIONS[activeAction]
     : null;
@@ -167,11 +197,8 @@ export function GamePage() {
       title={room.code}
       eyebrow="房间码"
       phase={waiting ? '等待开局' : phaseLabel(state)}
-      progress={
-        state
-          ? Math.min(100, ((state.stageRevision ?? 1) % 8) * 12.5)
-          : 0
-      }
+      countdown={countdown === '—' ? undefined : countdown}
+      progress={progress ?? undefined}
       connected={connected}
     >
       {error ? (
@@ -188,7 +215,7 @@ export function GamePage() {
             <Badge tone="gold">
               {room.members.filter((member) => member.kind === 'player').length}
               {' / '}
-              {room.maxPlayers}
+              {room.config?.maxPlayers ?? room.members.filter((member) => member.kind === 'player').length}
             </Badge>
           </div>
           <div className="v3-summary-list">
@@ -221,7 +248,7 @@ export function GamePage() {
                 '等待房主开始对局'
               )}
             </span>
-            {room.viewer.canStart ? (
+            {room.viewer.allowedRoomActions.includes('start_game') ? (
               <Button
                 disabled={loading}
                 onClick={() => void startGame()}

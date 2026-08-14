@@ -20,7 +20,7 @@ export function TopStatusBar({
   phase,
   countdown,
   live = false,
-  progress = 64,
+  progress,
   connected = false,
 }: TopStatusBarProps) {
   return (
@@ -40,7 +40,9 @@ export function TopStatusBar({
             {countdown ? <strong className="v3-numeric">{countdown}</strong> : null}
             {live ? <Badge tone="danger">LIVE</Badge> : null}
           </div>
-          <ProgressBar value={progress} label={`${phase}阶段进度`} />
+            {typeof progress === 'number' ? (
+              <ProgressBar value={progress} label={`${phase}阶段进度`} />
+            ) : null}
         </div>
       ) : null}
 

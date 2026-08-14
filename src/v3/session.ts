@@ -233,3 +233,22 @@ export const snapshotMatchesSession = (
     ? snapshot.viewer.playerId === session.actorId
     : snapshot.viewer.spectatorId === session.actorId;
 };
+
+/** RoomView is accepted only for the currently authenticated room identity. */
+export const roomViewMatchesSession = (
+  room: RoomView,
+  session: V3Session,
+): boolean =>
+  room.id === session.roomId &&
+  room.code === session.roomCode &&
+  room.viewer.actorId === session.actorId;
+
+/** ACKs and broadcasts use the same monotonic room revision rule. */
+export const acceptsRoomRevision = (
+  incoming: RoomView,
+  current: RoomView | null,
+): boolean =>
+  current === null ||
+  (incoming.id === current.id &&
+    incoming.code === current.code &&
+    incoming.roomRevision >= current.roomRevision);
