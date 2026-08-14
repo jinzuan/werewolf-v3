@@ -229,10 +229,17 @@ export const RULE_VALUES = {
 export const RULESET = {
   id: 'werewolf.v3.default-12p',
   schemaVersion: 1,
-  rulesetVersion: '3.0.0-stage0-finalized',
+  rulesetVersion: '3.0.0-stage1',
   locale: 'zh-CN',
   values: RULE_VALUES,
 } as const;
+
+/**
+ * The default board is exported as a named view as well as being present in
+ * RULESET.values.  Server-side catalog code must clone this value rather
+ * than maintaining a second executable role list.
+ */
+export const DEFAULT_ROLE_SETUP = RULE_VALUES['game.role_setup'];
 
 export function getRuleValue<K extends RuleKey>(key: K): (typeof RULE_VALUES)[K] {
   return RULE_VALUES[key];
