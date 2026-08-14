@@ -41,6 +41,8 @@ export interface ProjectedAuthorityFields {
   allowedActors: AllowedActor[];
   allowedActions: GameAction[];
   deadlineTs: number | null;
+  /** Absolute start of the currently authoritative stage, when timed. */
+  stageStartedAt: number | null;
 }
 
 export type ProjectedGameState = GameState & ProjectedAuthorityFields;

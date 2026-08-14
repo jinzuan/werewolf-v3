@@ -12,6 +12,18 @@ import type {
   ProjectedSnapshot,
   ViewerContext,
 } from './events';
+import type {
+  CreateRoomOptionsV31,
+  RoomCommand as RoomCommandV31,
+  RoomConfigIssue,
+  RoomSnapshotMessage as RoomSnapshotMessageV31,
+  RoomSummaryV31,
+  RoomViewV31,
+  RoomMutationCommand,
+  RoomReadCommand,
+} from './roomContract';
+
+export * from './roomContract';
 
 /**
  * protocol.ts — 联机模式（B批）socket.io 协议：客户端↔服务端共享的类型定义。
@@ -154,53 +166,30 @@ export interface ArchiveRecord {
   kind: 'online' | 'auto'; // auto = 斗蛐蛐
 }
 
-/** 监控页使用的脱敏房间摘要。 */
-export interface RoomSummary {
-  roomCode: string;
-  roomName: string;
-  status: 'waiting' | 'playing' | 'ended';
-  playerCount: number;
-  maxPlayers: number;
-  onlinePlayers: number;
-  spectatorCount: number;
-  auto: boolean;
-  debugMode: boolean;
-}
+/** Re-exported here for the pre-split import path used by the socket layer. */
+export type {
+  AllowedRoomAction,
+  AIFillPolicy,
+  CreateRoomOptionsV31,
+  ReadyPolicy,
+  RoleSetup,
+  RoomConfigView,
+  RoomMemberKind,
+  RoomMemberViewV31,
+  RoomMode,
+  RoomSnapshotReason,
+  RoomStatus,
+  RoomSummaryV31,
+  RoomViewV31,
+  RoomViewerViewV31,
+} from './roomContract';
 
-export type RoomMemberKind = 'player' | 'spectator';
-
-export interface RoomMemberView {
-  id: string;
-  name: string;
-  kind: RoomMemberKind;
-  connected: boolean;
-  isHost: boolean;
-}
-
-export interface RoomViewerView {
-  actorId: string;
-  kind: RoomMemberKind;
-  omniscient: boolean;
-  canStart: boolean;
-  canSubmitGameCommands: boolean;
-  allowedActions: GameAction[];
-}
+export type RoomSummary = RoomSummaryV31;
+export type RoomMemberView = import('./roomContract').RoomMemberViewV31;
+export type RoomViewerView = import('./roomContract').RoomViewerViewV31;
 
 /** Public room projection. Credentials and authoritative session state are excluded. */
-export interface RoomView {
-  id: string;
-  code: string;
-  name: string;
-  hostId: string;
-  maxPlayers: number;
-  status: RoomSummary['status'];
-  auto: boolean;
-  debugMode: boolean;
-  members: RoomMemberView[];
-  viewer: RoomViewerView;
-  gameId?: string;
-  createdAt: number;
-}
+export type RoomView = RoomViewV31;
 
 /** Transport-facing alias for consumers that call public projections DTOs. */
 export type RoomDTO = RoomView;
@@ -248,6 +237,15 @@ export const PROTOCOL_ERROR_CODES = [
   'ROLE_NOT_ASSIGNED',
   'COMMAND_NOT_IMPLEMENTED',
   'PUSH_FAILED',
+  'ROOM_REVISION_CONFLICT',
+  'INVALID_ROOM_CONFIG',
+  'ROLE_COUNT_MISMATCH',
+  'RULESET_UNAVAILABLE',
+  'MIN_PLAYERS_NOT_MET',
+  'HUMAN_PLAYERS_NOT_READY',
+  'MEMBER_OFFLINE',
+  'CONFIG_LOCKED',
+  'GAME_START_IN_PROGRESS',
   'UNKNOWN_ERROR',
 ] as const;
 
@@ -258,7 +256,13 @@ export type ProtocolErrorCode = (typeof PROTOCOL_ERROR_CODES)[number];
 export interface ProtocolAckError {
   ok: false;
   code: ProtocolErrorCode;
+  /** Server-only diagnostic text; UI maps code/messageKey to Chinese copy. */
   message?: string;
+  messageKey?: string;
+  params?: Record<string, string | number>;
+  issues?: RoomConfigIssue[];
+  /** Present on ROOM_REVISION_CONFLICT so clients can converge immediately. */
+  room?: RoomView;
 }
 
 export type ProtocolAckSuccess<
@@ -273,26 +277,17 @@ export type ProtocolAck<TPayload extends object = Record<string, never>> =
 export type RoomAccessAck = ProtocolAck<RoomAccess>;
 export type CreateRoomAck = RoomAccessAck;
 export type JoinRoomAck = RoomAccessAck;
-export type ResumeRoomAck = ProtocolAck<
-  RoomAccess & { events?: DomainEvent[] }
->;
+export type ResumeRoomAck = RoomAccessAck;
+export type RoomCreationCatalogAck = ProtocolAck<{
+  catalog: import('./roomContract').RoomCreationCatalog;
+}>;
 export type RoomViewAck = ProtocolAck<{ room: RoomView }>;
 export type GameCommandAck = ProtocolAck<{ events: DomainEvent[] }>;
 export type RoomListAck = ProtocolAck<{ rooms: RoomSummary[] }>;
 export type SnapshotAck = ProtocolAck<{ snapshot: ProjectedSnapshot }>;
 
-export interface RoomCreateOptions {
-  roomName: string;
-  maxPlayers: number;
-  aiCount: number;
-  name: string;
-  spectator?: boolean;
-  reviewEnabled?: boolean;
-  /** 斗蛐蛐：纯 AI 房间，开房即自动开局 */
-  auto?: boolean;
-  /** 阶段 0d：调试模式（上帝视角 + 日志事件 gate 只给 isHost） */
-  debugMode?: boolean;
-}
+/** Compatibility import path; the old aiCount/auto/spectator DTO is gone. */
+export type RoomCreateOptions = CreateRoomOptionsV31;
 
 export interface BaseCommandMeta {
   commandId: string;
@@ -302,6 +297,10 @@ export interface BaseCommandMeta {
 
 export interface RoomCommandMeta extends BaseCommandMeta {
   roomId?: string;
+}
+
+export interface RoomMutationMeta extends RoomCommandMeta {
+  expectedRoomRevision: number;
 }
 
 export interface GameCommandMeta extends BaseCommandMeta {
@@ -314,12 +313,7 @@ export interface SpectatorCommandMeta extends BaseCommandMeta {
   roomId: string;
 }
 
-export type RoomCommand =
-  | { type: 'room.create'; payload: RoomCreateOptions }
-  | { type: 'room.join'; payload: { roomCode: string; joinToken?: string } }
-  | { type: 'room.leave'; payload: Record<string, never> }
-  | { type: 'room.ready'; payload: { ready: boolean } }
-  | { type: 'room.start_game'; payload: Record<string, never> };
+export type RoomCommand = RoomCommandV31;
 
 export type GameCommand =
   | { type: 'game.speak'; payload: { content: string } }
@@ -343,7 +337,8 @@ export type SpectatorCommand =
   | { type: 'spectator.leave'; payload: { roomCode: string } };
 
 export type V3Command =
-  | { meta: RoomCommandMeta; command: RoomCommand }
+  | { meta: RoomCommandMeta; command: RoomReadCommand }
+  | { meta: RoomMutationMeta; command: RoomMutationCommand }
   | { meta: GameCommandMeta; command: GameCommand }
   | { meta: SpectatorCommandMeta; command: SpectatorCommand };
 
@@ -383,10 +378,7 @@ export interface SkillTargetValidator {
   ): SkillTargetValidationResult;
 }
 
-export interface RoomSnapshotMessage {
-  type: 'room.snapshot';
-  snapshot: Snapshot;
-}
+export type RoomSnapshotMessage = RoomSnapshotMessageV31;
 
 export interface GameSnapshotMessage {
   type: 'game.snapshot';

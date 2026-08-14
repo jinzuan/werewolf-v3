@@ -12,8 +12,12 @@ import {
   STABLE_COMMAND_ERROR_CODES,
   type CreateRoomAck,
   type GameCommandMeta,
+  type GameSnapshotMessage,
   type JoinRoomAck,
+  type RoomCreationCatalogAck,
   type RoomDTO,
+  type RoomMutationMeta,
+  type RoomSnapshotMessage,
   type SkillTargetValidationRequest,
   type SkillTargetValidationResult,
 } from '../shared/protocol';
@@ -84,6 +88,7 @@ test('GameState 暴露阶段修订与面向当前视角的权威投影字段', (
     allowedActors: state.allowedActors,
     allowedActions: state.allowedActions,
     deadlineTs: state.deadlineTs,
+    stageStartedAt: 1_786_620_000_000,
   };
   const projectedState = state as ProjectedGameState;
 
@@ -96,7 +101,62 @@ test('GameState 暴露阶段修订与面向当前视角的权威投影字段', (
   assert.deepEqual(projectedState.allowedActions, ['wolf_vote']);
 });
 
-test('命令元数据、公开房间 DTO、成员凭据与标准 ACK 形状固定', () => {
+test('V3.1 房间目录、创建配置与版本化 RoomView 形状固定', () => {
+  const roleSetup = {
+    wolf: 4,
+    seer: 1,
+    witch: 1,
+    hunter: 1,
+    guardian: 1,
+    villager: 4,
+  } as const;
+  const createOptions = {
+    catalogVersion: 'catalog-v31-1',
+    roomName: '契约房',
+    creator: { name: '房主', avatarId: 'moon-1' },
+    mode: 'human',
+    visibility: 'invite_only',
+    maxPlayers: 12,
+    minHumanPlayers: 4,
+    computerSeats: 0,
+    aiFillPolicy: 'none',
+    roleSetup,
+    rolePresetId: 'werewolf.v3.default-12p',
+    rulesetId: 'werewolf.v3',
+    rulesetVersion: '3.1.0',
+    readyPolicy: 'all_connected_humans',
+    allowPublicSpectators: false,
+    reviewEnabled: true,
+  } as const;
+  const catalog: RoomCreationCatalogAck = {
+    ok: true,
+    catalog: {
+      catalogVersion: createOptions.catalogVersion,
+      playerCounts: [12],
+      rolePresets: [{
+        id: 'werewolf.v3.default-12p',
+        name: '标准十二人局',
+        playerCount: 12,
+        roleSetup: { ...roleSetup },
+        rulesetId: createOptions.rulesetId,
+        rulesetVersion: createOptions.rulesetVersion,
+        enabled: true,
+      }],
+      roleLimits: {},
+      limits: {
+        roomNameMax: 32,
+        displayNameMax: 16,
+        maxSpectators: 8,
+      },
+    },
+  };
+  const mutation: RoomMutationMeta = {
+    commandId: 'room-cmd-1',
+    actorId: 'p1',
+    roomId: 'room-1',
+    expectedRoomRevision: 3,
+    sentAt: 1_786_620_000_000,
+  };
   const meta: GameCommandMeta = {
     commandId: 'cmd-1',
     roomId: 'room-1',
@@ -109,25 +169,59 @@ test('命令元数据、公开房间 DTO、成员凭据与标准 ACK 形状固�
     id: 'room-1',
     code: 'ABC123',
     name: '契约房',
-    hostId: 'p1',
-    maxPlayers: 12,
+    roomRevision: 3,
     status: 'waiting',
-    auto: false,
-    debugMode: false,
+    config: {
+      catalogVersion: createOptions.catalogVersion,
+      mode: createOptions.mode,
+      visibility: createOptions.visibility,
+      maxPlayers: createOptions.maxPlayers,
+      minHumanPlayers: createOptions.minHumanPlayers,
+      computerSeats: createOptions.computerSeats,
+      aiFillPolicy: createOptions.aiFillPolicy,
+      roleSetup: { ...createOptions.roleSetup },
+      rolePresetId: createOptions.rolePresetId,
+      rulesetId: createOptions.rulesetId,
+      rulesetVersion: createOptions.rulesetVersion,
+      readyPolicy: createOptions.readyPolicy,
+      allowPublicSpectators: createOptions.allowPublicSpectators,
+      reviewEnabled: createOptions.reviewEnabled,
+    },
+    configRevision: 1,
+    configLocked: false,
     members: [{
       id: 'p1',
       name: '房主',
       kind: 'player',
-      connected: true,
+      seatIndex: 0,
+      isAI: false,
       isHost: true,
+      connected: true,
+      ready: false,
+      avatarId: 'moon-1',
     }],
+    counts: {
+      playerSeats: 12,
+      humanPlayers: 1,
+      onlineHumanPlayers: 1,
+      readyHumanPlayers: 0,
+      spectators: 0,
+    },
+    startCheck: {
+      passed: false,
+      items: [{
+        key: 'minimum_humans',
+        passed: false,
+        messageKey: 'room.start.minimum_humans',
+        params: { required: 4, actual: 1 },
+        affectedMemberIds: ['p1'],
+      }],
+    },
     viewer: {
       actorId: 'p1',
       kind: 'player',
       omniscient: false,
-      canStart: true,
-      canSubmitGameCommands: false,
-      allowedActions: [],
+      allowedRoomActions: ['update_config', 'begin_ready_check', 'leave'],
     },
     createdAt: 1_786_620_000_000,
   };
@@ -146,7 +240,6 @@ test('命令元数据、公开房间 DTO、成员凭据与标准 ACK 形状固�
       viewer: {
         ...room.viewer,
         actorId: 'p2',
-        canStart: false,
       },
     },
     credentials: {
@@ -154,6 +247,9 @@ test('命令元数据、公开房间 DTO、成员凭据与标准 ACK 形状固�
     },
   };
 
+  assert.equal(catalog.ok, true);
+  assert.equal(createOptions.roleSetup.wolf, 4);
+  assert.equal(mutation.expectedRoomRevision, 3);
   assert.equal(meta.commandId, 'cmd-1');
   assert.equal(meta.expectedStageRevision, 4);
   assert.equal(ack.credentials.resumeToken, 'member-resume-token');
@@ -163,8 +259,10 @@ test('命令元数据、公开房间 DTO、成员凭据与标准 ACK 形状固�
   );
   assert.doesNotMatch(
     JSON.stringify(ack.room),
-    /joinToken|omniscientToken|resumeToken|session|players|role/,
+    /joinToken|omniscientToken|resumeToken|session|players/,
   );
+  assert.equal('canStart' in ack.room.viewer, false);
+  assert.equal('allowedRoomActions' in ack.room.viewer, true);
   assert.deepEqual(STABLE_COMMAND_ERROR_CODES, [
     'UNAUTHENTICATED',
     'IDENTITY_MISMATCH',
@@ -178,6 +276,30 @@ test('命令元数据、公开房间 DTO、成员凭据与标准 ACK 形状固�
     'INVALID_TARGET',
   ]);
   assert.ok(PROTOCOL_ERROR_CODES.includes('ROOM_TOKEN_INVALID'));
+  assert.ok(PROTOCOL_ERROR_CODES.includes('ROOM_REVISION_CONFLICT'));
+  assert.ok(PROTOCOL_ERROR_CODES.includes('ROLE_COUNT_MISMATCH'));
+
+  const roomMessage: RoomSnapshotMessage = {
+    type: 'room.snapshot',
+    room,
+    reason: 'created',
+  };
+  const gameMessage: GameSnapshotMessage = {
+    type: 'game.snapshot',
+    snapshot: {
+      roomId: room.id,
+      gameId: 'game-1',
+      viewer: { kind: 'spectator', spectatorId: 's1', omniscient: false },
+      gameState: {} as ProjectedGameState,
+      players: [],
+      serverTime: 1_786_620_000_000,
+      lastSequence: 0,
+    },
+  };
+  assert.equal(roomMessage.type, 'room.snapshot');
+  assert.equal(gameMessage.type, 'game.snapshot');
+  assert.ok('room' in roomMessage);
+  assert.ok(!('snapshot' in roomMessage));
 });
 
 test('公共时间线事件对普通玩家与公开观战者可见', () => {

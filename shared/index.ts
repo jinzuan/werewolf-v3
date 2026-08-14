@@ -7,6 +7,7 @@
  */
 
 export * from './types';
+export * from './roomContract';
 export * from './protocol';
 export * from './events';
 export * from './rulesetContract';

@@ -2,6 +2,7 @@ import type {
   GameState,
   NightStage,
   Player,
+  ProjectedGameState,
   Role,
 } from './types';
 
@@ -112,8 +113,10 @@ export interface ProjectedSnapshot {
   roomId: string;
   gameId: string;
   viewer: ViewerContext;
-  gameState: GameState;
+  gameState: ProjectedGameState;
   players: Player[];
+  /** Server clock used with stageStartedAt/deadlineTs for reliable progress. */
+  serverTime: number;
   lastSequence: number;
 }
 
