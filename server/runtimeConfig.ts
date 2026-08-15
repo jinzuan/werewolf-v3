@@ -1,0 +1,139 @@
+import path from 'node:path';
+
+export const RUNTIME_ENVIRONMENTS = [
+  'production',
+  'development',
+  'test',
+] as const;
+
+export type RuntimeEnvironment = (typeof RUNTIME_ENVIRONMENTS)[number];
+
+export interface RuntimeConfig {
+  environment: RuntimeEnvironment;
+  dataDir: string;
+  deploymentNamespace: string;
+  roomsFile: string;
+  eventsFile: string;
+  reviewsFile: string;
+  secretsDir: string;
+  waitingRoomTtlMs: number;
+  endedRoomTtlMs: number;
+  roomSweepIntervalMs: number;
+}
+
+export interface RuntimeConfigEnv {
+  WW_ENV?: string;
+  WW_DATA_DIR?: string;
+  WW_DEPLOYMENT_NAMESPACE?: string;
+  WW_WAITING_ROOM_TTL_MS?: string;
+  WW_ENDED_ROOM_TTL_MS?: string;
+  WW_ROOM_SWEEP_INTERVAL_MS?: string;
+}
+
+const DEFAULT_WAITING_ROOM_TTL_MS = 30 * 60 * 1000;
+const DEFAULT_ENDED_ROOM_TTL_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_ROOM_SWEEP_INTERVAL_MS = 60 * 1000;
+const namespacePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
+const fail = (message: string): never => {
+  throw new Error(`[runtime-config] ${message}`);
+};
+
+const environmentOf = (value: string | undefined): RuntimeEnvironment => {
+  const environment = value ?? 'development';
+  if (!(RUNTIME_ENVIRONMENTS as readonly string[]).includes(environment)) {
+    fail(`WW_ENV must be production, development, or test; received ${environment}.`);
+  }
+  return environment as RuntimeEnvironment;
+};
+
+const absoluteDirectory = (value: string, label: string): string => {
+  if (!path.isAbsolute(value)) {
+    fail(`${label} must be an absolute directory.`);
+  }
+  const directory = path.resolve(value);
+  if (directory === path.parse(directory).root) {
+    fail(`${label} must be an absolute, non-root directory.`);
+  }
+  return directory;
+};
+
+const namespaceOf = (
+  value: string | undefined,
+  environment: RuntimeEnvironment,
+): string => {
+  const namespace = value?.trim() || environment;
+  if (!namespacePattern.test(namespace)) {
+    fail('WW_DEPLOYMENT_NAMESPACE contains unsupported characters.');
+  }
+  return namespace;
+};
+
+const durationOf = (
+  value: string | undefined,
+  fallback: number,
+  label: string,
+  allowZero = false,
+): number => {
+  if (value === undefined || value.trim() === '') return fallback;
+  const parsed = Number(value);
+  if (
+    !Number.isSafeInteger(parsed) ||
+    (allowZero ? parsed < 0 : parsed <= 0)
+  ) {
+    fail(`${label} must be a ${allowZero ? 'non-negative' : 'positive'} integer in milliseconds.`);
+  }
+  return parsed;
+};
+
+/** Resolve all server-owned data paths in one place. Test processes must name
+ * their temporary directory explicitly, keeping them away from formal data. */
+export const resolveRuntimeConfig = (
+  env: RuntimeConfigEnv = process.env,
+  cwd = process.cwd(),
+): RuntimeConfig => {
+  const environment = environmentOf(env.WW_ENV);
+  const namespace = namespaceOf(env.WW_DEPLOYMENT_NAMESPACE, environment);
+
+  let dataDir: string;
+  if (env.WW_DATA_DIR) {
+    dataDir = absoluteDirectory(env.WW_DATA_DIR, 'WW_DATA_DIR');
+  } else if (environment === 'production') {
+    fail('production requires an explicit WW_DATA_DIR.');
+  } else if (environment === 'test') {
+    fail('test requires an explicit temporary WW_DATA_DIR.');
+  } else {
+    dataDir = path.resolve(cwd, '.data', 'dev', namespace);
+  }
+
+  if (environment === 'production' && !env.WW_DEPLOYMENT_NAMESPACE?.trim()) {
+    fail('production requires an explicit WW_DEPLOYMENT_NAMESPACE.');
+  }
+
+  return {
+    environment,
+    dataDir,
+    deploymentNamespace: namespace,
+    roomsFile: path.join(dataDir, 'rooms.json'),
+    eventsFile: path.join(dataDir, 'events.json'),
+    reviewsFile: path.join(dataDir, 'reviews.json'),
+    secretsDir: path.join(dataDir, 'secrets'),
+    waitingRoomTtlMs: durationOf(
+      env.WW_WAITING_ROOM_TTL_MS,
+      DEFAULT_WAITING_ROOM_TTL_MS,
+      'WW_WAITING_ROOM_TTL_MS',
+      true,
+    ),
+    endedRoomTtlMs: durationOf(
+      env.WW_ENDED_ROOM_TTL_MS,
+      DEFAULT_ENDED_ROOM_TTL_MS,
+      'WW_ENDED_ROOM_TTL_MS',
+      true,
+    ),
+    roomSweepIntervalMs: durationOf(
+      env.WW_ROOM_SWEEP_INTERVAL_MS,
+      DEFAULT_ROOM_SWEEP_INTERVAL_MS,
+      'WW_ROOM_SWEEP_INTERVAL_MS',
+    ),
+  };
+};

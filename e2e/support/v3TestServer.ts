@@ -7,7 +7,10 @@ import { FileRoomRepository } from '../../server/rooms/fileRepository';
 import { RoomService } from '../../server/rooms/roomService';
 import { bindSocketTransport } from '../../server/transport/socketTransport';
 
-const dataDir = path.resolve(process.env.WW_E2E_DATA_DIR ?? '.tmp/e2e-v3');
+if (!process.env.WW_E2E_DATA_DIR || !path.isAbsolute(process.env.WW_E2E_DATA_DIR)) {
+  throw new Error('WW_E2E_DATA_DIR must point at an explicit temporary directory.');
+}
+const dataDir = process.env.WW_E2E_DATA_DIR;
 await mkdir(dataDir, { recursive: true });
 
 const httpServer = createHttpServer((request, response) => {
@@ -21,9 +24,19 @@ const httpServer = createHttpServer((request, response) => {
 });
 const io = new Server(httpServer, { cors: { origin: true, credentials: true } });
 const rooms = new RoomService(
-  new FileRoomRepository(path.join(dataDir, 'rooms.json')),
-  new FileEventStore(path.join(dataDir, 'events.json')),
-  { autoDrive: false },
+  new FileRoomRepository(path.join(dataDir, 'rooms.json'), {
+    environment: 'test',
+    deploymentNamespace: process.env.WW_DEPLOYMENT_NAMESPACE ?? 'e2e',
+  }),
+  new FileEventStore(path.join(dataDir, 'events.json'), {
+    environment: 'test',
+    deploymentNamespace: process.env.WW_DEPLOYMENT_NAMESPACE ?? 'e2e',
+  }),
+  {
+    autoDrive: false,
+    environment: 'test',
+    deploymentNamespace: process.env.WW_DEPLOYMENT_NAMESPACE ?? 'e2e',
+  },
 );
 await rooms.restore();
 bindSocketTransport(io, rooms, { dropCreateAckOnce: process.env.WW_TEST_DROP_CREATE_ACK_ONCE === '1' });

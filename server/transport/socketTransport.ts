@@ -399,7 +399,7 @@ export function bindSocketTransport(
 
     socket.on('v3:rooms', async (_request, ack?: (response: unknown) => void) => {
       try {
-        ack?.({ ok: true, rooms: await rooms.list() });
+        ack?.({ ok: true, rooms: await rooms.listPublicRooms() });
       } catch (error) {
         ack?.(errorResponse(error));
       }

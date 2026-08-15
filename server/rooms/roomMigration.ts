@@ -289,6 +289,8 @@ export const migrateRoomRecord = (input: RoomRecord): RoomRecord => {
     ),
     createdAt: room.createdAt ?? Date.now(),
     updatedAt: room.updatedAt ?? room.createdAt ?? Date.now(),
+    lastActivityAt:
+      room.lastActivityAt ?? room.updatedAt ?? room.createdAt ?? Date.now(),
   };
   return migrated;
 };

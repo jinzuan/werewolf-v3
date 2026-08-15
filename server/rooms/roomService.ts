@@ -29,6 +29,7 @@ import { RoomPolicy, RoomPolicyError, roomCounts } from './roomPolicy';
 import { RoomProjector, assertIdentityRoom } from './roomProjector';
 import type { RoomRepository } from './repository';
 import { RoomRevisionConflictError } from './repository';
+import type { RuntimeEnvironment } from '../runtimeConfig';
 import type {
   CreateRoomRequest,
   JoinRoomRequest,
@@ -116,6 +117,19 @@ export interface RoomServiceOptions {
   projector?: RoomProjector;
   startCoordinator?: GameStartCoordinator;
   startLeaseMs?: number;
+  environment?: RuntimeEnvironment;
+  deploymentNamespace?: string;
+  waitingRoomTtlMs?: number;
+  endedRoomTtlMs?: number;
+  roomSweepIntervalMs?: number;
+  clock?: () => number;
+  sweepLogger?: (entry: {
+    environment?: RuntimeEnvironment;
+    deploymentNamespace: string;
+    roomCode: string;
+    reason: string;
+    lastActivityAt?: number;
+  }) => void;
 }
 
 export class RoomService {
@@ -139,6 +153,14 @@ export class RoomService {
   private legacyCompatibility = false;
   private legacyCreatePending = false;
   private closed = false;
+  private readonly environment: RuntimeEnvironment;
+  private readonly deploymentNamespace: string;
+  private readonly waitingRoomTtlMs: number;
+  private readonly endedRoomTtlMs: number;
+  private readonly roomSweepIntervalMs: number;
+  private readonly now: () => number;
+  private readonly sweepLogger?: RoomServiceOptions['sweepLogger'];
+  private sweepTimer?: ReturnType<typeof setInterval>;
 
   constructor(
     private readonly repository: RoomRepository,
@@ -146,6 +168,19 @@ export class RoomService {
     private readonly options: RoomServiceOptions = {},
   ) {
     this.aiProvider = options.aiProvider ?? new DeterministicAIProvider();
+    const repositoryScope = repository as RoomRepository & {
+      environment?: RuntimeEnvironment;
+      deploymentNamespace?: string;
+    };
+    this.environment =
+      options.environment ?? repositoryScope.environment ?? 'development';
+    this.deploymentNamespace =
+      options.deploymentNamespace ?? repositoryScope.deploymentNamespace ?? 'default';
+    this.waitingRoomTtlMs = options.waitingRoomTtlMs ?? 30 * 60 * 1000;
+    this.endedRoomTtlMs = options.endedRoomTtlMs ?? 24 * 60 * 60 * 1000;
+    this.roomSweepIntervalMs = options.roomSweepIntervalMs ?? 60 * 1000;
+    this.now = options.clock ?? Date.now;
+    this.sweepLogger = options.sweepLogger;
     this.catalog = options.catalog ?? defaultRoomCatalogService;
     this.policy = options.policy ?? new RoomPolicy({ registry: this.catalog.registry });
     this.projector =
@@ -171,6 +206,8 @@ export class RoomService {
 
   async restore(): Promise<number> {
     this.closed = false;
+    await this.sweepExpiredRooms();
+    this.startSweepTimer();
     const rooms = await this.repository.list();
     for (const room of rooms) {
       if (room.status === 'starting') {
@@ -257,8 +294,12 @@ export class RoomService {
           ? []
           : [makePlayer(roomId, host, request.actorId)],
         recentRoomCommands: [],
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
+        environment: this.environment,
+        deploymentNamespace: this.deploymentNamespace,
+        createdAt: this.now(),
+        updatedAt: this.now(),
+        lastActivityAt: this.now(),
+        expiresAt: this.now() + this.waitingRoomTtlMs,
       }),
     );
 
@@ -275,14 +316,15 @@ export class RoomService {
     const room = await this.requireRoom(request.roomCode);
     const config = room.config;
     if (!config) throw this.error('INVALID_ROOM_CONFIG', 'room.error.config_missing');
-    if (config.visibility === 'invite_only' && room.joinToken !== request.joinToken) {
-      throw this.error('ROOM_TOKEN_INVALID', 'room.error.invalid_join_token');
-    }
     if (room.members.some((member) => member.id === request.actorId)) {
       throw this.error('IDENTITY_ALREADY_EXISTS', 'room.error.identity_exists');
     }
 
     const spectator = request.spectator === true;
+    const publicSpectator = spectator && config.allowPublicSpectators === true;
+    if (!publicSpectator && room.joinToken !== request.joinToken) {
+      throw this.error('ROOM_TOKEN_INVALID', 'room.error.invalid_join_token');
+    }
     if (spectator) {
       if (
         roomCounts(room).spectators >= this.catalog.getCatalog().limits.maxSpectators
@@ -338,6 +380,7 @@ export class RoomService {
       if (!spectator) {
         draft.players.push(makePlayer(draft.id, member, draft.hostId));
       }
+      this.touchActivity(draft);
     });
     const current = await this.requireRoom(room.code);
     return { room: this.projectRoom(current, request.actorId), credentials: { resumeToken } };
@@ -353,6 +396,7 @@ export class RoomService {
       }
       accepted = true;
       member.connected = true;
+      this.touchActivity(room);
     });
     if (!accepted) throw this.error('UNAUTHENTICATED', 'room.error.unauthenticated');
     const room = await this.requireRoom(roomCode);
@@ -371,6 +415,7 @@ export class RoomService {
       await this.repository.mutate(room.code, (draft) => {
         const current = assertIdentityRoom(identity, draft);
         current.connected = true;
+        this.touchActivity(draft);
       });
     }
   }
@@ -407,6 +452,7 @@ export class RoomService {
     await this.repository.mutate(identity.roomCode, (room) => {
       const member = assertIdentityRoom(identity, room);
       if (member.connected) member.connected = false;
+      this.touchActivity(room);
     });
   }
 
@@ -417,8 +463,10 @@ export class RoomService {
     return () => this.roomDissolvedListeners.delete(listener);
   }
 
-  async list(): Promise<RoomSummary[]> {
-    return (await this.repository.list()).map((room) => {
+  async listPublicRooms(): Promise<RoomSummary[]> {
+    return (await this.repository.list())
+      .filter((room) => this.isPubliclyVisible(room))
+      .map((room) => {
       const config = room.config;
       const counts = roomCounts(room);
       return {
@@ -434,7 +482,148 @@ export class RoomService {
         readyCount: counts.readyHumanPlayers,
         spectatorCount: counts.spectators,
       };
-    });
+      });
+  }
+
+  async list(): Promise<RoomSummary[]> {
+    const publicRooms = await this.listPublicRooms();
+    // Preserve the pre-V3.1 direct service compatibility surface. Socket
+    // callers use listPublicRooms(), so an old invite-only fixture cannot
+    // weaken the public catalogue policy.
+    const visibleCodes = new Set(publicRooms.map((room) => room.roomCode));
+    const legacyRooms = (await this.repository.list()).filter(
+      (room) =>
+        this.legacyRoomCodes.has(room.code) &&
+        !visibleCodes.has(room.code) &&
+        !this.isExpired(room),
+    );
+    return [
+      ...publicRooms,
+      ...legacyRooms.map((room) => this.toSummary(room)),
+    ];
+  }
+
+  /** Return expired records without changing repository state. */
+  async listExpiredRooms(): Promise<RoomRecord[]> {
+    return (await this.repository.list()).filter((room) => this.isExpired(room));
+  }
+
+  /** Remove only rooms covered by the frozen retention policy. */
+  async sweepExpiredRooms(): Promise<
+    Array<{ roomCode: string; reason: string; lastActivityAt?: number }>
+  > {
+    const expired = await this.listExpiredRooms();
+    const removed: Array<{
+      roomCode: string;
+      reason: string;
+      lastActivityAt?: number;
+    }> = [];
+    for (const room of expired) {
+      const reason = this.expiryReason(room);
+      await this.repository.remove(room.code);
+      this.connectionLeases.forEach((_leases, key) => {
+        if (key.startsWith(`${room.code}:`)) this.connectionLeases.delete(key);
+      });
+      const entry = {
+        roomCode: room.code,
+        reason,
+        ...(room.lastActivityAt !== undefined
+          ? { lastActivityAt: room.lastActivityAt }
+          : {}),
+      };
+      removed.push(entry);
+      try {
+        this.sweepLogger?.({
+          environment: room.environment,
+          deploymentNamespace: room.deploymentNamespace ?? this.deploymentNamespace,
+          ...entry,
+        });
+      } catch {
+        // Audit logging cannot make a safe cleanup fail.
+      }
+    }
+    return removed;
+  }
+
+  /** Short alias used by administrative tooling. */
+  async sweep() {
+    return this.sweepExpiredRooms();
+  }
+
+  private startSweepTimer(): void {
+    if (this.sweepTimer || this.roomSweepIntervalMs <= 0) return;
+    this.sweepTimer = setInterval(() => {
+      void this.sweepExpiredRooms().catch((error) => {
+        // A future interval can retry after a transient repository failure.
+        console.error('[server:rooms] scheduled sweep failed', error);
+      });
+    }, this.roomSweepIntervalMs);
+    this.sweepTimer.unref?.();
+  }
+
+  private isPubliclyVisible(room: RoomRecord): boolean {
+    const config = room.config;
+    if (
+      room.environment !== this.environment ||
+      room.deploymentNamespace !== this.deploymentNamespace ||
+      config?.visibility !== 'listed' ||
+      this.isExpired(room)
+    ) {
+      return false;
+    }
+    if (room.status === 'waiting' || room.status === 'ready_check') return true;
+    return room.status === 'playing' && config.allowPublicSpectators === true;
+  }
+
+  private isExpired(room: RoomRecord): boolean {
+    const now = this.now();
+    const lastActivity = room.lastActivityAt ?? room.updatedAt ?? room.createdAt;
+    if (!Number.isFinite(lastActivity)) return false;
+    if (room.status === 'waiting' || room.status === 'ready_check') {
+      const hasOnlineHuman = room.members.some(
+        (member) => member.kind === 'player' && !member.isAI && member.connected,
+      );
+      return !hasOnlineHuman && now - lastActivity >= this.waitingRoomTtlMs;
+    }
+    if (room.status === 'ended') {
+      const closedAt = room.closedAt ?? lastActivity;
+      return now - closedAt >= this.endedRoomTtlMs;
+    }
+    return false;
+  }
+
+  private expiryReason(room: RoomRecord): string {
+    return room.status === 'ended' ? 'ended_room_ttl' : 'offline_waiting_room_ttl';
+  }
+
+  private touchActivity(room: RoomRecord): void {
+    const now = this.now();
+    room.lastActivityAt = now;
+    if (room.status === 'waiting' || room.status === 'ready_check') {
+      room.expiresAt = now + this.waitingRoomTtlMs;
+    } else if (room.status === 'ended') {
+      room.expiresAt = now + this.endedRoomTtlMs;
+    } else {
+      delete room.expiresAt;
+    }
+  }
+
+  private toSummary(room: RoomRecord): RoomSummary {
+    const config = room.config;
+    const counts = roomCounts(room);
+    return {
+      roomCode: room.code,
+      roomName: room.name,
+      status: room.status,
+      mode: config?.mode ?? 'human',
+      minHumanPlayers: config?.minHumanPlayers ?? 0,
+      playerCount: counts.playerSeats,
+      maxPlayers: config?.maxPlayers ?? room.maxPlayers,
+      onlinePlayers: counts.onlineHumanPlayers,
+      onlineCount: counts.onlineHumanPlayers,
+      readyCount: counts.readyHumanPlayers,
+      spectatorCount: counts.spectators,
+    };
   }
 
   getCatalog() {
@@ -559,6 +748,7 @@ export class RoomService {
         );
         if (nextHost) draft.hostId = nextHost.id;
       }
+      this.touchActivity(draft);
     });
     const current = await this.repository.get(identity.roomCode);
     if (!current || current.members.length === 0) {
@@ -591,8 +781,9 @@ export class RoomService {
       assertIdentityRoom(identity, draft);
       draft.lastStartFailure = undefined;
       draft.status = 'ended';
-      draft.closedAt = Date.now();
+      draft.closedAt = this.now();
       draft.closeReason = 'dissolved';
+      this.touchActivity(draft);
     });
     const tombstone = await this.requireRoom(identity.roomCode);
     await Promise.allSettled(
@@ -664,6 +855,10 @@ export class RoomService {
 
   async close(): Promise<void> {
     this.closed = true;
+    if (this.sweepTimer) {
+      clearInterval(this.sweepTimer);
+      this.sweepTimer = undefined;
+    }
     for (const session of this.sessions.values()) session.dispose();
     await new Promise((resolve) => setImmediate(resolve));
     this.aiRuns.clear();
@@ -721,6 +916,7 @@ export class RoomService {
           for (const member of draft.members) {
             if (member.kind === 'player' && !member.isAI) member.ready = true;
           }
+          this.touchActivity(draft);
         });
         continue;
       }
@@ -746,7 +942,7 @@ export class RoomService {
   private async recoverStartingRoom(roomCode: string): Promise<void> {
     const current = await this.repository.get(roomCode);
     if (!current || current.status !== 'starting') return;
-    if ((current.startLeaseUntil ?? 0) > Date.now()) return;
+    if ((current.startLeaseUntil ?? 0) > this.now()) return;
     const recovered = await this.repository.mutate(
       current.code,
       current.roomRevision!,
@@ -770,9 +966,10 @@ export class RoomService {
           room.lastStartFailure = {
             code: 'GAME_START_FAILED',
             messageKey: 'room.error.game_start_failed',
-            occurredAt: Date.now(),
+            occurredAt: this.now(),
           };
         }
+        this.touchActivity(room);
         delete room.startOwner;
         delete room.startLeaseUntil;
         delete room.startedAt;
@@ -942,8 +1139,11 @@ export class RoomService {
         expectedRoomRevision,
       });
       if (result.session instanceof GameSession) this.sessions.set(roomCode.toUpperCase(), result.session);
+      await this.repository.mutate(roomCode, (draft) => {
+        this.touchActivity(draft);
+      });
       this.startAI(roomCode, room.config?.mode === 'quick_computer');
-      return this.projectRoom(result.room, identity);
+      return this.projectRoom(await this.requireRoom(roomCode), identity);
     } catch (error) {
       throw this.mapError(error);
     }
@@ -960,6 +1160,7 @@ export class RoomService {
         assertIdentityRoom(identity, room);
         this.policy.assertAllowed(room, identity.actorId, action);
         mutation(room);
+        this.touchActivity(room);
       });
     } catch (error) {
       throw this.mapError(error);
@@ -1024,6 +1225,7 @@ export class RoomService {
       room.players = session.players;
       room.gameId = snapshot.state.gameId;
       if (snapshot.state.gameState.phase === 'ended') room.status = 'ended';
+      this.touchActivity(room);
       status = room.status;
     });
     if (status === 'playing' || status === 'ended') {

@@ -7,6 +7,7 @@ import type {
 import type { RoomAIConfig } from '../../shared/roomContract';
 import type { Player, Role } from '../../shared/types';
 import type { SessionSnapshot } from '../session/types';
+import type { RuntimeEnvironment } from '../runtimeConfig';
 
 /**
  * The first persisted V3.1 shape.  Keep this value in the private room layer:
@@ -130,6 +131,12 @@ export interface RoomRecord {
   lastStartFailure?: RoomStartFailure;
   closedAt?: number;
   closeReason?: 'dissolved';
+  /** Storage provenance; records from another deployment are never listed. */
+  environment?: RuntimeEnvironment;
+  deploymentNamespace?: string;
+  /** Activity/retention facts used by the repository lifecycle sweep. */
+  lastActivityAt?: number;
+  expiresAt?: number;
   createdAt: number;
   updatedAt?: number;
 }

@@ -8,7 +8,9 @@ import {
 import {
   copyFile,
   mkdir,
+  open,
   rename,
+  rm,
   unlink,
   writeFile,
 } from 'node:fs/promises';
@@ -45,6 +47,11 @@ export interface SyncAtomicWriteOptions {
   logger?: PersistenceLogger;
 }
 
+export interface FileLockOptions {
+  retryDelayMs?: number;
+  maxAttempts?: number;
+}
+
 const RENAME_ATTEMPTS = 4;
 const RETRY_DELAY_MS = 10;
 
@@ -70,6 +77,37 @@ const defaultLogger: PersistenceLogger = (message, error) => {
 
 const asyncSleep = (delayMs: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, delayMs));
+
+/** Serialize mutations from separate server/CLI processes as well as callers
+ * sharing one repository instance. The data file itself remains atomic. */
+export async function withFileLock<T>(
+  file: string,
+  operation: () => Promise<T>,
+  options: FileLockOptions = {},
+): Promise<T> {
+  const lockFile = `${file}.lock`;
+  const retryDelayMs = options.retryDelayMs ?? 10;
+  const maxAttempts = options.maxAttempts ?? 500;
+  await mkdir(path.dirname(lockFile), { recursive: true });
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    let handle: Awaited<ReturnType<typeof open>> | undefined;
+    try {
+      handle = await open(lockFile, 'wx');
+      try {
+        return await operation();
+      } finally {
+        await handle.close();
+        await rm(lockFile, { force: true });
+      }
+    } catch (error) {
+      if (handle || !isErrorCode(error, 'EEXIST')) throw error;
+      await asyncSleep(retryDelayMs);
+    }
+  }
+
+  throw new Error(`Timed out acquiring persistence lock ${lockFile}.`);
+}
 
 const syncSleep = (delayMs: number): void => {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
