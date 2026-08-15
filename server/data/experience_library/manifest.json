@@ -5,20 +5,20 @@
     {
       "path": "common_1.md",
       "role": "common",
-      "bytes": 2396,
-      "sha256": "0b774dd2ba381bfddf216bbf74e84fee5a5b9c9ac1704fda0a5b7934c29b9471"
+      "bytes": 4102,
+      "sha256": "adc903484544212cf7ed238270da32f1246f638863d2772f3b7a04dfb9fdad35"
     },
     {
       "path": "common_2.md",
       "role": "common",
-      "bytes": 2314,
-      "sha256": "803666fc0ccbd978de1d4f4b2ae5197328c61b3efcf361640c5ab49ca08f45cf"
+      "bytes": 3783,
+      "sha256": "03543a6bda03c216665357d4629755d55a607e5ca39fddc72e64885180dcfd62"
     },
     {
       "path": "common_3.md",
       "role": "common",
-      "bytes": 2573,
-      "sha256": "922890c372fd04ada90a67fc46a45ee57b66463767d9a41079dc4c1c3bb25425"
+      "bytes": 4459,
+      "sha256": "bc37aab0d7148610e8c76abbaaeaa03712383bad92f90070bce0865c5cbbc504"
     },
     {
       "path": "guard_1.md",
@@ -47,8 +47,8 @@
     {
       "path": "hunter_1.md",
       "role": "hunter",
-      "bytes": 2491,
-      "sha256": "fac75008dc2545abecd8430f5286e94cdd8d285a6bb7714788a96fc8c7657570"
+      "bytes": 3884,
+      "sha256": "06787175bcad8dc82ab6af6415a1cf9c10a182ad86aa5ef738007724b5309901"
     },
     {
       "path": "hunter_2.md",
@@ -71,8 +71,8 @@
     {
       "path": "seer_1.md",
       "role": "seer",
-      "bytes": 2547,
-      "sha256": "d0a664b2c64d6c8cd480160b04d7676fd921c5e71778cacc8c11ef5060ac4e02"
+      "bytes": 3688,
+      "sha256": "d0f71d14c88876ea9374e624b2b4b1631ee6f35f7472d6a415e17de4854be027"
     },
     {
       "path": "seer_2.md",
@@ -137,8 +137,8 @@
     {
       "path": "witch_1.md",
       "role": "witch",
-      "bytes": 2488,
-      "sha256": "6b7b32d9a3fc448a7d58cb34215fd691d061fab5576c90f552fb63fe2f5158ec"
+      "bytes": 3786,
+      "sha256": "04a77498f5ed76fcd51240ce3ed9571a818a61a2d810d860c4f0ee662caa7402"
     },
     {
       "path": "witch_2.md",
@@ -161,8 +161,8 @@
     {
       "path": "wolf_1.md",
       "role": "wolf",
-      "bytes": 2345,
-      "sha256": "3aed7a49b07ee9494a18d50f4d3ec1642129ad77b5eb1c0c6fd7e712a0c0cd90"
+      "bytes": 3897,
+      "sha256": "6c0139fbb2d4695b08bafdb3b02f44b0130476c3cfe4653e398cd2b254d99cfa"
     },
     {
       "path": "wolf_2.md",
@@ -191,8 +191,8 @@
     {
       "path": "wolf_6.md",
       "role": "wolf",
-      "bytes": 2216,
-      "sha256": "bc306204f188b6172d3bed346c1e503cfb82a681c2abf5169516239276c5ac03"
+      "bytes": 3659,
+      "sha256": "d34db8711e3acbd89fe369eceb5dee629478ff6f009610dfcd62364f4b31a4bf"
     },
     {
       "path": "wolf_7.md",
