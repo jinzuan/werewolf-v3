@@ -16,6 +16,11 @@ const STORAGE_KEY = 'wolf-exp-review-v1';
 const MAX_INSIGHTS_PER_ROLE = 8;
 const SIM_THRESHOLD = 0.6;
 
+/** Actual event anchors from the game being reviewed. */
+export interface ReviewEvidence {
+  tags: string[];
+}
+
 type ReviewStore = Record<string, string[]>;
 
 /**
@@ -87,6 +92,23 @@ const cleanInsight = (raw: string): string => {
   return t;
 };
 
+/**
+ * A transferable lesson still has to point at an observable event.  Generic
+ * advice such as "review the evidence next game" is deliberately rejected:
+ * it is not useful training data and usually means the review prompt lost its
+ * game context.
+ */
+const hasVerifiableEventReference = (
+  insight: string,
+  evidence?: ReviewEvidence,
+): boolean => {
+  const specificReference = /第\d+[晚天]|首夜|昨晚|被(?:投票出局|票出|狼刀|毒杀)|(?:查验|验人)(?:到|出|结果|时间线)|查杀|金水|票狼|投狼|跟票|狼刀|刀口|毒杀|守过|守护(?:成功|失败)|解药(?:救|未)|猎人开枪|公开票型|平票/;
+  if (!specificReference.test(insight)) return false;
+
+  if (!evidence || evidence.tags.length === 0) return true;
+  return evidence.tags.some((tag) => tag.length > 0 && insight.includes(tag));
+};
+
 /** 取该职业待归并的复盘心得 */
 export const getReviewInsights = (role: Role): string[] => {
   const store = safeGet();
@@ -94,9 +116,12 @@ export const getReviewInsights = (role: Role): string[] => {
 };
 
 /** 追加一条复盘心得：去重（相似度 ≥0.6 判重复不写入）、上限 8 条 */
-export const addReviewInsight = (role: Role, raw: string): boolean => {
+export const addReviewInsight = (role: Role, raw: string, evidence?: ReviewEvidence): boolean => {
   const insight = cleanInsight(raw);
-  if (!insight) return false;
+  if (!insight || !hasVerifiableEventReference(insight, evidence)) {
+    console.warn(`[experience-review] 丢弃无可验证事件引用的心得（${role}）`);
+    return false;
+  }
   const store = safeGet();
   const list = store[role] || [];
   const duplicated = list.some((item) => charSimilarity(item, insight) >= SIM_THRESHOLD);
@@ -145,6 +170,7 @@ export const buildReviewPrompt = (
     `请输出 1 条本局对你这个职业最有价值的复盘心得，用于更新该职业的经验库：`,
     `- 只能基于本局真实事件（死亡/查验/投票/关键转折）复盘，禁止捏造——不得出现"我记得XX说过"式虚构`,
     `- 具体可执行（战术/判断/时机），不要空话套话`,
+    `- 必须在句中引用至少一个本局事件锚点（如“查验到狼人”“被投票出局”“狼刀目标”“公开票型”）；只写“重视证据/及时沟通/认真复盘”等泛化原则将被丢弃`,
     `- 必须是可迁移经验：禁止出现任何玩家名字/昵称，无具体天数例子，用身份或位置代称`,
     `- 一条即可，≤100 字`,
     `- 只输出这一条心得本身，以"- "开头，不要多余解释`,

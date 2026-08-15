@@ -69,6 +69,16 @@ export interface GameTimelineEvent {
   source?: AIOutputSource;
 }
 
+/** Canonical human-readable game log derived by the engine at commit time. */
+export interface GameLogEvent {
+  id: string;
+  roomId: string;
+  day: number;
+  phase: GameState['phase'];
+  line: string;
+  source?: AIOutputSource;
+}
+
 /** 服务端推送给单个客户端的个性化快照（身份视角已按观看者做掩码） */
 export interface Snapshot {
   roomId: string;
@@ -192,6 +202,8 @@ export interface ArchiveRecord {
   insights: Array<{ role: Role; text: string }>;
   /** 狼队协作与猎人行动的结构化时间线；旧存档缺省为空。 */
   timelineEvents?: GameTimelineEvent[];
+  /** Complete QC/archive log; both consumers read this same final snapshot. */
+  gameLogEvents?: GameLogEvent[];
   kind: 'online' | 'auto'; // auto = 斗蛐蛐
 }
 

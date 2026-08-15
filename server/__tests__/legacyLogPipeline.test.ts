@@ -4,6 +4,7 @@ import test from 'node:test';
 import { resolve } from 'node:path';
 import { RoomEngine, type EngineAIAdapter } from '../engine';
 import type { Player } from '../../shared/types';
+import type { ArchiveRecord } from '../../shared/protocol';
 
 const adapter = (): EngineAIAdapter => ({
   source: 'real_ai',
@@ -34,8 +35,8 @@ const adapter = (): EngineAIAdapter => ({
   },
 });
 
-const waitUntil = async (predicate: () => boolean): Promise<void> => {
-  const deadline = Date.now() + 3_000;
+const waitUntil = async (predicate: () => boolean, timeoutMs = 3_000): Promise<void> => {
+  const deadline = Date.now() + timeoutMs;
   while (!predicate() && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
@@ -73,4 +74,48 @@ test('test-drive keeps source metadata out of speech text and enables archive re
   assert.doesNotMatch(source, /MOCK_MARKER|\[mock\]/);
   assert.match(source, /reviewEnabled:\s*true/);
   assert.match(source, /noArchive:\s*false/);
+});
+
+test('test-drive last words forwards the engine ledger through the shared AI path', () => {
+  const source = readFileSync(resolve(process.cwd(), 'test-drive.ts'), 'utf8');
+  const lastWordsBranch = source.match(/if \(gamePhase === '遗言'\) \{([\s\S]*?)\n      \}/)?.[1] || '';
+  assert.match(lastWordsBranch, /ai\.callAIApi/);
+  assert.match(lastWordsBranch, /messagesIn/);
+  assert.match(lastWordsBranch, /_gameHistory/);
+});
+
+test('QC output is produced from the archive callback and its canonical game log', () => {
+  const source = readFileSync(resolve(process.cwd(), 'test-drive.ts'), 'utf8');
+  assert.match(source, /onArchive:\s*\(record\)\s*=>/);
+  assert.match(source, /archivedRecord\.gameLogEvents/);
+  assert.doesNotMatch(source, /const out = \[\.\.\.header, \.\.\.events\]/);
+});
+
+test('archive callback and engine log expose the same complete final event source', async () => {
+  const archives: ArchiveRecord[] = [];
+  const engine = new RoomEngine({
+    roomName: 'canonical log test',
+    maxPlayers: 4,
+    auto: true,
+    reviewEnabled: true,
+    noArchive: true,
+    aiAdapter: adapter(),
+    hub: {
+      broadcastRoom: () => {},
+      destroyRoom: () => {},
+      onArchive: (record) => archives.push(record),
+    },
+  });
+  engine.fillAIPlayers(4);
+  engine.autoStartIfNeeded();
+
+  await waitUntil(() => archives.length > 0, 12_000);
+  engine.destroy();
+
+  assert.equal(archives.length, 1);
+  assert.deepEqual(
+    archives[0].gameLogEvents?.map((event) => event.line),
+    engine.getGameLogEvents().map((event) => event.line),
+  );
+  assert.match(archives[0].gameLogEvents?.at(-1)?.line || '', /游戏结束/);
 });

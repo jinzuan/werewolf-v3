@@ -7,7 +7,7 @@ import type { GameLog } from './types';
  * 位置/命名：
  *   - 浏览器端：localStorage 键 `wolf-game-logs`（JSON 数组，每局一条记录）。
  *   - 每局记录结构：{ id, roomId, roomName, startedAt, endedAt, winner, day, logCount, logs }
- *   - Node 端（test-drive / QC）：qc_events.txt（单局覆盖式，见 test-drive.ts）。
+ *   - Node 端（test-drive / QC）：qc_events.txt（由服务端归档的 canonical gameLogEvents 渲染）。
  */
 
 export interface ArchivedGame {

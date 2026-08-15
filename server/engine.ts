@@ -22,7 +22,12 @@ import {
 } from '../shared/aiClient';
 import type { GameHistory } from '../shared/aiClient';
 import { initGameMemory } from '../shared/memorySystem';
-import { addReviewInsight, buildReviewPrompt, setReviewStorageBackend } from '../shared/experienceReview';
+import {
+  addReviewInsight,
+  buildReviewPrompt,
+  setReviewStorageBackend,
+  type ReviewEvidence,
+} from '../shared/experienceReview';
 import { loadAIConfig } from './config';
 import { loadReviewStore, saveReviewStore, addArchive, serverStorage } from './persistence';
 import type { PersistedRoom } from './persistence';
@@ -35,6 +40,7 @@ import type {
   DebugLogEntry,
   GameTimelineEvent,
   GameTimelineEventType,
+  GameLogEvent,
 } from '../shared/protocol';
 import { redactSensitive } from '../shared/redact';
 // The shared review helper uses a browser-shaped storage key. Map it to the
@@ -50,6 +56,7 @@ export interface EngineHub {
   emitDebug?(roomCode: string, event: 'debug:snapshot' | 'debug:log'): void;
   persistRoom?(room: PersistedRoom): void;
   onTimelineEvent?(event: GameTimelineEvent): void;
+  onArchive?(record: ArchiveRecord): void;
 }
 
 /**
@@ -162,6 +169,8 @@ export class RoomEngine {
   private thinkingPlayers: Record<string, number> = {};
   private reviewInsights: Array<{ role: Role; text: string }> = [];
   private timelineEvents: GameTimelineEvent[] = [];
+  private gameLogEvents: GameLogEvent[] = [];
+  private voteReasons: Record<string, string> = {};
   private running = false;
   private loopPromise: Promise<void> | null = null;
   private waiters: Array<() => void> = [];
@@ -329,13 +338,14 @@ export class RoomEngine {
   }
 
   private toPersistedRoom(): PersistedRoom {
-    return { roomId: this.roomId, roomCode: this.roomCode, roomName: this.roomName, maxPlayers: this.maxPlayers, joinToken: this.joinToken, hostId: this.hostId, players: this.players, spectators: this.spectators, game: this.game, messages: this.messages, wolfChat: this.wolfChat, timelineEvents: this.timelineEvents, gameStarted: this.gameStarted, winnerTeam: this.winnerTeam, aborted: this.aborted, auto: this.auto, settings: this.settings, debugMode: this.debugMode, savedAt: Date.now() };
+    return { roomId: this.roomId, roomCode: this.roomCode, roomName: this.roomName, maxPlayers: this.maxPlayers, joinToken: this.joinToken, hostId: this.hostId, players: this.players, spectators: this.spectators, game: this.game, messages: this.messages, wolfChat: this.wolfChat, timelineEvents: this.timelineEvents, gameLogEvents: this.gameLogEvents, gameStarted: this.gameStarted, winnerTeam: this.winnerTeam, aborted: this.aborted, auto: this.auto, settings: this.settings, debugMode: this.debugMode, savedAt: Date.now() };
   }
 
   private restore(room: PersistedRoom): void {
     this.hostId = room.hostId; this.players = room.players || []; this.spectators = room.spectators || [];
     this.game = room.game || null; this.messages = room.messages || []; this.wolfChat = room.wolfChat || [];
     this.timelineEvents = room.timelineEvents || [];
+    this.gameLogEvents = room.gameLogEvents || [];
     this.gameStarted = !!room.gameStarted; this.winnerTeam = room.winnerTeam || null; this.aborted = !!room.aborted;
     this.settings = room.settings || this.settings; this.connected = {};
     this.players.forEach((player) => { this.connected[player.id] = false; });
@@ -437,6 +447,26 @@ export class RoomEngine {
       ...(source ? { source } : {}),
     };
     this.timelineEvents.push(event);
+    const targetName = typeof payload.targetName === 'string' ? payload.targetName : undefined;
+    const line = eventType === 'wolf.message'
+      ? `第${event.day}晚 狼人讨论 ${event.actorName || '狼人'}: ${String(payload.content || '')}`
+      : eventType === 'wolf.vote_cast'
+      ? `第${event.day}晚 狼队投票 ${event.actorName || '狼人'}→${String(targetName || '跳过')}`
+      : eventType === 'wolf.kill_locked'
+      ? targetName
+        ? `第${event.day}晚 狼人刀杀 ${targetName}`
+        : `第${event.day}晚 狼人决定不杀人`
+      : eventType === 'hunter.shot'
+      ? `第${event.day}天 猎人开枪 ${String(targetName || '目标')}`
+      : `第${event.day}天 猎人选择不开枪`;
+    this.appendGameLog(line, source);
+    this.appendReviewEvent({
+      day: event.day,
+      phase: event.phase === 'night' ? '夜间行动' : '猎人开枪',
+      event: line,
+      actor: event.actorName,
+      target: targetName,
+    });
     this.hub.onTimelineEvent?.(structuredClone(event));
   }
 
@@ -444,8 +474,85 @@ export class RoomEngine {
     return structuredClone(this.timelineEvents);
   }
 
+  getGameLogEvents(): GameLogEvent[] {
+    return structuredClone(this.gameLogEvents);
+  }
+
   private addSystem(content: string): void {
     this.messages.push(this.makeMessage({ id: 'system', name: '系统' }, content, 'system'));
+    if (content.startsWith('【公告】')) this.appendGameLog(content);
+  }
+
+  private appendGameLog(line: string, source?: AIOutputSource): void {
+    this.gameLogEvents.push({
+      id: `${this.roomId}-log-${this.gameLogEvents.length + 1}`,
+      roomId: this.roomId,
+      day: this.game?.day ?? 1,
+      phase: this.game?.phase ?? 'waiting',
+      line,
+      ...(source ? { source } : {}),
+    });
+  }
+
+  private appendReviewEvent(event: {
+    day?: number;
+    phase: string;
+    event: string;
+    actor?: string;
+    target?: string;
+  }): void {
+    this.gameHistory.reviewTimeline = this.gameHistory.reviewTimeline || [];
+    this.gameHistory.reviewTimeline.push({
+      day: event.day ?? this.game?.day ?? 1,
+      phase: event.phase,
+      event: event.event,
+      ...(event.actor ? { actor: event.actor } : {}),
+      ...(event.target ? { target: event.target } : {}),
+    });
+  }
+
+  private recordNightActionLog(
+    actor: Player,
+    action: 'check' | 'guard' | 'heal' | 'poison',
+    target?: Player,
+    result?: string,
+  ): void {
+    const targetName = target?.name || '无目标';
+    const line = action === 'check'
+      ? `第${this.game?.day ?? 1}晚 预言家查验 ${targetName} → ${result || '结果未记录'}`
+      : action === 'guard'
+      ? `第${this.game?.day ?? 1}晚 守卫守护 ${targetName}`
+      : action === 'heal'
+      ? `第${this.game?.day ?? 1}晚 女巫解药救 ${targetName}`
+      : `第${this.game?.day ?? 1}晚 女巫毒杀 ${targetName}`;
+    this.appendGameLog(line, actor.isAI ? this.aiOutputSource() : undefined);
+    this.appendReviewEvent({
+      phase: '夜间行动',
+      event: line,
+      actor: actor.name,
+      target: target?.name,
+    });
+  }
+
+  private recordSpeechLog(
+    player: Player,
+    content: string,
+    kind: 'day' | 'free' | 'pk' | 'lastWords',
+  ): void {
+    const day = this.game?.day ?? 1;
+    if (kind === 'free') this.appendGameLog(`第${day}天[自由讨论] 插话: ${player.name}`);
+    const line = kind === 'pk'
+      ? `第${day}天 PK ${player.name}: ${content}`
+      : kind === 'lastWords'
+      ? `第${day}天 ${player.name} 遗言: ${content}`
+      : `第${day}天 ${player.name}: ${content}`;
+    this.appendGameLog(line, player.isAI ? this.aiOutputSource() : undefined);
+    this.appendReviewEvent({
+      day,
+      phase: kind === 'lastWords' ? '遗言' : kind === 'pk' ? 'PK争辩' : kind === 'free' ? '自由讨论' : '白天发言',
+      event: content,
+      actor: player.name,
+    });
   }
 
   private pushRepeat(playerName: string, speech: string, day?: number): void {
@@ -525,6 +632,8 @@ export class RoomEngine {
     this.review = { enabled: this.settings.reviewEnabled, stage: 'idle', messages: [], team: null, startedAt: null };
     this.reviewInsights = [];
     this.timelineEvents = [];
+    this.gameLogEvents = [];
+    this.voteReasons = {};
     this.wolfChat = [];
     this.messages = [];
     this.resetAI();
@@ -956,8 +1065,10 @@ export class RoomEngine {
       if (targetId) {
         this.game.nightActions.push({ playerId: guard.id, action: 'guard', targetId });
         const t = this.players.find((p) => p.id === targetId);
+        this.recordNightActionLog(guard, 'guard', t);
         this.addSystem(`🛡️ 守卫守护了 ${t?.name || '目标'}。`);
       } else {
+        this.appendReviewEvent({ phase: '夜间行动', event: '守卫选择跳过', actor: guard.name });
         this.addSystem('🛡️ 守卫选择跳过。');
       }
       this.game.guardianActionComplete = true;
@@ -987,6 +1098,7 @@ export class RoomEngine {
         if (targetId) {
           this.game.nightActions.push({ playerId: seer.id, action: 'check', targetId });
           const t = this.players.find((p) => p.id === targetId);
+          this.recordNightActionLog(seer, 'check', t, t?.role === 'wolf' ? '狼人' : t?.role ? '好人' : undefined);
           this.addSystem(`🔮 预言家查验了 ${t?.name || '目标'}。`);
           // v2.4.8 任务12：记录查验结果进 gameHistory.playerKnowledge（预言家记住验过谁/结果，供白天发言 + 夜间不重复查验）
           if (t && t.role) {
@@ -1168,6 +1280,7 @@ export class RoomEngine {
         if (canHeal) {
           console.warn(`[engine] 女巫 ${witch.name} 决策原文乱码「${raw.trim().slice(0, 40)}」，按默认决策使用解药救人（有人被刀且女巫有解药）`);
           this.game.nightActions.push({ playerId: witch.id, action: 'heal', targetId: killTarget });
+          this.recordNightActionLog(witch, 'heal', this.players.find((p) => p.id === killTarget));
           this.game.witchHasHealPotion = false;
           this.game.witchAntidoteUsed = true;
           this.addSystem(`🧙 女巫使用解药救了 ${this.players.find((p) => p.id === killTarget)?.name || '目标'}。`);
@@ -1183,6 +1296,7 @@ export class RoomEngine {
         if (namedTarget || !decision.target) {
           const targetId = killTarget;
           this.game.nightActions.push({ playerId: witch.id, action: 'heal', targetId });
+          this.recordNightActionLog(witch, 'heal', this.players.find((p) => p.id === targetId));
           this.game.witchHasHealPotion = false;
           this.game.witchAntidoteUsed = true;
           this.addSystem(`🧙 女巫使用解药救了 ${this.players.find((p) => p.id === targetId)?.name || '目标'}。`);
@@ -1198,6 +1312,7 @@ export class RoomEngine {
           : null;
         if (named) {
           this.game.nightActions.push({ playerId: witch.id, action: 'poison', targetId: named.id });
+          this.recordNightActionLog(witch, 'poison', named);
           this.game.witchHasPoisonPotion = false;
           this.addSystem(`🧙 女巫使用毒药毒杀 ${named.name}。`);
           used = true;
@@ -1302,6 +1417,12 @@ export class RoomEngine {
     const role = player?.role || null;
     this.deaths.push({ name, role, day, reason });
     this.gameHistory.deadPlayers.push({ name, role, day, reason });
+    this.appendReviewEvent({
+      day,
+      phase: reason.includes('投票') ? '白天放逐' : '夜间结算',
+      event: `${name} ${reason}`,
+      target: name,
+    });
   }
 
   private transitionToDay(): void {
@@ -1365,6 +1486,7 @@ export class RoomEngine {
           if (!this.game || this.game.phase !== 'day' || this.game.dayPhase.phase !== 'round1') return;
           if (text && !isSkipResponse(text)) {
             this.messages.push(this.makeMessage(speaker, text, 'public', this.aiOutputSource()));
+            this.recordSpeechLog(speaker, text, 'day');
             this.game.dayPhase.allSkipped = false;
             this.broadcast();
           }
@@ -1413,6 +1535,7 @@ export class RoomEngine {
         if (!this.game || this.game.phase !== 'day') return;
         if (text && !isSkipResponse(text)) {
           this.messages.push(this.makeMessage(p, text, 'public', this.aiOutputSource()));
+          this.recordSpeechLog(p, text, 'free');
           this.game.dayPhase.usedCount = { ...this.game.dayPhase.usedCount, [p.id]: used + 1 };
           this.game.dayPhase.allSkipped = false;
           spoke++;
@@ -1517,6 +1640,7 @@ export class RoomEngine {
     this.tiePlayers = [];
     this.tieDebateRound = 1;
     this.game.votes = {}; // 每天重新清空投票，防止沿用上一轮
+    this.voteReasons = {};
 
     for (let round = 1; round <= 4; round++) {
       if (!this.game || this.game.phase !== 'vote') return;
@@ -1530,7 +1654,7 @@ export class RoomEngine {
         if (this.game.votes[p.id] !== undefined) continue;
         if (p.isAI) {
           const aliveTargets = this.players.filter((x) => x.isAlive && x.id !== p.id);
-          const { targetId } = await this.aiVote(p, this.tiePlayers, this.isInTieDebate);
+          const { targetId, reason } = await this.aiVote(p, this.tiePlayers, this.isInTieDebate);
           const finalTarget =
             targetId && this.players.find((x) => x.id === targetId)
               ? targetId
@@ -1540,6 +1664,7 @@ export class RoomEngine {
               ? aliveTargets[Math.floor(Math.random() * aliveTargets.length)].id
               : 'skip';
           this.game.votes = { ...this.game.votes, [p.id]: finalTarget };
+          this.voteReasons[p.id] = reason;
           this.broadcast();
         } else {
           this.broadcast();
@@ -1610,6 +1735,7 @@ export class RoomEngine {
           const text = await this.callTieDebate(tp);
           if (text && !isSkipResponse(text)) {
             this.messages.push(this.makeMessage(tp, text, 'public', this.aiOutputSource()));
+            this.recordSpeechLog(tp, text, 'pk');
             this.broadcast();
           }
         } else {
@@ -1619,15 +1745,17 @@ export class RoomEngine {
       }
       // PK 加投：只允许平票玩家投平票玩家（不能投自己）
       this.game.votes = {};
+      this.voteReasons = {};
       const pkVoters = this.tiePlayers.map((id) => this.players.find((x) => x.id === id)).filter((x) => x && x.isAlive);
       for (const p of pkVoters) {
         if (!this.game || this.game.phase !== 'vote') return;
         if (!p) continue;
         const candidates = this.tiePlayers.filter((id) => id !== p.id && this.players.find((x) => x.id === id)?.isAlive);
         if (p.isAI) {
-          const { targetId } = await this.aiVote(p, this.tiePlayers, true);
+          const { targetId, reason } = await this.aiVote(p, this.tiePlayers, true);
           const pick = candidates.find((id) => id === targetId) || candidates[0];
           this.game.votes = { ...this.game.votes, [p.id]: pick || 'skip' };
+          this.voteReasons[p.id] = reason;
           this.broadcast();
         } else {
           this.broadcast();
@@ -1642,6 +1770,7 @@ export class RoomEngine {
           );
         }
       }
+      this.recordPublicVotes(this.game.day, 'PK');
       const pkResult = determineVoteResult(this.game.votes);
       if (pkResult && pkResult !== 'skip') {
         await this.applyVoteResult(pkResult);
@@ -1748,6 +1877,20 @@ export class RoomEngine {
         .map(([v, t]) => `${byId(v) ?? '玩家'}投→${byId(t) ?? t}`)
         .join('、') || '全员弃票',
     });
+    Object.entries(this.game.votes).forEach(([voterId, targetId]) => {
+      const voterName = byId(voterId) || '玩家';
+      const targetName = targetId && targetId !== 'skip' ? byId(targetId) || targetId : '弃票';
+      const reason = this.voteReasons[voterId];
+      const line = `第${day}天 ${voterName} ${phase === 'PK' ? 'PK投' : '投'}→${targetName}${reason ? `（理由：${reason}）` : ''}`;
+      this.appendGameLog(line);
+      this.appendReviewEvent({
+        day,
+        phase: phase === 'PK' ? 'PK投票' : '公开投票',
+        event: line,
+        actor: voterName,
+        target: targetName === '弃票' ? undefined : targetName,
+      });
+    });
   }
 
   private async applyVoteResult(targetId: string): Promise<void> {
@@ -1802,6 +1945,7 @@ export class RoomEngine {
       const text = await this.callLastWords(p);
       if (text && !isSkipResponse(text)) {
         this.messages.push(this.makeMessage(p, text, 'public', this.aiOutputSource()));
+        this.recordSpeechLog(p, text, 'lastWords');
         this.broadcast();
       }
       await this.sleep(500);
@@ -1971,6 +2115,7 @@ export class RoomEngine {
         // 白天/遗言轮到本人 → 正常发言
         if (this.game.phase === 'day' && p && this.game.currentSpeaker === p.id) {
           this.messages.push(this.makeMessage(p, content, 'public'));
+          this.recordSpeechLog(p, content, 'day');
           if (this.game.dayPhase.phase !== 'round1') {
             this.game.dayPhase.usedCount = {
               ...this.game.dayPhase.usedCount,
@@ -1982,6 +2127,7 @@ export class RoomEngine {
           this.broadcast();
         } else if (this.game.phase === 'lastWords' && p && this.game.lastWordsPlayer === p.id) {
           this.messages.push(this.makeMessage(p, content, 'public'));
+          this.recordSpeechLog(p, content, 'lastWords');
           this.turnDone = true;
           this.broadcast();
         } else if (this.game.phase === 'day' && p && isAlive && this.game.dayPhase.phase === 'free_discussion') {
@@ -1989,6 +2135,7 @@ export class RoomEngine {
           const used = this.game.dayPhase.usedCount[p.id] || 0;
           if (used < 5) {
             this.messages.push(this.makeMessage(p, content, 'public'));
+            this.recordSpeechLog(p, content, 'free');
             this.game.dayPhase.usedCount = { ...this.game.dayPhase.usedCount, [p.id]: used + 1 };
             this.game.dayPhase.allSkipped = false;
             this.broadcast();
@@ -2030,6 +2177,7 @@ export class RoomEngine {
           target = valid || 'skip';
         }
         this.game.votes = { ...this.game.votes, [p.id]: target };
+        this.voteReasons[p.id] = action.reason || '';
         this.wake();
         this.broadcast();
         break;
@@ -2098,6 +2246,11 @@ export class RoomEngine {
         if (action.action === 'poison' && !this.game.witchHasPoisonPotion) break;
         this.game.nightActions.push({ playerId: p.id, action: action.action, targetId: target.id });
         this.game.actionDone = { ...this.game.actionDone, [p.id]: true };
+        if (action.action === 'check') {
+          this.recordNightActionLog(p, 'check', target, target.role === 'wolf' ? '狼人' : target.role ? '好人' : undefined);
+        } else if (action.action === 'guard' || action.action === 'heal' || action.action === 'poison') {
+          this.recordNightActionLog(p, action.action, target);
+        }
         if (action.action === 'guard') {
           this.game.guardianActionComplete = true;
           // v2.4.10 任务3：人类守卫的守护目标同样落系统日志（round12 确认"没守还是没记录"——补齐）
@@ -2118,6 +2271,7 @@ export class RoomEngine {
         this.game.actionDone = { ...this.game.actionDone, [p.id]: true };
         if (p.role === 'guardian') {
           this.game.guardianActionComplete = true;
+          this.appendReviewEvent({ phase: '夜间行动', event: '守卫选择跳过', actor: p.name });
           this.addSystem('🛡️ 守卫选择跳过。');
         }
         this.wake();
@@ -2257,6 +2411,8 @@ export class RoomEngine {
     this.messages = [];
     this.wolfChat = [];
     this.timelineEvents = [];
+    this.gameLogEvents = [];
+    this.voteReasons = {};
     this.deaths = [];
     this.players = this.players.map((p) => ({ ...p, role: null, isAlive: true, isReady: p.isAI }));
     this.review = { enabled: this.settings.reviewEnabled, stage: 'idle', messages: [], team: null, startedAt: null };
@@ -2269,6 +2425,7 @@ export class RoomEngine {
 
   private async finishGame(): Promise<void> {
     if (this.winnerTeam) {
+      this.appendGameLog(`第${this.game?.day ?? 1}天 游戏结束，${this.winnerTeam === 'wolf' ? '狼人' : '好人'}获胜`);
       // 斗蛐蛐对局数上限（P1-6）
       if (this.auto) {
         this.autoGamesPlayed += 1;
@@ -2289,9 +2446,29 @@ export class RoomEngine {
   }
 
   private buildSummary(): string {
-    const dead = this.deaths.map((d) => `${d.name}第${d.day}${d.reason.includes('投票') ? '天被票' : d.reason.includes('毒') ? '晚被毒' : d.reason.includes('枪') ? '天被枪' : '晚被刀'}`).join('；');
+    const dead = this.deaths.map((d) => `第${d.day}${d.reason.includes('投票') ? '天被投票出局' : d.reason.includes('毒') ? '晚女巫毒杀' : d.reason.includes('枪') ? '天猎人开枪' : '晚狼刀死亡'}`).join('；');
     const result = this.winnerTeam === 'wolf' ? '狼人获胜' : this.winnerTeam === 'good' ? '好人获胜' : '未分胜负';
     return `本局第${this.game?.day ?? 1}天结束，${result}；共 ${this.deaths.length} 人死亡（${dead || '无'}）。`;
+  }
+
+  private buildReviewEvidence(): ReviewEvidence {
+    const tags = new Set<string>();
+    this.deaths.forEach((death) => {
+      if (death.reason.includes('投票')) tags.add('被投票出局');
+      if (death.reason.includes('刀')) tags.add('狼刀');
+      if (death.reason.includes('毒')) tags.add('女巫毒');
+      if (death.reason.includes('枪')) tags.add('猎人开枪');
+    });
+    (this.gameHistory.reviewTimeline || []).forEach((event) => {
+      const text = `${event.event} ${event.phase}`;
+      if (text.includes('查验')) tags.add('查验');
+      if (text.includes('投票')) tags.add('公开投票');
+      if (text.includes('票型')) tags.add('公开票型');
+      if (text.includes('守卫守护')) tags.add('守护');
+      if (text.includes('女巫')) tags.add('女巫');
+      if (text.includes('刀口')) tags.add('刀口');
+    });
+    return { tags: [...tags] };
   }
 
   private async runReview(): Promise<void> {
@@ -2402,6 +2579,7 @@ export class RoomEngine {
   /** 各职业经验心得：复用 experienceReview 的 buildReviewPrompt + addReviewInsight（服务端文件持久化） */
   private async runInsights(): Promise<void> {
     const summary = this.buildSummary();
+    const evidence = this.buildReviewEvidence();
     const rolesPresent = new Set<Role>();
     this.players.forEach((p) => {
       if (p.role) rolesPresent.add(p.role);
@@ -2417,10 +2595,8 @@ export class RoomEngine {
       const prompt = buildReviewPrompt(role, this.winnerTeam, summary);
       const text = await this.callReview(rep, prompt);
       const cleaned = (text || '').replace(/^[-*•]\s*/, '').replace(/^["'“”]|["'“”]$/g, '').trim();
-      if (cleaned && cleaned.length > 0) {
-        const ok = addReviewInsight(role, cleaned);
-        if (ok) this.reviewInsights.push({ role, text: cleaned });
-      }
+      const ok = addReviewInsight(role, cleaned, evidence);
+      if (ok) this.reviewInsights.push({ role, text: cleaned });
       await this.sleep(300);
     }
 
@@ -2435,10 +2611,8 @@ export class RoomEngine {
         + `≤100 字，无玩家名、无具体天数例子，以"- "开头。`
       );
       const cleaned = (text || '').replace(/^[-*•]\s*/, '').trim();
-      if (cleaned) {
-        for (const r of [...rolesPresent].filter((x) => x !== 'wolf')) {
-          if (addReviewInsight(r, cleaned)) this.reviewInsights.push({ role: r, text: cleaned });
-        }
+      for (const r of [...rolesPresent].filter((x) => x !== 'wolf')) {
+        if (addReviewInsight(r, cleaned, evidence)) this.reviewInsights.push({ role: r, text: cleaned });
       }
     }
     if (wolfRep) {
@@ -2449,18 +2623,21 @@ export class RoomEngine {
         + `≤100 字，无玩家名、无具体天数例子，以"- "开头。`
       );
       const cleaned = (text || '').replace(/^[-*•]\s*/, '').trim();
-      if (cleaned && addReviewInsight('wolf', cleaned)) {
+      if (addReviewInsight('wolf', cleaned, evidence)) {
         this.reviewInsights.push({ role: 'wolf', text: cleaned });
       }
     }
     // 同步一次到文件
     saveReviewStore(loadReviewStore());
-    this.addSystem('✅ 复盘心得已写入对应职业经验库（局后复盘补充段，下一局自动注入）。');
+    this.addSystem(
+      this.reviewInsights.length > 0
+        ? '✅ 复盘心得已写入对应职业经验库（局后复盘补充段，下一局自动注入）。'
+        : '⚠️ 本局没有心得通过可验证事件门禁，未写入经验库。',
+    );
     this.broadcast();
   }
 
   private async archiveGame(): Promise<void> {
-    if (this.noArchive) return;
     const record: ArchiveRecord = {
       id: `ar-${Date.now()}`,
       roomId: this.roomId,
@@ -2476,9 +2653,16 @@ export class RoomEngine {
       reviewMessages: this.review.messages,
       insights: this.reviewInsights,
       timelineEvents: this.timelineEvents,
+      gameLogEvents: this.gameLogEvents,
       kind: this.auto ? 'auto' : 'online',
     };
+    // Tests/headless observers may consume the exact record without writing it.
+    if (this.noArchive) {
+      this.hub.onArchive?.(structuredClone(record));
+      return;
+    }
     addArchive(record);
+    this.hub.onArchive?.(structuredClone(record));
     console.log(`[server] 存档：${this.roomName} (${this.roomCode}) 第${record.day}天 ${record.winner === 'wolf' ? '狼胜' : '好胜'}`);
   }
 

@@ -33,6 +33,14 @@ interface PlayerKnowledge {
   notes?: string;
 }
 
+export interface ReviewTimelineEntry {
+  day: number;
+  phase: string;
+  event: string;
+  actor?: string;
+  target?: string;
+}
+
 interface GameHistory {
   nightResults: NightResult[];
   votes: Record<string, string>;
@@ -47,6 +55,8 @@ interface GameHistory {
     actor?: string;
     target?: string;
   }>;
+  /** Full post-game ledger. It is only injected into review calls. */
+  reviewTimeline?: ReviewTimelineEntry[];
   /** v2.4.8 任务15：每日局势摘要（公开信息黑板：存活/死亡/阶段），由服务端每天刷新注入 */
   situationSummary?: string;
 }
@@ -1452,6 +1462,74 @@ const generateNightPrompt = (params: GeneratePromptParams): { system: string; us
   return { system, user: prompt };
 };
 
+/**
+ * Post-game reviews need a complete, authoritative ledger. The normal prompt
+ * deliberately filters private facts by role; applying that filter to a
+ * review is what previously produced empty, generic reflections.
+ */
+export const buildReviewContext = (
+  gameHistory: GameHistory | undefined,
+  players: Player[],
+  messages: Message[],
+): string => {
+  const timeline = gameHistory?.reviewTimeline?.length
+    ? gameHistory.reviewTimeline
+    : gameHistory?.timeline?.map((event) => ({
+        day: event.day,
+        phase: event.phase,
+        event: event.event,
+        actor: event.actor,
+        target: event.target,
+      })) || [];
+  const timelineLines = timeline.map((event) => {
+    const who = event.actor ? `（行动者：${event.actor}${event.target ? ` → ${event.target}` : ''}）` : '';
+    return `第${event.day}${event.phase.includes('晚') || event.phase.includes('夜') ? '晚' : '天'} ${event.phase}：${event.event}${who}`;
+  });
+  const actions = timeline
+    .filter((event) => Boolean(event.actor))
+    .map((event) => {
+      const target = event.target ? ` → ${event.target}` : '';
+      return `第${event.day}天 ${event.actor}${target}：${event.event}（${event.phase}）`;
+    });
+  const recordedKnowledge = Object.entries(gameHistory?.playerKnowledge || {}).flatMap(([name, knowledge]) => [
+    ...(knowledge.checkResults || []).map((check) => `第${check.day}晚 ${name} 查验结果：${check.result}`),
+    ...(knowledge.votes || []).map((vote) => `第${vote.day}天 ${name} 投票给 ${vote.target}`),
+  ]);
+  const publicMessages = messages
+    .filter((message) => message.type === 'public' || message.type === 'wolf_chat')
+    .map((message) => `${message.playerName || '玩家'}：${message.content}`);
+  const deaths = (gameHistory?.deadPlayers || []).map(
+    (death) => `第${death.day}天 ${death.name}：${formatDeathDetail(death.day, death.reason)}`,
+  );
+  const nightResults = (gameHistory?.nightResults || []).map((night) => {
+    const facts = [
+      night.killed ? `狼刀 ${night.killed}` : '',
+      night.poisoned ? `女巫毒 ${night.poisoned}` : '',
+      night.healed ? `解药救 ${night.healed}` : '',
+      night.guarded ? `守卫守 ${night.guarded}` : '',
+      night.checked ? `查验 ${night.checked.target}=${night.checked.result}` : '',
+    ].filter(Boolean);
+    return facts.length ? `第${night.day}晚：${facts.join('；')}` : '';
+  }).filter(Boolean);
+  const playerRoster = players.map((player) => `${player.name}（${player.role || '身份未记录'}）`).join('、');
+
+  return [
+    '【本局完整事件时间线（服务端账本，按发生顺序）】',
+    timelineLines.length ? timelineLines.join('\n') : '服务端未提供事件时间线',
+    '【逐人行动记录（服务端实际行动，不是模型推测）】',
+    [...actions, ...recordedKnowledge].length
+      ? [...actions, ...recordedKnowledge].join('\n')
+      : '服务端未提供逐人行动记录',
+    '【夜间结算记录】',
+    nightResults.length ? nightResults.join('\n') : '服务端未提供夜间结算记录',
+    '【死亡与放逐记录】',
+    deaths.length ? deaths.join('\n') : '服务端未提供死亡记录',
+    '【逐人发言/狼队讨论记录】',
+    publicMessages.length ? publicMessages.join('\n') : '服务端未提供发言记录',
+    `【本局玩家与身份（仅供局后复盘核对）】\n${playerRoster || '无'}`,
+  ].join('\n');
+};
+
 export const callAIApi = async (
   config: AIConfig,
   role: Role,
@@ -1466,7 +1544,7 @@ export const callAIApi = async (
   speakerOrder?: string[],
   wolfDiscussionRound?: number,
   playerId?: string,
-  customUserPrompt?: string // v2.4.5-A A4：局后复盘等场景直接用自定义 user prompt，跳过当轮发言模板
+  customUserPrompt?: string // v2.4.5-A A4：局后复盘等场景的任务指令；复盘会追加完整账本
   , isSorter?: boolean // v2.4.10 任务1：今日"捋"人（逻辑梳理，字数放宽到 ≤300）
 ): Promise<string> => {
   if (isAborted) {
@@ -1656,9 +1734,11 @@ export const callAIApi = async (
       user = built.user;
     }
 
-    // v2.4.5-A A4：自定义 prompt（局后复盘）直接覆盖 user，跳过当轮发言模板
+    // v2.4.5-A A4：自定义 prompt 作为任务指令；复盘仍必须保留完整账本。
     if (customUserPrompt) {
-      user = customUserPrompt;
+      user = gamePhase === '复盘'
+        ? `${customUserPrompt}\n\n${buildReviewContext(gameHistory, players, messages)}`
+        : customUserPrompt;
     }
 
     const headers: Record<string, string> = {

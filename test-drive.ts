@@ -27,7 +27,7 @@ import { pathToFileURL } from 'url';
 import { RoomEngine, type EngineAIAdapter, type EngineHub } from './server/engine';
 import { getAlivePlayers } from './shared/gameLogic';
 import type { AIConfig, Player, Role, Message, NightAction } from './shared/types';
-import type { GameTimelineEvent } from './shared/protocol';
+import type { ArchiveRecord } from './shared/protocol';
 import { PERSONAS, getPlayerMemory } from './shared/memorySystem';
 import { AI_DEFAULTS } from './shared/config/aiDefaults';
 
@@ -49,7 +49,6 @@ const rand = () => {
 const pickOne = <T>(arr: T[]): T => arr[Math.floor(rand() * arr.length)];
 const chance = (p: number) => rand() < p;
 
-const events: string[] = [];
 let players: Player[] = [];
 let playerPersona: Record<string, string> = {};
 
@@ -187,7 +186,6 @@ const genSpeech = (p: Player, day: number): string => {
     const collideSelf = myHistory.some((u) => skeletonSimilarity(u, sk) >= 0.6);
     if (!collideToday && !collideSelf) break;
     const skShow = sk.length > 16 ? `${sk.slice(0, 16)}…` : sk;
-    events.push(`第${day}天[防复读拦截] ${p.name} 撞模板（${skShow}，与${collideSelf ? '自己历史' : '今日他人发言'}），重生成`);
     base = pickTemplate(styles);
   }
   const finalSk = templateNorm(base);
@@ -385,8 +383,6 @@ const makeAdapter = (): EngineAIAdapter => {
   let lastDay = -1;
   const speechesToday = new Map<string, string>();
 
-  // 记录每次广播中新出现的【公告】system 消息（死讯/出局透传）——按内容去重，防数组长度差异漏扫
-  const announced = new Set<string>();
   const ensureDayState = (day: number) => {
     if (day !== lastDay) {
       lastDay = day;
@@ -395,15 +391,6 @@ const makeAdapter = (): EngineAIAdapter => {
       templateUsageToday = [];
       usedSimSkeletonsToday = [];
       usedReasonTemplatesToday = new Set();
-    }
-  };
-
-  const flushAnnouncements = (msgs: Message[]) => {
-    for (const m of msgs) {
-      if (m && m.type === 'system' && m.content.startsWith('【公告】') && !announced.has(m.content)) {
-        announced.add(m.content);
-        events.push(m.content);
-      }
     }
   };
 
@@ -429,7 +416,6 @@ const makeAdapter = (): EngineAIAdapter => {
         });
       }
       ensureDayState(day);
-      flushAnnouncements(messagesIn);
 
       if (gamePhase === '狼人讨论') {
         // 狼人讨论：真实 AI 走真实调用；模板模式输出含 {目标}（engine aiWolfVoteTarget 解析）
@@ -449,8 +435,6 @@ const makeAdapter = (): EngineAIAdapter => {
           const resp = await ai.callAIApi(aiConfig ?? config, role, playerName, playersIn, messagesIn, gamePhase, day, _nightActions, _gameHistory, _currentSpeaker, _speakerOrder, _wolfRound, _playerId, _customUserPrompt, isSorter);
           const text = (resp || '').trim();
           if (text && !/^游戏已中止/.test(text)) {
-            if (gamePhase === '自由讨论') events.push(`第${day}天[自由讨论] 插话: ${playerName}`);
-            events.push(`第${day}天 ${playerName}: ${truncateSpeech(text, gamePhase === '自由讨论' ? 150 : isSorter ? 300 : 100)}`);
             speechesToday.set(_playerId || playerName, text);
           }
           return text;
@@ -459,23 +443,38 @@ const makeAdapter = (): EngineAIAdapter => {
         const rh = newRealHistory();
         const speech = isSorter ? genSortingSpeech(p || playersIn[0], day, rh) : genSpeech(p || playersIn[0], day);
         const truncated = truncateSpeech(speech, gamePhase === '自由讨论' ? 150 : isSorter ? 300 : 100);
-        if (gamePhase === '自由讨论') events.push(`第${day}天[自由讨论] 插话: ${playerName}`);
-        events.push(`第${day}天 ${playerName}: ${truncated}`);
         speechesToday.set(_playerId || playerName, truncated);
         return truncated;
       }
 
       if (gamePhase === '遗言') {
         const p = playersIn.find((x) => x.name === playerName);
+        if (REAL && ai) {
+          return await ai.callAIApi(
+            aiConfig ?? config,
+            role,
+            playerName,
+            playersIn,
+            messagesIn,
+            gamePhase,
+            day,
+            _nightActions,
+            _gameHistory,
+            _currentSpeaker,
+            _speakerOrder,
+            _wolfRound,
+            _playerId,
+            _customUserPrompt,
+            isSorter,
+          );
+        }
         const text = await genLastWords(p || playersIn[0], day, newRealHistory());
-        events.push(`第${day}天 ${playerName} 遗言: ${text}`);
         return text;
       }
 
       if (gamePhase === '平票争辩') {
         if (REAL && ai) {
           const resp = await ai.callAIApi(aiConfig ?? config, role, playerName, playersIn, messagesIn, gamePhase, day, _nightActions, _gameHistory, _currentSpeaker, _speakerOrder, _wolfRound, _playerId, _customUserPrompt, isSorter);
-          if (resp && !/^游戏已中止/.test(resp)) events.push(`第${day}天 PK ${playerName}: ${truncateSpeech(resp, 100)}`);
           return resp;
         }
         const aliveOthers = getAlivePlayers(playersIn).filter((x) => x.name !== playerName);
@@ -493,7 +492,6 @@ const makeAdapter = (): EngineAIAdapter => {
           `${other}的说辞前后判若两人，这种改口我不能接受，投他。`,
         ];
         const text = truncateSpeech(pickOne(pkStyles), 100);
-        events.push(`第${day}天 PK ${playerName}: ${text}`);
         return text;
       }
 
@@ -538,13 +536,11 @@ const makeAdapter = (): EngineAIAdapter => {
     ) {
       players = playersIn;
       ensureDayState(day);
-      flushAnnouncements(messagesIn);
       if (REAL && ai) {
         const vd = await ai.generateAIVoteDecision(aiConfig ?? config, role, playerName, playersIn, messagesIn, gamePhase, day, tiePlayers, isInTieDebate, playerId);
         const target = playersIn.find((x) => x.id === vd.targetId && x.isAlive);
         const targetName = target ? target.name : 'skip';
         const reason = truncateSpeech(vd.reason || `综合判断，${targetName}嫌疑最大。`, 40);
-        events.push(`第${day}天 ${playerName} ${isInTieDebate ? 'PK投→' : '投→'}${targetName}（理由：${reason}）`);
         return { targetId: vd.targetId && target ? vd.targetId : 'skip', reason };
       }
       const p = playersIn.find((x) => x.name === playerName) || playersIn[0];
@@ -564,7 +560,6 @@ const makeAdapter = (): EngineAIAdapter => {
       const target = playersIn.find((x) => x.name === dv.target && x.isAlive);
       const targetId = target ? target.id : 'skip';
       const reason = truncateSpeech(dv.reason, 40);
-      events.push(`第${day}天 ${playerName} ${isInTieDebate ? 'PK投→' : '投→'}${dv.target}（理由：${reason}）`);
       return { targetId, reason };
     },
 
@@ -573,15 +568,9 @@ const makeAdapter = (): EngineAIAdapter => {
     ) {
       players = playersIn;
       ensureDayState(day);
-      flushAnnouncements(messagesIn);
       if (REAL && ai) {
         const resp = await ai.generateAIThought(aiConfig ?? config, role, playerName, playersIn, messagesIn, gamePhase, day, nightActions, gameHistory, playerId, witchAntidoteUsed);
         if (role === 'guardian' || role === 'seer' || role === 'hunter') {
-          const target = playersIn.find((x) => x.id === resp && x.isAlive);
-          if (role === 'guardian' && target) events.push(`第${day}晚 守卫守护 ${target.name}`);
-          if (role === 'seer' && target) {
-            events.push(`第${day}晚 预言家查验 ${target.name} → ${target.role === 'wolf' ? '狼' : '好人'}`);
-          }
           return resp;
         }
         return resp;
@@ -591,12 +580,10 @@ const makeAdapter = (): EngineAIAdapter => {
       if (role === 'guardian') {
         // 守卫不能连续两晚守同一人（engine 已按 candidates 过滤，直接从中选）
         const target = aliveOthers.length ? pickOne(aliveOthers) : null;
-        if (target) events.push(`第${day}晚 守卫守护 ${target.name}`);
         return target ? target.id : '';
       }
       if (role === 'seer') {
         const target = aliveOthers.length ? pickOne(aliveOthers) : null;
-        if (target) events.push(`第${day}晚 预言家查验 ${target.name} → ${target.role === 'wolf' ? '狼' : '好人'}`);
         return target ? target.id : '';
       }
       if (role === 'hunter') {
@@ -609,13 +596,11 @@ const makeAdapter = (): EngineAIAdapter => {
         const killTarget = killAction?.targetId ? playersIn.find((x) => x.id === killAction.targetId) : null;
         const canHeal = !witchAntidoteUsed && !!killTarget;
         if (canHeal && chance(0.5)) {
-          events.push(`第${day}晚 女巫解药救 ${killTarget!.name}`);
           return `用药: 解药 ${killTarget!.name}`;
         }
         const poisonCandidates = getAlivePlayers(playersIn).filter((x) => x.id !== p?.id && x.id !== killAction?.targetId);
         if (chance(0.3) && poisonCandidates.length) {
           const pt = pickOne(poisonCandidates);
-          events.push(`第${day}晚 女巫毒杀 ${pt.name}`);
           return `用药: 毒药 ${pt.name}`;
         }
         return '用药: 不用';
@@ -636,25 +621,6 @@ const waitForGameEnd = (engine: RoomEngine, timeoutMs: number): Promise<void> =>
       }
     }, 200);
   });
-};
-
-const timelineLine = (event: GameTimelineEvent): string => {
-  const payload = event.payload;
-  const actor = event.actorName || '狼人';
-  switch (event.eventType) {
-    case 'wolf.message':
-      return `第${event.day}晚 狼人讨论 ${actor}: ${String(payload.content || '')}`;
-    case 'wolf.vote_cast':
-      return `第${event.day}晚 狼队投票 ${actor}→${String(payload.targetName || '跳过')}`;
-    case 'wolf.kill_locked':
-      return payload.targetName
-        ? `第${event.day}晚 狼人刀杀 ${String(payload.targetName)}`
-        : `第${event.day}晚 狼人决定不杀人`;
-    case 'hunter.shot':
-      return `第${event.day}天 猎人开枪 ${String(payload.targetName || '目标')}`;
-    case 'hunter.shot_skipped':
-      return `第${event.day}天 猎人选择不开枪`;
-  }
 };
 
 const main = async () => {
@@ -686,10 +652,13 @@ const main = async () => {
 
   // 用 engine 真实规则分配身份（assignRoles 在 beginRoles 内部完成）
   players = initialPlayers;
+  let archivedRecord: ArchiveRecord | null = null;
   const hub: EngineHub = {
     broadcastRoom() {},
     destroyRoom() {},
-    onTimelineEvent: (event) => events.push(timelineLine(event)),
+    onArchive: (record) => {
+      archivedRecord = record;
+    },
   };
   const engine = new RoomEngine({
     roomName: 'QC模拟局',
@@ -734,11 +703,9 @@ const main = async () => {
   if (outputSource === 'real_ai') header.push('# 模式 real（真实AI调用）；模板模式为默认');
 
   const winner = engine.winnerTeam;
-  const day = engine.game?.day ?? 1;
-  const endLine = winner ? `第${day}天 游戏结束，${winner === 'wolf' ? '狼人' : '好人'}获胜` : null;
 
-  const out = [...header, ...events];
-  if (endLine) out.push(endLine);
+  if (!archivedRecord) throw new Error('归档未在完整复盘结束后生成');
+  const out = [...header, ...(archivedRecord.gameLogEvents || []).map((event) => event.line)];
   const OUT_FILE = path.join(process.cwd(), 'qc_events.txt');
   fs.writeFileSync(OUT_FILE, out.join('\n') + '\n', 'utf-8');
   console.log(`[test-drive] 已生成 ${OUT_FILE}`);

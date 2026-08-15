@@ -11,7 +11,7 @@ import {
   speechSimilarity,
 } from '../ai';
 import type { AIRequestContext } from '../ai/types';
-import { buildLegacyAIPrompt } from '../../shared/aiClient';
+import { buildLegacyAIPrompt, buildReviewContext } from '../../shared/aiClient';
 
 const players: Player[] = [
   {
@@ -275,6 +275,40 @@ test('legacy last words use the same death ledger and retain seer checks on dead
   assert.match(prompt.user, /第1晚查验 小红：狼人/);
   assert.match(prompt.user, /第2天公开票型：小红投→小明/);
   assert.doesNotMatch(prompt.user, /昨晚（第1晚）之后.*平安夜/);
+});
+
+test('review prompt carries the complete timeline and per-player action ledger', () => {
+  const prompt = buildReviewContext(
+    {
+      nightResults: [
+        { day: 1, killed: '大壮', checked: { target: '小红', result: '狼人' } },
+      ],
+      votes: { p1: 'p2' },
+      deadPlayers: [
+        { name: '大壮', role: 'villager', day: 1, reason: '狼刀' },
+      ],
+      reviewTimeline: [
+        { day: 1, phase: '夜间行动', event: '预言家查验 小红 → 狼人', actor: '小明', target: '小红' },
+        { day: 1, phase: '公开投票', event: '小明 投→小红（理由：票型）', actor: '小明', target: '小红' },
+      ],
+    },
+    players,
+    [{
+      id: 'message-1',
+      roomId: 'room-1',
+      playerId: 'p1',
+      playerName: '小明',
+      content: '我根据查验结果归票。',
+      timestamp: new Date(0),
+      type: 'public',
+    }],
+  );
+
+  assert.match(prompt, /本局完整事件时间线/);
+  assert.match(prompt, /小明.*小红/);
+  assert.match(prompt, /逐人行动记录/);
+  assert.match(prompt, /夜间结算记录/);
+  assert.match(prompt, /我根据查验结果归票/);
 });
 
 test('builder injects experience and selects the correct voting task', () => {
