@@ -24,6 +24,7 @@ import {
 } from '../../shared/aiProviderCapabilities';
 import type { AIConfig, GameAction, Player, Role } from '../../shared/types';
 import { AIOrchestrator } from '../ai/orchestrator';
+import { AIFallbackRegistry, defaultAITelemetry, type AITelemetry } from '../ai/aiTelemetry';
 import { DeterministicAIProvider } from '../ai/deterministicProvider';
 import { HttpAIProvider } from '../ai/httpProvider';
 import { buildAIRuntimeContext } from '../ai/runtimeContext';
@@ -174,6 +175,7 @@ export interface RoomServiceOptions {
   ) => AIProvider;
   reviewPipeline?: ReviewPipeline;
   insightStore?: InsightStore;
+  aiTelemetry?: AITelemetry;
 }
 
 export class RoomService {
@@ -188,7 +190,9 @@ export class RoomService {
     (roomCode: string, roomId: string) => void | Promise<void>
   >();
   private readonly connectionLeases = new Map<string, Set<string>>();
-  private readonly aiProvider: AIProvider;
+  private readonly aiProvider?: AIProvider;
+  private readonly aiTelemetry: AITelemetry;
+  private readonly aiFallbackRegistry = new AIFallbackRegistry();
   private readonly catalog: RoomCatalogService;
   private readonly policy: RoomPolicy;
   private readonly projector: RoomProjector;
@@ -217,16 +221,29 @@ export class RoomService {
     private readonly eventStore: EventStore,
     private readonly options: RoomServiceOptions = {},
   ) {
-    if (process.env.WW_ENV === 'production' && !options.credentialStore) {
-      throw new Error('production RoomService requires an injected encrypted RoomCredentialStore');
-    }
-    this.aiProvider = options.aiProvider ?? new DeterministicAIProvider();
     const repositoryScope = repository as RoomRepository & {
       environment?: RuntimeEnvironment;
       deploymentNamespace?: string;
     };
     this.environment =
       options.environment ?? repositoryScope.environment ?? 'development';
+    if (this.environment === 'production' && !options.credentialStore) {
+      throw new Error('production RoomService requires an injected encrypted RoomCredentialStore');
+    }
+    if (this.environment === 'production' && !options.aiProvider && !options.aiProviderFactory) {
+      throw new Error('AI_PROVIDER_REQUIRED');
+    }
+    if (this.environment === 'production' && options.aiProvider?.mode === 'test-deterministic') {
+      throw new Error('AI_PROVIDER_REQUIRED');
+    }
+    this.aiProvider = options.aiProvider ?? (
+      this.environment === 'production'
+        ? undefined
+        : new DeterministicAIProvider({
+            mode: this.environment === 'test' ? 'test-deterministic' : 'rules-degraded',
+          })
+    );
+    this.aiTelemetry = options.aiTelemetry ?? defaultAITelemetry;
     this.deploymentNamespace =
       options.deploymentNamespace ?? repositoryScope.deploymentNamespace ?? 'default';
     this.waitingRoomTtlMs = options.waitingRoomTtlMs ?? 30 * 60 * 1000;
@@ -1637,7 +1654,10 @@ export class RoomService {
 
   private async providerForRoom(room: RoomRecord): Promise<AIProvider> {
     const roomConfig = room.config?.aiProviderConfig;
-    if (!roomConfig) return this.aiProvider;
+    if (!roomConfig) {
+      if (!this.aiProvider) throw this.error('AI_PROVIDER_REQUIRED', 'room.error.ai_provider_required');
+      return this.aiProvider;
+    }
     const roomKey = room.code.toUpperCase();
     const existing = this.roomAIProviders.get(roomKey);
     if (existing) return existing;
@@ -1675,7 +1695,13 @@ export class RoomService {
 
   private projectRoom(room: RoomRecord, actor: string | SocketIdentity): RoomView {
     const view = this.projector.project(room, actor);
-    if (!this.legacyRoomCodes.has(room.code)) return view;
+    const providerMode = room.config?.aiProviderConfig
+      ? 'real_ai' as const
+      : this.aiProvider?.mode;
+    const projected = providerMode
+      ? { ...view, computerPlayerMode: providerMode }
+      : view;
+    if (!this.legacyRoomCodes.has(room.code)) return projected;
     // The old test/client surface predates the V3.1 room config projection.
     // Keep this compatibility response private to legacy-shaped create calls;
     // all V3.1 callers receive the complete RoomView above.
@@ -1683,7 +1709,7 @@ export class RoomService {
       config: _config,
       startCheck: _startCheck,
       ...legacyView
-    } = view;
+    } = projected;
     return legacyView as RoomView;
   }
 
@@ -1763,6 +1789,16 @@ export class RoomService {
         identity.kind === 'spectator' &&
         identity.omniscient;
       if (!quickComputerObserver) this.policy.assertStartAllowed(room, actorId);
+      if (
+        this.environment === 'production' &&
+        room.config?.mode !== 'human' &&
+        room.config?.aiFillPolicy !== 'none' &&
+        ((room.config?.computerSeats ?? 0) > 0 || room.config?.aiFillPolicy === 'fill_to_max') &&
+        !room.config?.aiProviderConfig &&
+        !this.aiProvider
+      ) {
+        throw this.error('AI_PROVIDER_REQUIRED', 'room.error.ai_provider_required');
+      }
       const result = await this.starter.start(roomCode, {
         commandId,
         actorId,
@@ -1978,6 +2014,8 @@ export class RoomService {
         : undefined;
       const orchestrator = new AIOrchestrator(provider, this.options.session?.now, {
         timeoutMs: this.options.aiTimeoutMs,
+        telemetry: this.aiTelemetry,
+        fallbackRegistry: this.aiFallbackRegistry,
       });
       await orchestrator.act(session, {
         roomId: room.id,
@@ -1987,6 +2025,7 @@ export class RoomService {
         phase: state.gameState.phase,
         stage: state.gameState.phase === 'night' ? state.night.stage : state.dayFlow.stage,
         stageRevision: session.stageRevision,
+        deadlineTs: state.gameState.deadlineTs,
         players: projectedPlayers,
         allowedActions: [...actorEntry.actions],
         allowedCommandTypes: actorEntry.actions.map((action) => this.commandTypeForAction(action)),
