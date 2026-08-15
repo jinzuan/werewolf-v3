@@ -1,4 +1,4 @@
-import { ArrowRight, DoorOpen, Radio, Users } from 'lucide-react';
+import { ArrowRight, DoorOpen, Radio } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { AppShell } from '../../components/shell/AppShell';
 import { sceneForRoom } from '../../features/room-shell/scene';

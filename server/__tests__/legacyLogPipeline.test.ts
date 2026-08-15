@@ -78,7 +78,7 @@ test('test-drive keeps source metadata out of speech text and enables archive re
 
 test('test-drive last words forwards the engine ledger through the shared AI path', () => {
   const source = readFileSync(resolve(process.cwd(), 'test-drive.ts'), 'utf8');
-  const lastWordsBranch = source.match(/if \(gamePhase === '遗言'\) \{([\s\S]*?)\n      \}/)?.[1] || '';
+  const lastWordsBranch = source.match(/if \(gamePhase === '遗言'\) \{([\s\S]*?)\n {6}\}/)?.[1] || '';
   assert.match(lastWordsBranch, /ai\.callAIApi/);
   assert.match(lastWordsBranch, /messagesIn/);
   assert.match(lastWordsBranch, /_gameHistory/);

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test, expect } from 'playwright/test';
+import { test, expect } from './fixtures/v3App';
 import { io as createClient } from 'socket.io-client';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
@@ -60,9 +60,9 @@ const stopServer = async (): Promise<void> => {
 test.beforeEach(startServer);
 test.afterEach(stopServer);
 
-test('a committed create whose ACK is dropped is recovered to one room', async ({ page }) => {
+test('a committed create whose ACK is dropped is recovered to one room', async ({ page, appURL }) => {
   await page.addInitScript((url) => localStorage.setItem('wolf-server-url', url), serverUrl);
-  await page.goto('/rooms/new/players');
+  await page.goto(`${appURL}/rooms/new/players`);
   await expect(page.getByRole('heading', { name: '先决定今晚有多少人' })).toBeVisible({ timeout: 20_000 });
 
   const socket = createClient(serverUrl, { transports: ['polling'], reconnection: false, timeout: 5_000 });

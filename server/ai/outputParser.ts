@@ -88,7 +88,7 @@ const isSkip = (value: unknown): boolean =>
     cleanText(value),
   );
 
-const lastWordsSkipLine = /^(?:放弃遗言|跳过遗言|跳过|放弃|过过|过|没话说|不想说|懒得说)\s*(?:[：:,，；;\-]\s*(.*))?$/u;
+const lastWordsSkipLine = /^(?:放弃遗言|跳过遗言|跳过|放弃|过过|过|没话说|不想说|懒得说)\s*(?:[：:,，；;-]\s*(.*))?$/u;
 
 const isLastWordsContext = (context: ParseContext): boolean =>
   context.phase === 'lastWords' ||

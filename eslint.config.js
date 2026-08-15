@@ -5,7 +5,28 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
-  { ignores: ['dist', 'src.bak.v2.4.11-UI/**', 'src/pages/**', 'src/components/**', 'src/stores/gameStore.ts', 'src/utils/**', 'src/net/**', 'src/hooks/**'] },
+  {
+    // Legacy offline game files are not part of the V3 route graph. Keep the
+    // exception file-scoped until their removal is tracked, while V3 shell,
+    // pages, network, store, feature, and UI code stays in this gate.
+    ignores: [
+      'dist',
+      'src.bak.v2.4.11-UI/**',
+      'src/stores/gameStore.ts',
+      'src/utils/**',
+      'src/hooks/**',
+      'src/components/ChatTabs.tsx',
+      'src/components/DynamicBackground.tsx',
+      'src/components/GameProgressPanel.tsx',
+      'src/components/MessageStream.tsx',
+      'src/components/MyRolePanel.tsx',
+      'src/components/NightActionSheet.tsx',
+      'src/components/PlayerCard.tsx',
+      'src/components/WolfChatPanel.tsx',
+      'src/components/WolfVoteModal.tsx',
+      'src/pages/GameRoom.tsx',
+    ],
+  },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ['**/*.{ts,tsx}'],

@@ -111,7 +111,7 @@ interface LastWordsAIResult {
 const parseLastWordsAIResult = (text: string): LastWordsAIResult => {
   const value = (text || '').trim();
   if (!value) return { content: '', skipReason: null };
-  const match = /^(放弃遗言|跳过遗言|跳过|放弃|过过|过|没话说|不想说|懒得说)\s*(?:[：:,，；;\-]\s*(.*))?$/u.exec(value);
+  const match = /^(放弃遗言|跳过遗言|跳过|放弃|过过|过|没话说|不想说|懒得说)\s*(?:[：:,，；;-]\s*(.*))?$/u.exec(value);
   if (!match) return { content: value, skipReason: null };
   const explicitReason = match[2]?.trim() || '';
   const shortReason = ['没话说', '不想说', '懒得说'].includes(match[1]) ? match[1] : '';

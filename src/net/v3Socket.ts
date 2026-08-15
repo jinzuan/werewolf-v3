@@ -19,7 +19,6 @@ import type {
   RoomAIConfigAck,
   RoomAIConfigPatch,
   RoomAIConfigUpdateAck,
-  RoomCommand,
   RoomListAck,
   RoomMutationCommand,
   RoomReadCommand,
@@ -289,7 +288,7 @@ const emitAck = <TAck extends object>(
     let settled = false;
     let requestSent = false;
     let requestTimer: ReturnType<typeof setTimeout> | undefined;
-    let connectTimer: ReturnType<typeof setTimeout> | undefined;
+    const connectTimer: { value?: ReturnType<typeof setTimeout> } = {};
 
     const unregister = (): void => {
       const pending = transportRequests.get(active);
@@ -301,7 +300,7 @@ const emitAck = <TAck extends object>(
       if (settled) return;
       settled = true;
       if (requestTimer) clearTimeout(requestTimer);
-      if (connectTimer) clearTimeout(connectTimer);
+      if (connectTimer.value) clearTimeout(connectTimer.value);
       active.off('connect', onConnect);
       active.off('disconnect', onDisconnect);
       active.off('connect_error', onConnectError);
@@ -349,7 +348,7 @@ const emitAck = <TAck extends object>(
     }
 
     active.once('connect', onConnect);
-    connectTimer = setTimeout(
+    connectTimer.value = setTimeout(
       () => finish(transportFailure('CONNECT_TIMEOUT', 'The server connection timed out.')),
       ACK_TIMEOUT_MS,
     );

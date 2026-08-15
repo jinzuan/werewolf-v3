@@ -132,7 +132,7 @@ const pickTemplate = (styles: string[]): string => {
   return styles[bestIdx];
 };
 
-const genSpeech = (p: Player, day: number): string => {
+const genSpeech = (p: Player): string => {
   const aliveOthers = getAlivePlayers(players).filter((x) => x.id !== p.id);
   if (aliveOthers.length === 0) return '我觉得局势已经很清楚了，大家按逻辑来就好。';
   const target = pickOne(aliveOthers);
@@ -185,7 +185,6 @@ const genSpeech = (p: Player, day: number): string => {
     const collideToday = usedSimSkeletonsToday.some((u) => skeletonSimilarity(u, sk) >= 0.6);
     const collideSelf = myHistory.some((u) => skeletonSimilarity(u, sk) >= 0.6);
     if (!collideToday && !collideSelf) break;
-    const skShow = sk.length > 16 ? `${sk.slice(0, 16)}…` : sk;
     base = pickTemplate(styles);
   }
   const finalSk = templateNorm(base);
@@ -441,7 +440,7 @@ const makeAdapter = (): EngineAIAdapter => {
         }
         const p = playersIn.find((x) => x.name === playerName);
         const rh = newRealHistory();
-        const speech = isSorter ? genSortingSpeech(p || playersIn[0], day, rh) : genSpeech(p || playersIn[0], day);
+        const speech = isSorter ? genSortingSpeech(p || playersIn[0], day, rh) : genSpeech(p || playersIn[0]);
         const truncated = truncateSpeech(speech, gamePhase === '自由讨论' ? 150 : isSorter ? 300 : 100);
         speechesToday.set(_playerId || playerName, truncated);
         return truncated;

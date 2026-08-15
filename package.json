@@ -3,12 +3,17 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=18.19.0"
+  },
   "scripts": {
     "dev": "vite",
-    "test": "tsx --test test/architecture.skeleton.test.ts src/core/__tests__/*.test.ts src/v3/__tests__/*.test.ts src/features/**/__tests__/*.test.ts server/__tests__/*.test.ts",
-    "test:contract": "tsx --test test/architecture.skeleton.test.ts",
-    "test:ui": "tsx --test src/v3/__tests__/*.test.ts",
-    "test:server": "tsx --test server/__tests__/*.test.ts",
+    "test": "tsx --import ./test/setup.mjs --test --test-concurrency=1 test/architecture.skeleton.test.ts src/core/__tests__/*.test.ts src/v3/__tests__/*.test.ts src/v3/presentation/__tests__/*.test.ts src/features/**/__tests__/*.test.ts src/ui/__tests__/*.test.ts server/__tests__/*.test.ts",
+    "test:contract": "tsx --import ./test/setup.mjs --test --test-concurrency=1 test/architecture.skeleton.test.ts",
+    "test:ui": "tsx --import ./test/setup.mjs --test --test-concurrency=1 src/v3/__tests__/*.test.ts src/v3/presentation/__tests__/*.test.ts src/ui/__tests__/*.test.ts",
+    "test:server": "tsx --import ./test/setup.mjs --test --test-concurrency=1 server/__tests__/*.test.ts",
+    "test:integration": "tsx --import ./test/setup.mjs --test --test-concurrency=1 server/__tests__/connectionLease.test.ts server/__tests__/createIdempotency.test.ts server/__tests__/dataIsolation.integration.test.ts server/__tests__/dissolveBroadcast.test.ts server/__tests__/startingRecovery.test.ts",
+    "test:e2e": "VITE_WW_ENV=test npm run build -- --mode test && playwright test",
     "test:core:typecheck": "tsc --noEmit -p tsconfig.core-test.json",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
@@ -26,7 +31,8 @@
     "qc:run": "node scripts/qc-run.mjs",
     "qc:real": "tsx test-drive.ts",
     "qc:check": "python qc.py",
-    "verify:v3-visibility": "tsx scripts/verify-v3-visibility.ts"
+    "verify:v3-visibility": "tsx scripts/verify-v3-visibility.ts",
+    "test:all": "npm test && npm run test:integration && npm run test:e2e && npm run test:core:typecheck && npm run server:typecheck && npm run typecheck && npm run lint && npm run build"
   },
   "dependencies": {
     "clsx": "^2.1.1",
