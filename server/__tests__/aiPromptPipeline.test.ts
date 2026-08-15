@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { DOMAIN_EVENT_SCHEMA_VERSION, type DomainEvent } from '../../shared/events';
 import type { Player } from '../../shared/types';
 import {
   buildAIPrompt,
@@ -70,6 +71,23 @@ const context = (
   ...overrides,
 });
 
+const nightResolved = (
+  payload: Record<string, unknown>,
+): DomainEvent<'night.resolved'> => ({
+  eventId: 'night-resolved-1',
+  roomId: 'room-1',
+  gameId: 'game-1',
+  sequence: 10,
+  occurredAt: 10,
+  phase: 'day',
+  stage: 'dawn',
+  eventType: 'night.resolved',
+  payload,
+  visibility: 'public_timeline',
+  correlationId: 'night-1',
+  schemaVersion: DOMAIN_EVENT_SCHEMA_VERSION,
+});
+
 test('builder assembles system, role, projected facts, and output contract', () => {
   const prompt = buildAIPrompt(context());
 
@@ -79,6 +97,45 @@ test('builder assembles system, role, projected facts, and output contract', () 
   assert.match(prompt.user, /小红：我改票是因为她的时间线有矛盾/);
   assert.match(prompt.user, /"action":"speak"/);
   assert.doesNotMatch(`${prompt.system}\n${prompt.user}`, /\{\{|\}\}/);
+});
+
+test('night death events survive prompt compression and only a true peaceful night says peaceful', () => {
+  const dead = buildAIPrompt(
+    context({
+      promptContext: {
+        ...context().promptContext,
+        publicEvents: undefined,
+        visibleEvents: [
+          nightResolved({ peacefulNight: false, deaths: ['p2'] }),
+        ],
+      },
+    }),
+  );
+  assert.match(dead.user, /夜间公开死亡：小红/);
+  assert.doesNotMatch(dead.user, /平安夜/);
+
+  const peaceful = buildAIPrompt(
+    context({
+      promptContext: {
+        ...context().promptContext,
+        publicEvents: undefined,
+        visibleEvents: [nightResolved({ peacefulNight: true, deaths: [] })],
+      },
+    }),
+  );
+  assert.match(peaceful.user, /平安夜/);
+
+  const inconsistent = buildAIPrompt(
+    context({
+      promptContext: {
+        ...context().promptContext,
+        publicEvents: undefined,
+        visibleEvents: [nightResolved({ peacefulNight: false, deaths: [] })],
+      },
+    }),
+  );
+  assert.match(inconsistent.user, /夜间公开死亡信息缺失/);
+  assert.doesNotMatch(inconsistent.user, /平安夜/);
 });
 
 test('builder injects experience and selects the correct voting task', () => {

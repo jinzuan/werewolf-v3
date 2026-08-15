@@ -601,12 +601,18 @@ export class GameSession {
     if (this.state.night.stage !== 'resolve') return [];
     const result = resolveNight(toCorePlayers(this.state.players), this.state.night);
     this.applyAliveState(result.players);
+    // `deaths` is the atomic resolution result. Derive the public list from
+    // it here instead of relying on a second, independently maintained
+    // projection field. The same list must reach the event store, every
+    // viewer projection, and the AI prompt context.
+    const publicDeaths = result.deaths.map((death) => death.playerId);
     const events = [
       this.event(
         'night.resolved',
-        result.peacefulNight
-          ? { peacefulNight: true }
-          : { peacefulNight: false, deaths: result.publicDeaths },
+        {
+          peacefulNight: publicDeaths.length === 0,
+          deaths: publicDeaths,
+        },
         'public_timeline',
         undefined,
         correlationId,

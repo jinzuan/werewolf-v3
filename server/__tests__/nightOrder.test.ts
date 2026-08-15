@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DOMAIN_EVENT_SCHEMA_VERSION } from '../../shared/events';
+import { projectAIContext } from '../ai/contextProjector';
 import { InMemoryEventStore } from '../events/store';
 import { GameSession } from '../session/gameSession';
 import { createPlayers, dispatch } from './fixtures';
@@ -76,6 +77,30 @@ test('night order is guard_seer then wolf discussion/vote then witch then resolv
   assert.equal(
     session.players.find((player) => player.id === villager.id)?.isAlive,
     false,
+  );
+
+  const resolved = witchResult.events.find(
+    (event) => event.eventType === 'night.resolved',
+  );
+  assert.ok(resolved);
+  assert.deepEqual(
+    (resolved.payload as { deaths: string[] }).deaths,
+    [villager.id],
+  );
+
+  const aiProjection = await projectAIContext(session, {
+    playerId: guardian.id,
+    role: 'guardian',
+    stageRevision: session.stageRevision,
+    allowedActions: [],
+  });
+  const projectedResolved = aiProjection.publicEvents.find(
+    (event) => event.eventType === 'night.resolved',
+  );
+  assert.ok(projectedResolved);
+  assert.deepEqual(
+    (projectedResolved.payload as { deaths: string[] }).deaths,
+    [villager.id],
   );
 });
 

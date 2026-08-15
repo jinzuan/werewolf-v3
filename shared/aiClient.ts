@@ -36,7 +36,7 @@ interface PlayerKnowledge {
 interface GameHistory {
   nightResults: NightResult[];
   votes: Record<string, string>;
-  deadPlayers: Array<{ name: string; role: Role; day: number; reason: string }>;
+  deadPlayers: Array<{ name: string; role: Role | null; day: number; reason: string }>;
   skillUsage?: Record<string, SkillUsage>;
   playerKnowledge?: Record<string, PlayerKnowledge>;
   timeline?: Array<{

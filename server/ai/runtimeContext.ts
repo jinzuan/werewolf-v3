@@ -36,6 +36,29 @@ const publicVoteEvents = (
   events: readonly DomainEvent[],
 ): DomainEvent[] => events.filter((event) => event.eventType === 'day.vote_cast');
 
+const latestOvernightPublicEvent = (
+  input: AIRuntimeContextInput,
+): string[] => {
+  const event = [...input.visibleEvents]
+    .reverse()
+    .find(
+      (candidate) =>
+        candidate.visibility === 'public_timeline' &&
+        candidate.eventType === 'night.resolved',
+    );
+  if (!event) return [];
+
+  const item = payload(event);
+  const deaths = Array.isArray(item.deaths)
+    ? item.deaths.filter((id): id is string => typeof id === 'string')
+    : [];
+  if (deaths.length > 0) {
+    return [`夜间公开死亡：${deaths.map((id) => playerName(input.players, id)).join('、')}`];
+  }
+  if (item.peacefulNight === true) return ['平安夜'];
+  return ['夜间公开死亡信息缺失（服务端事件异常）'];
+};
+
 const buildPrivateFacts = (
   input: AIRuntimeContextInput,
 ): {
@@ -214,6 +237,7 @@ export const buildAIRuntimeContext = (
     currentRoundSpeeches: publicFacts.currentRoundSpeeches,
     publicVoteHistory: publicFacts.publicVoteHistory,
     ownPreviousSpeeches: publicFacts.ownPreviousSpeeches,
+    overnightPublicEvents: latestOvernightPublicEvent(input),
     legalActions: [...input.allowedActions],
     legalTargets: legalTargetsForAI(
       input.players,

@@ -335,10 +335,13 @@ const formatPublicEvent = (
     case 'night.resolved': {
       const deaths = Array.isArray(payload.deaths)
         ? payload.deaths
-            .map((id) => playerName(players, typeof id === 'string' ? id : undefined))
+            .filter((id): id is string => typeof id === 'string')
+            .map((id) => playerName(players, id))
             .join('、')
         : '';
-      return deaths ? `夜间公开死亡：${deaths}` : '平安夜';
+      if (deaths) return `夜间公开死亡：${deaths}`;
+      if (payload.peacefulNight === true) return '平安夜';
+      return '夜间公开死亡信息缺失（服务端事件异常）';
     }
     case 'day.started':
       return `第 ${String(payload.day ?? event.sequence)} 天开始`;
@@ -360,12 +363,30 @@ const formatProjectedEvents = (
     .map((event) => formatPublicEvent(event, players))
     .filter((event): event is string => Boolean(event));
 
+const formatLatestOvernightEvent = (
+  events: readonly DomainEvent[] | undefined,
+  players: readonly Player[],
+): string[] => {
+  const event = [...(events ?? [])]
+    .reverse()
+    .find(
+      (candidate) =>
+        candidate.visibility === 'public_timeline' &&
+        candidate.eventType === 'night.resolved',
+    );
+  const formatted = event ? formatPublicEvent(event, players) : null;
+  return formatted ? [formatted] : [];
+};
+
 const formatRuntimeFacts = (
   context: AIRequestContext,
   promptContext: AIPromptContext,
 ): string => {
   const projectedEvents =
     promptContext.publicEvents ?? formatProjectedEvents(promptContext.visibleEvents, context.players);
+  const overnightPublicEvents =
+    promptContext.overnightPublicEvents ??
+    formatLatestOvernightEvent(promptContext.visibleEvents, context.players);
   const alivePlayers = context.players
     .filter((player) => player.isAlive)
     .map((player) => player.name);
@@ -374,6 +395,7 @@ const formatRuntimeFacts = (
     `【当前阶段】\n第 ${promptContext.dayNumber ?? 1} 天，${stageName(context)}，第 ${promptContext.roundNumber ?? 1} 轮。`,
     `【公开存活玩家】\n${listText(alivePlayers)}`,
     `【已公开事件】\n${listText(projectedEvents)}`,
+    `【过夜后新公开信息】\n${listText(overnightPublicEvents, '无新增信息')}`,
     `【已公开历史票型】\n${listText(promptContext.publicVoteHistory)}`,
     `【本轮已发言】\n${listText(promptContext.currentRoundSpeeches ?? promptContext.publicSpeeches)}`,
     `【你自己的近期发言】\n${listText(promptContext.ownPreviousSpeeches)}`,
@@ -395,6 +417,9 @@ const placeholderValues = (
 ): Record<string, string> => {
   const publicEvents =
     promptContext.publicEvents ?? formatProjectedEvents(promptContext.visibleEvents, context.players);
+  const overnightPublicEvents =
+    promptContext.overnightPublicEvents ??
+    formatLatestOvernightEvent(promptContext.visibleEvents, context.players);
   const publicSpeeches =
     promptContext.publicSpeeches ??
     (promptContext.visibleEvents ?? [])
@@ -468,7 +493,7 @@ const placeholderValues = (
     last_words_round_task: promptContext.lastWordsTask || roleTaskText,
     first_last_words: promptContext.firstLastWords || '无',
     previous_situation_summary: promptContext.previousSituationSummary || '无',
-    overnight_public_events: listText(promptContext.overnightPublicEvents, '无新增信息'),
+    overnight_public_events: listText(overnightPublicEvents, '无新增信息'),
     overnight_private_role_facts: listText(promptContext.overnightPrivateRoleFacts, '无新增信息'),
     summary_char_limit: String(promptContext.summaryCharLimit ?? RULE_VALUES['speech.speech_limits'].daily_summary_chars),
     validation_error: promptContext.validationError || '无',

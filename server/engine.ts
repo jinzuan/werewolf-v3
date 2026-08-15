@@ -1114,12 +1114,12 @@ export class RoomEngine {
 
     result.killed.forEach((id) => {
       const p = this.players.find((x) => x.id === id);
-      this.deaths.push({ name: p?.name || '玩家', role: p?.role || null, day, reason: '狼刀' });
+      this.recordDeath(p, day, '狼刀');
       this.addSystem(`【公告】第${day}晚 死亡：${p?.name || '玩家'}（狼刀）`);
     });
     result.poisoned.forEach((id) => {
       const p = this.players.find((x) => x.id === id);
-      this.deaths.push({ name: p?.name || '玩家', role: p?.role || null, day, reason: '女巫毒' });
+      this.recordDeath(p, day, '女巫毒');
       this.addSystem(`【公告】第${day}晚 死亡：${p?.name || '玩家'}（女巫毒）`);
     });
     this.gameHistory.nightResults.push({
@@ -1156,7 +1156,11 @@ export class RoomEngine {
   private buildSituationSummary(): string {
     const alive = this.players.filter((p) => p.isAlive);
     const cutoffDay = Math.max(0, (this.game?.day ?? 1) - 1);
-    const dead = this.deaths.filter((d) => d.day <= cutoffDay).map((d) => d.name);
+    // Use the same ledger consumed by the AI prompt compressor. This keeps
+    // the dawn blackboard and the overnight death line from disagreeing.
+    const dead = this.gameHistory.deadPlayers
+      .filter((d) => d.day <= cutoffDay)
+      .map((d) => d.name);
     const day = this.game?.day ?? 1;
     const phaseText =
       this.game?.phase === 'vote' || this.game?.phase === 'voting'
@@ -1167,6 +1171,19 @@ export class RoomEngine {
         ? '遗言'
         : '白天';
     return `第${day}天 ${phaseText}：场上存活 ${alive.length} 人（${alive.map((p) => p.name).join('、') || '无'}）；截至上一晚结束已出局 ${dead.length} 人（${dead.join('、') || '无'}）。`;
+  }
+
+  /**
+   * Keep the legacy engine's public death ledger and AI history in lockstep.
+   * System announcements are not a durable AI fact source: the prompt
+   * compressor reads gameHistory.deadPlayers, so writing only this.deaths
+   * makes a real death look like a peaceful night to the next prompt.
+   */
+  private recordDeath(player: Player | undefined, day: number, reason: string): void {
+    const name = player?.name || '玩家';
+    const role = player?.role || null;
+    this.deaths.push({ name, role, day, reason });
+    this.gameHistory.deadPlayers.push({ name, role, day, reason });
   }
 
   private transitionToDay(): void {
@@ -1625,7 +1642,7 @@ export class RoomEngine {
     }
     this.gameHistory.votes = { ...this.game.votes };
     this.players = this.players.map((p) => (p.id === targetId ? { ...p, isAlive: false } : p));
-    this.deaths.push({ name: voted.name, role: voted.role, day: this.game.day, reason: '被投票出局' });
+    this.recordDeath(voted, this.game.day, '被投票出局');
     this.addSystem(`【公告】第${this.game.day}天 被投票出局：${voted.name}`);
     this.broadcast();
     if (this.checkWinner()) return;
@@ -1771,7 +1788,7 @@ export class RoomEngine {
     if (targetId) {
       const target = this.players.find((p) => p.id === targetId);
       this.players = this.players.map((p) => (p.id === targetId ? { ...p, isAlive: false } : p));
-      this.deaths.push({ name: target?.name || '玩家', role: target?.role || null, day: this.game.day, reason: '猎人枪' });
+      this.recordDeath(target, this.game.day, '猎人枪');
       this.addSystem(`🔫 猎人开枪带走 ${target?.name || '目标'}！`);
       this.broadcast();
       if (this.checkWinner()) return;
