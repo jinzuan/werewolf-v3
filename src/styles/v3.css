@@ -1,41 +1,136 @@
 @font-face {
-  font-family: 'Noto Sans SC';
+  font-family: 'WW Noto Sans SC';
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url('/fonts/noto-sans-sc-400.woff2') format('woff2');
+  src: url('/fonts/noto-sans-sc-400-1.woff2') format('woff2');
+  unicode-range: U+4E00-6735;
 }
 
 @font-face {
-  font-family: 'Noto Sans SC';
+  font-family: 'WW Noto Sans SC';
   font-style: normal;
   font-weight: 600;
   font-display: swap;
-  src: url('/fonts/noto-sans-sc-600.woff2') format('woff2');
+  src: url('/fonts/noto-sans-sc-600-1.woff2') format('woff2');
+  unicode-range: U+4E00-6735;
 }
 
 @font-face {
-  font-family: 'Noto Sans SC';
+  font-family: 'WW Noto Sans SC';
   font-style: normal;
   font-weight: 700;
   font-display: swap;
-  src: url('/fonts/noto-sans-sc-700.woff2') format('woff2');
+  src: url('/fonts/noto-sans-sc-700-1.woff2') format('woff2');
+  unicode-range: U+4E00-6735;
 }
 
 @font-face {
-  font-family: 'Noto Serif SC';
+  font-family: 'WW Noto Serif SC';
   font-style: normal;
   font-weight: 600;
   font-display: swap;
-  src: url('/fonts/noto-serif-sc-600.woff2') format('woff2');
+  src: url('/fonts/noto-serif-sc-600-1.woff2') format('woff2');
+  unicode-range: U+4E00-6735;
 }
 
 @font-face {
-  font-family: 'Noto Serif SC';
+  font-family: 'WW Noto Serif SC';
   font-style: normal;
   font-weight: 700;
   font-display: swap;
-  src: url('/fonts/noto-serif-sc-700.woff2') format('woff2');
+  src: url('/fonts/noto-serif-sc-700-1.woff2') format('woff2');
+  unicode-range: U+4E00-6735;
+}
+
+@font-face {
+  font-family: 'WW Noto Sans SC';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/noto-sans-sc-400-2.woff2') format('woff2');
+  unicode-range: U+6736-9FFF, U+F900-FAFF;
+}
+
+@font-face {
+  font-family: 'WW Noto Sans SC';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/noto-sans-sc-600-2.woff2') format('woff2');
+  unicode-range: U+6736-9FFF, U+F900-FAFF;
+}
+
+@font-face {
+  font-family: 'WW Noto Sans SC';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/noto-sans-sc-700-2.woff2') format('woff2');
+  unicode-range: U+6736-9FFF, U+F900-FAFF;
+}
+
+@font-face {
+  font-family: 'WW Noto Serif SC';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/noto-serif-sc-600-2.woff2') format('woff2');
+  unicode-range: U+6736-9FFF, U+F900-FAFF;
+}
+
+@font-face {
+  font-family: 'WW Noto Serif SC';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/noto-serif-sc-700-2.woff2') format('woff2');
+  unicode-range: U+6736-9FFF, U+F900-FAFF;
+}
+
+@font-face {
+  font-family: 'WW Noto Sans SC';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/noto-sans-sc-400-3.woff2') format('woff2');
+  unicode-range: U+0020-007E, U+00B7, U+2014, U+2018-2019, U+201C-201D, U+2026, U+3000-3002, U+3008-3011, U+3014-3015, U+FF01, U+FF05, U+FF08-FF09, U+FF0C, U+FF10-FF1B, U+FF1F, U+FF5E;
+}
+
+@font-face {
+  font-family: 'WW Noto Sans SC';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/noto-sans-sc-600-3.woff2') format('woff2');
+  unicode-range: U+0020-007E, U+00B7, U+2014, U+2018-2019, U+201C-201D, U+2026, U+3000-3002, U+3008-3011, U+3014-3015, U+FF01, U+FF05, U+FF08-FF09, U+FF0C, U+FF10-FF1B, U+FF1F, U+FF5E;
+}
+
+@font-face {
+  font-family: 'WW Noto Sans SC';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/noto-sans-sc-700-3.woff2') format('woff2');
+  unicode-range: U+0020-007E, U+00B7, U+2014, U+2018-2019, U+201C-201D, U+2026, U+3000-3002, U+3008-3011, U+3014-3015, U+FF01, U+FF05, U+FF08-FF09, U+FF0C, U+FF10-FF1B, U+FF1F, U+FF5E;
+}
+
+@font-face {
+  font-family: 'WW Noto Serif SC';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/noto-serif-sc-600-3.woff2') format('woff2');
+  unicode-range: U+0020-007E, U+00B7, U+2014, U+2018-2019, U+201C-201D, U+2026, U+3000-3002, U+3008-3011, U+3014-3015, U+FF01, U+FF05, U+FF08-FF09, U+FF0C, U+FF10-FF1B, U+FF1F, U+FF5E;
+}
+
+@font-face {
+  font-family: 'WW Noto Serif SC';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/noto-serif-sc-700-3.woff2') format('woff2');
+  unicode-range: U+0020-007E, U+00B7, U+2014, U+2018-2019, U+201C-201D, U+2026, U+3000-3002, U+3008-3011, U+3014-3015, U+FF01, U+FF05, U+FF08-FF09, U+FF0C, U+FF10-FF1B, U+FF1F, U+FF5E;
 }
 
 /*
@@ -81,9 +176,9 @@
   --ww-danger-surface: #F8E6E5;
 
   /* typography */
-  --ww-font-family-display: 'Noto Serif SC', 'Songti SC', serif;
-  --ww-font-family-body: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  --ww-font-family-number: ui-sans-serif, 'Noto Sans SC', sans-serif;
+  --ww-font-family-display: 'WW Noto Serif SC', 'Songti SC', serif;
+  --ww-font-family-body: 'WW Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --ww-font-family-number: ui-sans-serif, 'WW Noto Sans SC', sans-serif;
   --ww-text-display-size: 32px;
   --ww-text-display-line: 42px;
   --ww-text-page-title-size: 24px;
