@@ -17,6 +17,8 @@ import { Card } from '../../ui/Card';
 import { Input } from '../../ui/Input';
 import { RoleCard } from '../../ui/RoleCard';
 import { Seat } from '../../ui/Seat';
+import { avatarAssetMap } from '../../ui/assetRegistry';
+import { Modal } from '../../ui/Modal';
 import type { RoomAIConfig, RoomCreationCatalog } from '../../../shared/roomContract';
 import {
   clearWizardDraft,
@@ -188,7 +190,7 @@ function RoomPreview({ draft }: { draft: WizardDraft }) {
         <Sparkles size={20} />
         <div>
           <h2>本局预览</h2>
-          <p>这里只展示你的配置草稿，创建后以服务端回显为准。</p>
+          <p>这里只展示你的配置草稿，创建后会显示最终房间设置。</p>
         </div>
       </div>
       <div style={css('gap')}>
@@ -228,7 +230,7 @@ function SeatPreview({ draft }: { draft: WizardDraft }) {
               kind={isComputer ? 'computer' : index === 0 && draft.mode !== 'quick_computer' ? 'player' : 'empty'}
               presence={isComputer ? 'waiting' : index === 0 && draft.mode !== 'quick_computer' ? 'online' : 'idle'}
               name={isComputer ? '预计电脑席' : index === 0 && draft.mode !== 'quick_computer' ? draft.creator.name || '创建者' : undefined}
-              meta={isComputer ? '创建时由服务端安排' : undefined}
+              meta={isComputer ? '创建时自动安排' : undefined}
             />
           );
         })}
@@ -284,13 +286,20 @@ function PlayersStep({
       update({ maxPlayers, ...seatPatch, rolePresetId: undefined, ...(nextPreset ? { rulesetId: nextPreset.rulesetId, rulesetVersion: nextPreset.rulesetVersion } : {}) });
     }
   };
-  const avatarIds = ['avatar-player', 'avatar-moon', 'avatar-leaf', 'avatar-star', 'avatar-acorn', 'avatar-lantern'];
+  const avatarOptions = [
+    { id: 'avatar-player', asset: avatarAssetMap.player, label: '村民头像一' },
+    { id: 'avatar-player-2', asset: avatarAssetMap.player, label: '村民头像二' },
+    { id: 'avatar-player-3', asset: avatarAssetMap.player, label: '村民头像三' },
+    { id: 'avatar-player-4', asset: avatarAssetMap.player, label: '村民头像四' },
+    { id: 'avatar-player-5', asset: avatarAssetMap.player, label: '村民头像五' },
+    { id: 'avatar-player-6', asset: avatarAssetMap.player, label: '村民头像六' },
+  ];
   return (
     <div style={css('gap')}>
       <Card data-wizard-block="creator" tabIndex={-1}>
         <div className="v3-card-heading">
           <Users size={20} />
-          <div><h2>基本信息</h2><p>这些信息会随创建请求发送给服务端。</p></div>
+          <div><h2>基本信息</h2><p>这些信息用于创建房间。</p></div>
         </div>
         <div style={css('gap')}>
           <label className="v3-field">
@@ -307,9 +316,9 @@ function PlayersStep({
           <div>
             <span className="v3-field__label">村民徽章</span>
             <div style={row} aria-label="选择村民徽章">
-              {avatarIds.map((avatarId, index) => (
-                <button key={avatarId} type="button" aria-label={`村民徽章${index + 1}`} aria-pressed={draft.creator.avatarId === avatarId} onClick={() => update({ creator: { ...draft.creator, avatarId } })} style={{ ...choiceStyle(draft.creator.avatarId === avatarId), flex: '0 0 52px', alignItems: 'center', padding: 'var(--ww-space-2)' }}>
-                  <span aria-hidden="true" style={{ fontSize: 22 }}>民</span>
+              {avatarOptions.map(({ id: avatarId, asset, label }) => (
+                <button key={avatarId} type="button" aria-label={label} aria-pressed={draft.creator.avatarId === avatarId} onClick={() => update({ creator: { ...draft.creator, avatarId } })} style={{ ...choiceStyle(draft.creator.avatarId === avatarId), flex: '0 0 52px', alignItems: 'center', padding: 'var(--ww-space-2)' }}>
+                  <img className="v3-avatar-option" src={asset.src} alt="" aria-hidden="true" />
                 </button>
               ))}
             </div>
@@ -345,7 +354,7 @@ function PlayersStep({
       <Card data-wizard-block="players" tabIndex={-1}>
         <div className="v3-card-heading"><Users size={20} /><div><h2>席位分配</h2><p>角色总数会在下一步与总席位核对。</p></div></div>
         {draft.mode === 'human' ? <p>朋友房：真人需要坐满{draft.maxPlayers}个席位后才能开局。</p> : null}
-        {draft.mode === 'quick_computer' ? <p>快速电脑局：服务端会在创建时补满{draft.maxPlayers}个电脑席。</p> : null}
+        {draft.mode === 'quick_computer' ? <p>快速电脑局：创建时会自动补满{draft.maxPlayers}个电脑席。</p> : null}
         {draft.mode === 'mixed' ? <div style={css('gap')}>
           <div style={row}>
             <button type="button" aria-pressed={draft.aiFillPolicy === 'fixed'} onClick={() => update({ aiFillPolicy: 'fixed', computerSeats: Math.max(1, Math.min(draft.maxPlayers - 1, draft.computerSeats || 1)), minHumanPlayers: draft.maxPlayers - Math.max(1, Math.min(draft.maxPlayers - 1, draft.computerSeats || 1)) })} style={choiceStyle(draft.aiFillPolicy === 'fixed')}><strong>按预设电脑席</strong><span>预留电脑席，可邀请真人占用其余席位。</span></button>
@@ -405,7 +414,7 @@ function AIConfigPanel({
           <Input type="password" autoComplete="off" value={config.apiKey} onChange={(event) => update({ apiKey: event.target.value })} placeholder="可选" />
         </label>
         <label className="v3-field">
-          <span>访问令牌</span>
+          <span>备用访问凭据</span>
           <Input type="password" autoComplete="off" value={config.token} onChange={(event) => update({ token: event.target.value })} placeholder="可选，优先用于请求" />
         </label>
         {usesCustomEndpoint ? (
@@ -431,7 +440,7 @@ function AIConfigPanel({
           </select>
         </label>
       </div>
-      <p className="v3-ai-config-note">密钥和令牌只随本次创建请求发送，不写入浏览器草稿；请在可信连接下填写。</p>
+      <p className="v3-ai-config-note">访问凭据只随本次创建请求发送，不写入浏览器草稿；请在可信连接下填写。</p>
     </Card>
   );
 }
@@ -477,7 +486,7 @@ function RolesStep({
             const value = draft.roleSetup[role] ?? 0;
             const limit = catalog.roleLimits[role];
             return <div key={role}>
-              <RoleCard name={ROLE_LABELS[role]} faction={role === 'wolf' ? '狼人阵营' : '好人阵营'} factionTone={role === 'wolf' ? 'wolf' : 'village'} description={ROLE_DESCRIPTIONS[role]} count={value} badge={role === 'wolf' ? '狼' : '民'} />
+              <RoleCard role={role} name={ROLE_LABELS[role]} faction={role === 'wolf' ? '狼人阵营' : '好人阵营'} factionTone={role === 'wolf' ? 'wolf' : 'village'} description={ROLE_DESCRIPTIONS[role]} count={value} />
               {custom ? <div style={{ ...row, justifyContent: 'center', marginTop: 'calc(-1 * var(--ww-space-3))', position: 'relative' }}>
                 <Button variant="icon" aria-label={`减少${ROLE_LABELS[role]}`} disabled={Boolean(limit && value <= limit.min)} onClick={() => setRoleCount(role, Math.max(limit?.min ?? 0, value - 1))}><Minus size={16} /></Button>
                 <span className="v3-numeric" aria-label={`${ROLE_LABELS[role]}数量`}>{value}</span>
@@ -507,21 +516,38 @@ function RulesStep({
   onBack: () => void;
   onNext: () => void;
 }) {
+  const [rulesOpen, setRulesOpen] = useState(false);
   const issueFor = (path: string) => issues.find((candidate) => candidate.path === path);
   return (
     <div style={css('gap')}>
       <Card data-wizard-block="rules" tabIndex={-1}>
-        <div className="v3-card-heading"><Sparkles size={20} /><div><h2>对局规则</h2><p>规则内容由服务端规则集提供，创建时会再次校验。</p></div></div>
+        <div className="v3-card-heading"><Sparkles size={20} /><div><h2>对局规则</h2><p>规则内容会在创建时再次确认。</p></div></div>
         <div style={css('gap')}>
           <div style={{ ...row, justifyContent: 'space-between' }}><span>当前规则集</span><strong>{draft.rulesetVersion ? `V3.1 · ${draft.rulesetVersion}` : '尚未选择'}</strong></div>
           <p style={{ margin: 0, color: 'var(--ww-text-muted)' }}>夜间行动顺序、角色能力、发言与投票规则均按这个版本执行。</p>
-          <Button variant="secondary" disabled>查看完整规则（创建后可查看）</Button>
+          <Button variant="secondary" onClick={() => setRulesOpen(true)}>查看完整规则</Button>
         </div>
         <FieldError issue={issueFor('rulesetId')} />
       </Card>
 
+      <Modal
+        open={rulesOpen}
+        title="完整规则"
+        context={draft.rulesetVersion ? `当前规则版本：${draft.rulesetVersion}` : undefined}
+        onClose={() => setRulesOpen(false)}
+      >
+        <div className="v3-rule-dialog">
+          <p>每位玩家的身份会在开局后私密发放。夜间按角色顺序行动，白天依次发言并投票。</p>
+          <ul>
+            <li>狼人阵营共同决定夜间目标，好人阵营通过发言和投票寻找狼人。</li>
+            <li>房主会在真人玩家完成准备、人数和角色检查通过后开始对局。</li>
+            <li>具体行动是否可用，以房间当前阶段显示的操作为准。</li>
+          </ul>
+        </div>
+      </Modal>
+
       <Card data-wizard-block="rules" tabIndex={-1}>
-        <div className="v3-card-heading"><Users size={20} /><div><h2>房间规则</h2><p>只展示当前服务端已接入的选项。</p></div></div>
+        <div className="v3-card-heading"><Users size={20} /><div><h2>房间规则</h2><p>这里只展示当前可用的选项。</p></div></div>
         <div style={css('gap')}>
           <fieldset style={{ border: 0, margin: 0, padding: 0 }}>
             <legend className="v3-field__label">房间可见性</legend>
@@ -577,7 +603,7 @@ function ConfirmStep({
       </Card>
       <Card tone="raised" data-wizard-block="confirm" tabIndex={-1}>
         <strong>{draft.mode === 'quick_computer' ? '创建后立即开局，你将进入全知监控。' : '创建后进入等待房，邀请朋友入座。'}</strong>
-        <div style={{ ...row, justifyContent: 'space-between', marginTop: 'var(--ww-space-4)' }}>
+        <div className="v3-wizard-confirm-actions" style={{ ...row, justifyContent: 'space-between', marginTop: 'var(--ww-space-4)' }}>
           <Button variant="secondary" onClick={onBack} disabled={busy}><ArrowLeft size={17} />返回修改</Button>
           <Button size="action" onClick={onCreate} disabled={busy}>{busy ? '正在创建……' : draft.mode === 'quick_computer' ? '创建并开始电脑局' : '创建并进入等待房'}<ArrowRight size={17} /></Button>
         </div>
@@ -587,7 +613,7 @@ function ConfirmStep({
 }
 
 function WizardActions({ onBack, onNext, nextLabel }: { onBack?: () => void; onNext: () => void; nextLabel: string }) {
-  return <div style={{ ...row, justifyContent: 'space-between' }}><span style={{ color: 'var(--ww-text-muted)', fontSize: 'var(--ww-text-caption-size)' }}>草稿会自动保存在本次浏览会话中。</span><div style={row}>{onBack ? <Button variant="secondary" onClick={onBack}><ArrowLeft size={17} />上一步</Button> : null}<Button size="action" onClick={onNext}>{nextLabel}<ArrowRight size={17} /></Button></div></div>;
+  return <div className="v3-wizard-actions" style={{ ...row, justifyContent: 'space-between' }}><span style={{ color: 'var(--ww-text-muted)', fontSize: 'var(--ww-text-caption-size)' }}>草稿会自动保存在本次浏览会话中。</span><div style={row}>{onBack ? <Button variant="secondary" onClick={onBack}><ArrowLeft size={17} />上一步</Button> : null}<Button size="action" onClick={onNext}>{nextLabel}<ArrowRight size={17} /></Button></div></div>;
 }
 
 export function RoomWizardPage() {
@@ -715,7 +741,7 @@ export function RoomWizardPage() {
     return <AppShell title="创建房间" eyebrow="开房向导" connected={connected}>
       <Card className="v3-empty-state" aria-live="polite">
         <strong>{failed ? '房间目录加载失败' : '正在载入房间目录'}</strong>
-        <span>{failed ? (catalogError ?? '服务暂时不可用，请重试。') : '正在从服务端读取可用人数与规则，请稍候。'}</span>
+        <span>{failed ? (catalogError ?? '暂时无法读取房间目录，请重试。') : '正在读取可用人数与规则，请稍候。'}</span>
         {failed ? <div className="v3-action-stack">
           <Button onClick={() => void refreshCatalog({ force: true })}>重新载入目录</Button>
           <Button variant="quiet" onClick={() => navigate('/lobby')}>返回大厅</Button>
@@ -726,7 +752,7 @@ export function RoomWizardPage() {
 
   const pageTitle = WIZARD_STEPS.find((item) => item.id === currentStep)?.title ?? WIZARD_STEPS[0].title;
   return (
-    <AppShell title="开房向导" eyebrow="狼人杀 V3.1" connected={connected}>
+    <AppShell title="开房向导" eyebrow="狼人杀·月光森林" connected={connected}>
       <div className="v3-page-heading"><div><span>四步创建 · {draft.roomName || '未命名房间'}</span><h1>{pageTitle}</h1></div><Badge tone="info">创建设置</Badge></div>
       <WizardStepper current={currentStep} draft={draft} catalog={catalog} serverIssues={serverIssues} onNavigate={navigateStep} />
       {serverIssues.length > 0 ? <div className="v3-alert v3-alert--error" role="alert">创建未完成，请按提示修改；你的全部草稿已保留。</div> : null}
@@ -738,7 +764,13 @@ export function RoomWizardPage() {
           {currentStep === 'rules' ? <RulesStep draft={draft} issues={visibleIssues} update={update} onBack={() => navigateStep('roles')} onNext={continueStep} /> : null}
           {currentStep === 'confirm' ? <ConfirmStep draft={draft} aiConfig={aiConfig} issues={visibleIssues} busy={busy} onBack={() => navigateStep('rules')} onEdit={navigateStep} onCreate={() => void create()} /> : null}
         </section>
-        <aside className="v3-wizard-preview" style={{ position: 'sticky', top: 'var(--ww-space-4)' }}><RoomPreview draft={draft} /><Button variant="quiet" onClick={() => { clearWizardDraft(storageTarget()); navigate('/lobby'); }} style={{ marginTop: 'var(--ww-space-3)', width: '100%' }}>退出并清除草稿</Button></aside>
+        <details className="v3-wizard-preview" open>
+          <summary>查看本局预览</summary>
+          <div className="v3-wizard-preview__content">
+            <RoomPreview draft={draft} />
+            <Button variant="quiet" onClick={() => { clearWizardDraft(storageTarget()); navigate('/lobby'); }} style={{ marginTop: 'var(--ww-space-3)', width: '100%' }}>退出并清除草稿</Button>
+          </div>
+        </details>
       </div>
     </AppShell>
   );

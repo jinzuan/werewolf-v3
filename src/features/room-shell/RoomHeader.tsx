@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Badge } from '../../ui/Badge';
 import { useV3Store } from '../../stores/v3Store';
+import { sceneForRoom } from './scene';
 import {
   roomStatusLabel,
   type RoomViewSegment,
@@ -12,7 +13,7 @@ import {
 
 const viewerLabel = (kind: 'player' | 'spectator', omniscient: boolean): string => {
   if (kind === 'player') return '玩家视角';
-  return omniscient ? '授权监控视角' : '公开观战视角';
+  return omniscient ? '全知观战' : '公开观战';
 };
 
 const viewLabel: Record<RoomViewSegment, string> = {
@@ -31,6 +32,7 @@ export interface RoomHeaderProps extends TopStatusBarProps {
 export function RoomHeader({ children, ...status }: RoomHeaderProps) {
   const room = useV3Store((state) => state.room);
   const session = useV3Store((state) => state.session);
+  const snapshot = useV3Store((state) => state.snapshot);
 
   if (!room || !session) {
     return <TopStatusBar {...status} />;
@@ -51,6 +53,7 @@ export function RoomHeader({ children, ...status }: RoomHeaderProps) {
     <div className="v3-room-header">
       <TopStatusBar
         {...status}
+        scene={status.scene ?? sceneForRoom(room.status, snapshot?.gameState)}
         eyebrow={room.name}
         title={requestedTitle ?? viewLabel[segment]}
       />

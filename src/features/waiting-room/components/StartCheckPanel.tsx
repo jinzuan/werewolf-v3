@@ -33,7 +33,7 @@ export function StartCheckPanel({
           <CircleHelp size={20} />
         </div>
         <div>
-          <span className="waiting-room__eyebrow">服务端校验</span>
+          <span className="waiting-room__eyebrow">开局检查</span>
           <h2 id="start-check-title">开局检查</h2>
         </div>
         <span className="waiting-room__check-count">{passed} / {items.length} 通过</span>
@@ -89,7 +89,7 @@ export function StartCheckPanel({
       ) : (
         <div className="waiting-room__check-empty">
           <CircleHelp size={18} aria-hidden="true" />
-          <span>服务端正在计算本局开局条件。</span>
+          <span>正在检查本局开局条件。</span>
         </div>
       )}
     </Card>

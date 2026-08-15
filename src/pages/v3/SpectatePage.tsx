@@ -5,6 +5,7 @@ import { MatchShell } from '../../components/shell/MatchShell';
 import { useV3Store } from '../../stores/v3Store';
 import { Badge } from '../../ui/Badge';
 import { Card } from '../../ui/Card';
+import { avatarAssetMap } from '../../ui/assetRegistry';
 import {
   describeEvent,
   formatEventTime,
@@ -54,7 +55,7 @@ export function SpectatePage() {
         <Card className="v3-empty-state">
           <Eye size={24} />
           <strong>尚未进入公开观战</strong>
-          <span>请在大厅使用房间码与令牌加入观战席。</span>
+          <span>请在大厅使用房间码与邀请口令进入观战席。</span>
         </Card>
       </AppShell>
     );
@@ -94,7 +95,10 @@ export function SpectatePage() {
         left={
           <Card>
             <div className="v3-panel-heading">
-              <div><span>公开投影</span><h2>座位摘要</h2></div>
+              <div className="v3-panel-heading__identity">
+                <img className="v3-spectator-avatar" src={avatarAssetMap.spectator.src} alt={avatarAssetMap.spectator.label} />
+                <div><span>公开投影</span><h2>座位摘要</h2></div>
+              </div>
               <Badge tone="info"><Eye size={13} />公开视角</Badge>
             </div>
             <div className="v3-summary-list">

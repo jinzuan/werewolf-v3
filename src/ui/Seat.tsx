@@ -1,5 +1,6 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { cn } from '../lib/utils';
+import { avatarAssetMap, type VisualAsset } from './assetRegistry';
 import { Status, type StatusTone } from './Status';
 
 export type SeatKind = 'player' | 'computer' | 'spectator' | 'empty';
@@ -12,6 +13,7 @@ interface SeatProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'child
   presence?: SeatPresence;
   host?: boolean;
   avatar?: ReactNode;
+  avatarAsset?: VisualAsset;
   selected?: boolean;
   statusLabel?: string;
   meta?: string;
@@ -47,6 +49,7 @@ export function Seat({
   presence = 'online',
   host = false,
   avatar,
+  avatarAsset,
   selected = false,
   statusLabel,
   meta,
@@ -78,7 +81,7 @@ export function Seat({
         {String(seatNumber).padStart(2, '0')}
       </span>
       <span className="ww-seat__avatar" aria-hidden="true">
-        {avatar || (isEmpty ? '＋' : kind === 'computer' ? '机' : kind === 'spectator' ? '观' : '民')}
+        {avatar || (isEmpty ? '＋' : <img src={(avatarAsset ?? avatarAssetMap[kind]).src} alt="" />)}
       </span>
       <span className="ww-seat__body">
         <strong>{displayName}</strong>

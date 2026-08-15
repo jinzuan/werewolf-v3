@@ -99,7 +99,7 @@ export function SettingsPage() {
 
         <Card className="v3-settings-note">
           <Volume2 size={19} />
-          <div><strong>电脑玩家参数由房主掌握</strong><span>创建混合房或电脑局时，可以在开房向导填写模型、密钥、令牌和接口地址。</span></div>
+            <div><strong>电脑玩家参数由房主掌握</strong><span>创建混合房或电脑局时，可以在开房向导填写模型、访问凭据和服务地址。</span></div>
           <Link className="v3-button v3-button--quiet" to="/rooms/new/players">打开开房向导<ArrowRight size={16} /></Link>
         </Card>
       </div>

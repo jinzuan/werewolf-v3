@@ -11,3 +11,4 @@ export { Status } from './Status';
 export type { RoleFaction } from './RoleCard';
 export type { SeatKind, SeatPresence } from './Seat';
 export type { StatusTone } from './Status';
+export type { AvatarKind, VisualAsset } from './assetRegistry';

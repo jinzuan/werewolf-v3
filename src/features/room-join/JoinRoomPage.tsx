@@ -1,0 +1,91 @@
+import { ArrowLeft, ArrowRight, DoorOpen, Eye, KeyRound } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { roomPath } from '../../app/routes/roomRouting';
+import { AppShell } from '../../components/shell/AppShell';
+import { useV3Store } from '../../stores/v3Store';
+import { Button } from '../../ui/Button';
+import { Card } from '../../ui/Card';
+import { Input } from '../../ui/Input';
+import { joinActionLabel, joinIntentFromQuery, normalizeJoinCode, type JoinIntent } from './model';
+
+export function JoinRoomPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const connected = useV3Store((state) => state.connected);
+  const loading = useV3Store((state) => state.loading);
+  const error = useV3Store((state) => state.error);
+  const joinRoom = useV3Store((state) => state.joinRoom);
+  const spectateRoom = useV3Store((state) => state.spectateRoom);
+  const clearError = useV3Store((state) => state.clearError);
+  const [intent, setIntent] = useState<JoinIntent>(() => joinIntentFromQuery(searchParams.get('intent')));
+  const [name, setName] = useState('玩家');
+  const [roomCode, setRoomCode] = useState(() => normalizeJoinCode(searchParams.get('code')));
+  const [joinPassword, setJoinPassword] = useState('');
+
+  useEffect(() => {
+    setRoomCode(normalizeJoinCode(searchParams.get('code')));
+    setIntent(joinIntentFromQuery(searchParams.get('intent')));
+  }, [searchParams]);
+
+  const enter = async (nextIntent: JoinIntent) => {
+    const code = normalizeJoinCode(roomCode);
+    setIntent(nextIntent);
+    clearError();
+    const accepted = nextIntent === 'watch'
+      ? await spectateRoom(name, code, joinPassword)
+      : await joinRoom(name, code, joinPassword);
+    if (accepted) navigate(roomPath(code), { replace: true });
+  };
+
+  const watchIntent = intent === 'watch';
+  return (
+    <AppShell title={watchIntent ? '进入观战' : '加入房间'} eyebrow="村口入口" connected={connected}>
+      <div className="v3-join-page">
+        <Card className="v3-join-card" aria-labelledby="join-room-title">
+          <div className="v3-card-heading">
+            {watchIntent ? <Eye size={22} aria-hidden="true" /> : <DoorOpen size={22} aria-hidden="true" />}
+            <div>
+              <span className="v3-join-card__eyebrow">{watchIntent ? '公开信息' : '邀请入座'}</span>
+              <h1 id="join-room-title">{watchIntent ? '进入一间正在进行的房间' : '用房间码找到同伴'}</h1>
+              <p>{watchIntent ? '观战只会显示所有玩家都能得知的公开信息。' : '填写房间码和邀请口令，服务端会为你安排一个席位。'}</p>
+            </div>
+          </div>
+
+          {error ? <div className="v3-alert v3-alert--error" role="alert">{error}</div> : null}
+
+          <form className="v3-join-form" onSubmit={(event) => { event.preventDefault(); void enter(intent); }}>
+            <label className="v3-field">
+              <span>显示名称</span>
+              <Input value={name} maxLength={16} autoComplete="nickname" onChange={(event) => setName(event.target.value)} />
+            </label>
+            <label className="v3-field">
+              <span>房间码</span>
+              <Input value={roomCode} inputMode="text" autoComplete="off" placeholder="例如 ABC123" onChange={(event) => setRoomCode(normalizeJoinCode(event.target.value))} />
+            </label>
+            <label className="v3-field">
+              <span>邀请口令{watchIntent ? '（公开观战按房间设置决定是否需要）' : ''}</span>
+              <Input type="password" value={joinPassword} autoComplete="off" placeholder="由房主提供" onChange={(event) => setJoinPassword(event.target.value)} />
+            </label>
+
+            <div className="v3-join-form__actions">
+              <Button type="submit" size="action" disabled={loading || !name.trim() || !roomCode || (intent === 'play' && !joinPassword)}>
+                {loading ? '正在进入……' : joinActionLabel(intent)}<ArrowRight size={17} />
+              </Button>
+              {intent === 'play' ? (
+                <Button type="button" variant="secondary" disabled={loading || !name.trim() || !roomCode} onClick={() => void enter('watch')}>
+                  <Eye size={17} />改为观战
+                </Button>
+              ) : (
+                <Button type="button" variant="secondary" disabled={loading || !name.trim() || !roomCode || !joinPassword} onClick={() => void enter('play')}>
+                  <KeyRound size={17} />改为加入
+                </Button>
+              )}
+            </div>
+          </form>
+        </Card>
+        <Button variant="quiet" onClick={() => navigate('/lobby')}><ArrowLeft size={17} />返回大厅</Button>
+      </div>
+    </AppShell>
+  );
+}

@@ -1,6 +1,7 @@
-import { Bot, UserRound } from 'lucide-react';
+import { UserRound } from 'lucide-react';
 import type { RoomViewV31 } from '../../../../shared/roomContract';
 import { Seat } from '../../../ui/Seat';
+import { avatarAssetMap } from '../../../ui/assetRegistry';
 import {
   memberReadyLabel,
   selectPlayerSeats,
@@ -56,7 +57,7 @@ export function PlayerSeatGrid({ room, onSeatListFocus }: PlayerSeatGridProps) {
               presence={presence}
               host={member.isHost}
               statusLabel={memberReadyLabel(member)}
-              avatar={member.isAI ? <Bot size={21} aria-hidden="true" /> : <UserRound size={21} aria-hidden="true" />}
+              avatarAsset={member.isAI ? avatarAssetMap.computer : avatarAssetMap.player}
               disabled
             />
           );
@@ -68,7 +69,7 @@ export function PlayerSeatGrid({ room, onSeatListFocus }: PlayerSeatGridProps) {
           <span className="waiting-room__eyebrow">待分配席位</span>
           {unassigned.map((member) => (
             <span key={member.id} className="waiting-room__unassigned-member">
-              {member.name} · 服务端正在安排席位
+              {member.name} · 正在安排席位
             </span>
           ))}
         </div>

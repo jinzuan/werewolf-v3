@@ -73,7 +73,7 @@ export function RoomConfigEditor({
     <Modal
       open={open}
       title="修改房间设置"
-      context="保存后由服务端重新规范化并重算开局检查。"
+      context="保存后会重新确认设置，并更新开局检查。"
       onClose={onClose}
       size="wide"
       footer={(

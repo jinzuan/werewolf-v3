@@ -53,7 +53,7 @@ export function MatchResultPage() {
         <Card className="v3-empty-state" aria-live="polite">
           <BookOpen size={24} />
           <strong>正在恢复本局结果</strong>
-          <span>请稍候，服务端会恢复与你身份匹配的结果投影。</span>
+          <span>请稍候，正在恢复与你身份匹配的对局结果。</span>
         </Card>
       </AppShell>
     );
@@ -163,7 +163,7 @@ export function MatchResultPage() {
       </Card>
 
       <div className="v3-action-panel__footer">
-        <span>结果来自服务端结束快照；刷新页面仍可恢复本局。</span>
+        <span>结果已保存；刷新页面仍可恢复本局。</span>
         <Link to="/lobby"><Button>返回大厅</Button></Link>
       </div>
     </AppShell>

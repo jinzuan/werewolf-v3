@@ -46,7 +46,7 @@ export function RoomConfigSummary({ room, onUpdateConfig }: RoomConfigSummaryPro
           <Settings2 size={20} />
         </div>
         <div>
-          <span className="waiting-room__eyebrow">服务端规范化回显</span>
+          <span className="waiting-room__eyebrow">房间信息</span>
           <h2 id="room-config-title">房间设置</h2>
         </div>
         <Badge tone={room.configLocked ? 'warning' : 'success'}>
