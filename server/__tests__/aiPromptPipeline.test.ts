@@ -4,12 +4,14 @@ import { DOMAIN_EVENT_SCHEMA_VERSION, type DomainEvent } from '../../shared/even
 import type { Player } from '../../shared/types';
 import {
   buildAIPrompt,
+  buildAIRuntimeContext,
   parseAIOutput,
   PromptAIProvider,
   RepeatPolicy,
   speechSimilarity,
 } from '../ai';
 import type { AIRequestContext } from '../ai/types';
+import { buildLegacyAIPrompt } from '../../shared/aiClient';
 
 const players: Player[] = [
   {
@@ -136,6 +138,143 @@ test('night death events survive prompt compression and only a true peaceful nig
   );
   assert.match(inconsistent.user, /夜间公开死亡信息缺失/);
   assert.doesNotMatch(inconsistent.user, /平安夜/);
+});
+
+test('last words end-to-end prompt carries projected death ledger, private actions, and locked votes', () => {
+  const lastWordsPlayers = players.map((player) => ({
+    ...player,
+    role:
+      player.id === 'p1' ? ('seer' as const) : player.id === 'p2' ? ('wolf' as const) : null,
+    isAlive: player.id !== 'p1' && player.id !== 'p3',
+  }));
+  const visibleEvents: DomainEvent[] = [
+    nightResolved({ day: 1, peacefulNight: false, deaths: ['p3'] }),
+    {
+      ...nightResolved({
+        day: 2,
+        playerId: 'p1',
+        voteHistory: [
+          { voterId: 'p2', targetId: 'p1' },
+          { voterId: 'p3', targetId: 'p1' },
+        ],
+      }),
+      eventType: 'day.exiled',
+      phase: 'lastWords',
+      stage: 'last_words',
+      sequence: 20,
+    },
+    {
+      ...nightResolved({
+        day: 1,
+        targetId: 'p2',
+        alignment: 'wolf',
+      }),
+      eventType: 'seer.result',
+      phase: 'lastWords',
+      stage: 'last_words',
+      visibility: 'role_private',
+      audienceIds: ['p1'],
+      sequence: 21,
+    },
+  ];
+  const runtime = buildAIRuntimeContext({
+    actorId: 'p1',
+    role: 'seer',
+    phase: 'lastWords',
+    stage: 'last_words',
+    dayNumber: 2,
+    roundNumber: 1,
+    players: lastWordsPlayers,
+    visibleEvents,
+    allowedActions: ['speak'],
+    lastWordsRound: 1,
+    lastWordsRoundsRemaining: 2,
+  });
+  const prompt = buildAIPrompt({
+    ...context({
+      playerId: 'p1',
+      role: 'seer',
+      phase: 'lastWords',
+      stage: 'last_words',
+      players: lastWordsPlayers,
+      allowedCommandTypes: ['game.speak'],
+      promptContext: runtime,
+    }),
+  });
+
+  assert.match(prompt.user, /遗言可见死亡公告历史/);
+  assert.match(prompt.user, /第1晚公开死亡：大壮/);
+  assert.match(prompt.user, /第2天公开放逐：小明/);
+  assert.match(prompt.user, /第1晚你的查验：小红，结果狼人/);
+  assert.match(prompt.user, /第2天已公开票型：小红 投票给 小明、大壮 投票给 小明/);
+  assert.match(prompt.user, /遗言第 1 轮，剩余 2 轮/);
+  assert.doesNotMatch(prompt.user, /昨晚.*平安夜/);
+});
+
+test('last words distinguishes an invisible fact from a service record that was not injected', () => {
+  const runtime = buildAIRuntimeContext({
+    actorId: 'p1',
+    role: 'seer',
+    phase: 'lastWords',
+    stage: 'last_words',
+    dayNumber: 2,
+    roundNumber: 1,
+    players,
+    visibleEvents: [nightResolved({ day: 1, peacefulNight: true, deaths: [] })],
+    allowedActions: ['speak'],
+  });
+  const prompt = buildAIPrompt(
+    context({
+      phase: 'lastWords',
+      stage: 'last_words',
+      promptContext: runtime,
+    }),
+  );
+
+  assert.match(prompt.user, /系统未提供你的查验记录/);
+  assert.match(prompt.user, /不等同于“我不知道”/);
+  assert.match(prompt.user, /第1晚：平安夜/);
+});
+
+test('legacy last words use the same death ledger and retain seer checks on dead targets', () => {
+  const legacyPlayers = [
+    { ...players[0], role: 'seer' as const, isAlive: false },
+    { ...players[1], role: 'wolf' as const, isAlive: true },
+    { ...players[2], role: 'villager' as const, isAlive: false },
+  ];
+  const prompt = buildLegacyAIPrompt({
+    role: 'seer',
+    playerName: '小明',
+    players: legacyPlayers,
+    messages: [],
+    gamePhase: '遗言',
+    day: 2,
+    gameHistory: {
+      nightResults: [
+        { day: 1, checked: { target: '小红', result: '狼人' } },
+      ],
+      votes: { p2: 'p1' },
+      deadPlayers: [
+        { name: '小明', role: 'seer', day: 2, reason: '被投票出局' },
+        { name: '大壮', role: 'villager', day: 1, reason: '狼刀' },
+      ],
+      playerKnowledge: {
+        小红: {
+          name: '小红',
+          suspiciousLevel: 0,
+          checkResults: [{ day: 1, result: '狼人' }],
+          votes: [{ day: 2, target: '小明' }],
+        },
+      },
+    },
+  });
+
+  assert.match(prompt.user, /遗言可见死亡公告历史/);
+  assert.match(prompt.user, /大壮（第1晚 狼刀）/);
+  assert.match(prompt.user, /小明（第2天 被投票出局）/);
+  assert.match(prompt.user, /第1晚查验 小红：狼人/);
+  assert.match(prompt.user, /第2天公开票型：小红投→小明/);
+  assert.doesNotMatch(prompt.user, /昨晚（第1晚）之后.*平安夜/);
 });
 
 test('builder injects experience and selects the correct voting task', () => {

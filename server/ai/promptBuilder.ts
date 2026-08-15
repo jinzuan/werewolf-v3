@@ -325,7 +325,7 @@ const formatPublicEvent = (
     case 'day.vote_cast':
       return typeof payload.targetId === 'string'
         ? `${actor} 投票给 ${playerName(players, payload.targetId)}`
-        : `${actor} 选择弃票`;
+        : `${actor} 已投票（票型尚未公开）`;
     case 'day.exiled':
       return `放逐：${playerName(players, typeof payload.playerId === 'string' ? payload.playerId : undefined)}`;
     case 'hunter.shot':
@@ -391,7 +391,21 @@ const formatRuntimeFacts = (
     .filter((player) => player.isAlive)
     .map((player) => player.name);
   const privateFacts = listText(promptContext.privateRoleFacts, '无新增私有事实');
+  const isLastWords = context.phase === 'lastWords' || context.stage === 'last_words';
+  const finalWordsFacts = isLastWords
+    ? [
+        '【遗言可见死亡公告历史】\n' +
+          listText(
+            promptContext.lastWordsVisibleDeathHistory,
+            '系统未提供可见死亡公告历史（不等同于平安夜）',
+          ),
+        '【遗言可见行动历史（查验/用药/票型）】\n' +
+          listText(promptContext.lastWordsVisibleActionHistory, '系统未提供可见行动历史'),
+        '【遗言事实边界】\n“我不知道”表示事实不在你的可见视角内；“系统无记录”表示服务端本次没有注入该字段。二者都不能被改写成相反结论。',
+      ]
+    : [];
   return [
+    ...finalWordsFacts,
     `【当前阶段】\n第 ${promptContext.dayNumber ?? 1} 天，${stageName(context)}，第 ${promptContext.roundNumber ?? 1} 轮。`,
     `【公开存活玩家】\n${listText(alivePlayers)}`,
     `【已公开事件】\n${listText(projectedEvents)}`,
@@ -429,6 +443,11 @@ const placeholderValues = (
   const legalActions = promptContext.legalActions ?? [];
   const targetNames = names(promptContext.legalTargets);
   const roleTaskText = roleTask || '只执行当前服务端允许的动作。';
+  const lastWordsTask =
+    promptContext.lastWordsTask ||
+    (roleTask.includes('{{last_words_round_task}}')
+      ? '根据服务端注入的可见历史，交代真实信息、最新票型和最终行动建议。'
+      : roleTaskText);
 
   return {
     player_name: playerName(context.players, context.playerId),
@@ -470,7 +489,7 @@ const placeholderValues = (
     other_players_current_claims: listText(publicSpeeches, '无'),
     required_novelty: promptContext.requiredNovelty || '无；不要复述旧主张和旧证据',
     is_daily_summarizer: promptContext.isDailySummarizer ? '是' : '否',
-    phase_task: promptContext.phaseTask || roleTaskText,
+    phase_task: promptContext.phaseTask || lastWordsTask,
     role_reveal_context: promptContext.roleRevealContext || '服务端未要求亮身份',
     public_role_claims: listText(promptContext.publicRoleClaims),
     public_seer_claims: listText(promptContext.publicSeerClaims),
@@ -490,8 +509,16 @@ const placeholderValues = (
     tie_candidate_speeches: listText(promptContext.tieCandidateSpeeches),
     last_words_round: String(promptContext.lastWordsRound ?? 1),
     last_words_rounds_remaining: String(promptContext.lastWordsRoundsRemaining ?? 0),
-    last_words_round_task: promptContext.lastWordsTask || roleTaskText,
+    last_words_round_task: lastWordsTask,
     first_last_words: promptContext.firstLastWords || '无',
+    last_words_public_death_history: listText(
+      promptContext.lastWordsVisibleDeathHistory,
+      '系统未提供可见死亡公告历史（不等同于平安夜）',
+    ),
+    last_words_action_history: listText(
+      promptContext.lastWordsVisibleActionHistory,
+      '系统未提供可见行动历史',
+    ),
     previous_situation_summary: promptContext.previousSituationSummary || '无',
     overnight_public_events: listText(overnightPublicEvents, '无新增信息'),
     overnight_private_role_facts: listText(promptContext.overnightPrivateRoleFacts, '无新增信息'),

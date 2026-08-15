@@ -831,6 +831,11 @@ export class RoomService {
       const actor = state.players.find((player) => player.id === actorEntry.playerId);
       if (!actor?.role) return;
       const projectedPlayers = this.projectAIPlayers(state.players, actor.id, actor.role);
+      const visibleEvents = await session.eventsFor({
+        kind: 'player',
+        playerId: actor.id,
+        role: actor.role,
+      });
       const promptContext = this.aiProvider.requiresPromptContext
         ? buildAIRuntimeContext({
             actorId: actor.id,
@@ -845,7 +850,7 @@ export class RoomService {
                   ? state.gameState.wolfDiscussionRound
                   : state.gameState.dayPhase?.discussionRounds || 1,
             players: projectedPlayers,
-            visibleEvents: await session.eventsFor({ kind: 'player', playerId: actor.id, role: actor.role }),
+            visibleEvents,
             allowedActions: actorEntry.actions,
             voteCandidates: state.dayFlow.voteCandidates,
             guardianLastTarget: state.gameState.guardianLastTarget,
@@ -853,6 +858,14 @@ export class RoomService {
             witchHasPoisonPotion: state.gameState.witchHasPoisonPotion,
             hunterShotAvailable: actorEntry.actions.includes('hunter_shoot'),
             wolfVoteRound: state.gameState.wolfDiscussionRound,
+            lastWordsRound:
+              state.gameState.phase === 'lastWords'
+                ? 3 - state.dayFlow.lastWordsRemaining
+                : undefined,
+            lastWordsRoundsRemaining:
+              state.gameState.phase === 'lastWords'
+                ? state.dayFlow.lastWordsRemaining
+                : undefined,
           })
         : undefined;
       const orchestrator = new AIOrchestrator(this.aiProvider, this.options.session?.now, {

@@ -53,6 +53,9 @@ export interface AIPromptContext {
   lastWordsRoundsRemaining?: number;
   lastWordsTask?: string;
   firstLastWords?: string;
+  /** Explicit final-words history assembled from the actor's projection. */
+  lastWordsVisibleDeathHistory?: string[];
+  lastWordsVisibleActionHistory?: string[];
   previousSituationSummary?: string;
   overnightPublicEvents?: string[];
   overnightPrivateRoleFacts?: string[];

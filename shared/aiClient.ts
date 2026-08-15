@@ -577,7 +577,7 @@ const loadExperience = (role: Role, playerName: string): string | null => {
   return text;
 };
 
-interface GeneratePromptParams {
+export interface GeneratePromptParams {
   role: Role;
   playerName: string;
   players: Player[];
@@ -845,7 +845,10 @@ const filterGameHistoryForRole = (
   const playerKnowledge: Record<string, PlayerKnowledge> = {};
   if (gameHistory.playerKnowledge) {
     Object.entries(gameHistory.playerKnowledge).forEach(([name, k]) => {
-      if (!aliveNames.has(name)) return; // 死亡玩家信息摘除
+      const hasPublicVotes = Boolean(k.votes && k.votes.length > 0);
+      const hasSeerRecord =
+        role === 'seer' && Boolean(k.checkResults && k.checkResults.length > 0);
+      if (!aliveNames.has(name) && !hasPublicVotes && !hasSeerRecord) return;
       const entry: PlayerKnowledge = {
         name: k.name,
         suspiciousLevel: k.suspiciousLevel,
@@ -888,7 +891,7 @@ const filterMessagesForView = (messages: Message[], players: Player[]): Message[
   });
 };
 
-const generatePrompt = (params: GeneratePromptParams): { system: string; user: string } => {
+export const buildLegacyAIPrompt = (params: GeneratePromptParams): { system: string; user: string } => {
   const { role, playerName, players, messages, gamePhase, day, gameHistory, isSorter } = params;
   const alivePlayers = players.filter((p) => p.isAlive);
   const deadPlayers = players.filter((p) => !p.isAlive);
@@ -907,7 +910,7 @@ const generatePrompt = (params: GeneratePromptParams): { system: string; user: s
 
   // v2.4.9 任务4：每天提示词明确"现在是第X天"（当前天数进记忆/当轮信息），
   // 并给"过夜分析"状态——基于昨晚最新信息（死亡/查验/平安夜）发言，不是接着昨天的话尾巴（防隔夜复读）
-  if (day >= 2) {
+  if (day >= 2 && (gamePhase === '白天发言' || gamePhase === '自由讨论')) {
     const lastNightDeaths = (visibleGameHistory?.deadPlayers || [])
       .filter((d) => d.day === day - 1)
       .map((d) => `${d.name}（${formatDeathDetail(d.day, d.reason)}）`);
@@ -940,6 +943,38 @@ const generatePrompt = (params: GeneratePromptParams): { system: string; user: s
     prompt += `如果你是神职（预言家/女巫/守卫/猎人）：这是向好人传递信息的最后通道——尽量报出你的真实身份、查验结果、守护/用药情况、你盘的狼坑与建议归票方向；\n`;
     prompt += `如果你是平民：把你观察到的票型与逻辑疑点交代清楚，帮好人继续盘狼。\n`;
     prompt += `只能说你真实做过的事（真的查验/守护/用药），禁止编造不存在的查验或行动；禁止"我记得XX说过"式虚构。\n\n`;
+    const deathHistory = (visibleGameHistory?.deadPlayers || []).map(
+      (death) => `${death.name}（${formatDeathDetail(death.day, death.reason)}）`,
+    );
+    const actionHistory: string[] = [];
+    if (role === 'seer' && visibleGameHistory?.playerKnowledge) {
+      Object.entries(visibleGameHistory.playerKnowledge).forEach(([name, knowledge]) => {
+        (knowledge.checkResults || []).forEach((check) => {
+          actionHistory.push(`第${check.day}晚查验 ${name}：${check.result}`);
+        });
+      });
+    }
+    if (visibleGameHistory?.skillUsage?.[playerName]) {
+      Object.entries(visibleGameHistory.skillUsage[playerName]).forEach(
+        ([skillName, usage]) => actionHistory.push(`${skillName}：${usage.result}`),
+      );
+    }
+    if (visibleGameHistory?.playerKnowledge) {
+      Object.entries(visibleGameHistory.playerKnowledge).forEach(([name, knowledge]) => {
+        (knowledge.votes || []).forEach((vote) => {
+          actionHistory.push(`第${vote.day}天公开票型：${name}投→${vote.target}`);
+        });
+      });
+    }
+    prompt += `【遗言可见死亡公告历史】\n`;
+    prompt += deathHistory.length
+      ? `${deathHistory.join('、')}\n`
+      : `系统未提供死亡账本记录（不等同于平安夜）\n`;
+    prompt += `【遗言可见行动历史（查验/用药/票型）】\n`;
+    prompt += actionHistory.length
+      ? `${actionHistory.join('\n')}\n`
+      : `系统未提供该玩家的行动记录（不等同于“我不知道”）\n`;
+    prompt += `“我不知道”表示该事实不在我的可见视角内；“系统无记录”表示服务端本次没有注入该字段，二者不得混用。\n\n`;
   }
 
   // v2.4.9 任务6：PK（平票争辩）阶段明确禁止复用上一轮/昨天的同款句式与理由——必须基于本场争辩给新内容
@@ -1604,7 +1639,7 @@ export const callAIApi = async (
       user = built.user;
     } else {
       // 普通游戏阶段
-      const built = generatePrompt({
+      const built = buildLegacyAIPrompt({
         role,
         playerName,
         players,

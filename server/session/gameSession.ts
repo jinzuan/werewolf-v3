@@ -610,6 +610,7 @@ export class GameSession {
       this.event(
         'night.resolved',
         {
+          day: this.state.gameState.day,
           peacefulNight: publicDeaths.length === 0,
           deaths: publicDeaths,
         },
@@ -775,7 +776,7 @@ export class GameSession {
       const events = [
         this.event(
           'day.no_exile',
-          { round: result.round },
+          { day: this.state.gameState.day, round: result.round, voteHistory: ballots },
           'public_timeline',
           undefined,
           correlationId,
@@ -803,7 +804,11 @@ export class GameSession {
     return [
       this.event(
         'day.exiled',
-        { playerId: exiled.id },
+        {
+          day: this.state.gameState.day,
+          playerId: exiled.id,
+          voteHistory: ballots,
+        },
         'public_timeline',
         undefined,
         correlationId,
@@ -858,7 +863,7 @@ export class GameSession {
     const events = [
       this.event(
         targetId === null ? 'hunter.shot_skipped' : 'hunter.shot',
-        { hunterId: actor.id, targetId },
+        { day: this.state.gameState.day, hunterId: actor.id, targetId },
         'public_timeline',
         undefined,
         correlationId,

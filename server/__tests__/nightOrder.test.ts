@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DOMAIN_EVENT_SCHEMA_VERSION } from '../../shared/events';
-import { projectAIContext } from '../ai/contextProjector';
+import { buildAIPrompt, buildAIRuntimeContext, projectAIContext } from '../ai';
 import { InMemoryEventStore } from '../events/store';
 import { GameSession } from '../session/gameSession';
 import { createPlayers, dispatch } from './fixtures';
@@ -102,6 +102,92 @@ test('night order is guard_seer then wolf discussion/vote then witch then resolv
     (projectedResolved.payload as { deaths: string[] }).deaths,
     [villager.id],
   );
+});
+
+test('real session event projection feeds death, action, and vote history into final words', async () => {
+  const players = createPlayers('room-final-words');
+  const session = new GameSession(
+    'room-final-words',
+    players,
+    new InMemoryEventStore(),
+  );
+  await session.initialize();
+  const guardian = players.find((player) => player.role === 'guardian')!;
+  const seer = players.find((player) => player.role === 'seer')!;
+  const wolves = players.filter((player) => player.role === 'wolf');
+  const witch = players.find((player) => player.role === 'witch')!;
+  const villager = players.find((player) => player.role === 'villager')!;
+
+  await dispatch(session, guardian.id, {
+    type: 'game.skip_night',
+    payload: { action: 'guard' },
+  });
+  await dispatch(session, seer.id, {
+    type: 'game.night_action',
+    payload: { playerId: seer.id, action: 'check', targetId: wolves[0].id },
+  });
+  for (const wolf of wolves) {
+    await dispatch(session, wolf.id, {
+      type: 'game.wolf_vote',
+      payload: { targetId: villager.id },
+    });
+  }
+  await dispatch(session, witch.id, {
+    type: 'game.skip_night',
+    payload: { action: 'heal' },
+  });
+
+  while (session.serialize().state.dayFlow.stage === 'speech') {
+    const speaker = session.serialize().state.gameState.currentSpeaker!;
+    await dispatch(session, speaker, {
+      type: 'game.skip_speech',
+      payload: {},
+    });
+  }
+  for (const voter of session.players.filter((player) => player.isAlive)) {
+    await dispatch(session, voter.id, {
+      type: 'game.vote',
+      payload: { targetId: voter.id === seer.id ? wolves[0].id : seer.id },
+    });
+  }
+  assert.equal(session.serialize().state.dayFlow.stage, 'last_words');
+
+  const viewer = { kind: 'player' as const, playerId: seer.id, role: 'seer' as const };
+  const snapshot = await session.snapshotFor(viewer);
+  const visibleEvents = await session.eventsFor(viewer);
+  const runtime = buildAIRuntimeContext({
+    actorId: seer.id,
+    role: 'seer',
+    phase: 'lastWords',
+    stage: 'last_words',
+    dayNumber: snapshot.gameState.day,
+    roundNumber: 1,
+    players: snapshot.players,
+    visibleEvents,
+    allowedActions: ['speak'],
+    lastWordsRound: 1,
+    lastWordsRoundsRemaining: 2,
+  });
+  const prompt = buildAIPrompt({
+    roomId: 'room-final-words',
+    gameId: snapshot.gameId,
+    playerId: seer.id,
+    role: 'seer',
+    phase: 'lastWords',
+    stage: 'last_words',
+    stageRevision: session.stageRevision,
+    callId: 'final-words-test',
+    players: snapshot.players,
+    allowedActions: ['speak'],
+    allowedCommandTypes: ['game.speak'],
+    promptContext: runtime,
+  });
+
+  assert.match(prompt.user, new RegExp('第1晚你的查验：' + wolves[0].name + '，结果狼人'));
+  assert.match(prompt.user, new RegExp('第1晚公开死亡：' + villager.name));
+  assert.match(prompt.user, new RegExp('第1天已公开票型：.*投票给 ' + seer.name));
+  assert.doesNotMatch(prompt.user, /选择弃票/);
+  assert.doesNotMatch(prompt.user, /昨晚.*平安夜/);
 });
 
 test('command ids and stage revisions are enforced', async () => {
