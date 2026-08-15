@@ -89,6 +89,16 @@ export interface CreateRoomOptionsV31 {
   aiConfig?: RoomAIConfig;
 }
 
+/**
+ * The create request identity is deliberately outside the editable wizard
+ * options.  A client may resend this envelope after an ACK was lost without
+ * changing the room configuration or minting a second room.
+ */
+export interface CreateRoomCommandPayload {
+  createRequestId: string;
+  options: CreateRoomOptionsV31;
+}
+
 /** Normalized room configuration echoed by create, waiting, and game views. */
 export interface RoomConfigView {
   catalogVersion: string;
@@ -233,7 +243,7 @@ export type EmptyRoomCommandPayload = Record<string, never>;
 
 export type RoomReadCommand =
   | { type: 'catalog.get'; payload: EmptyRoomCommandPayload }
-  | { type: 'room.create'; payload: CreateRoomOptionsV31 }
+  | { type: 'room.create'; payload: CreateRoomCommandPayload }
   | { type: 'room.join'; payload: { roomCode: string; joinToken?: string } }
   | { type: 'room.resume'; payload: { roomCode: string } }
   | { type: 'room.get'; payload: { roomCode: string } };

@@ -118,7 +118,18 @@ export interface RoomRecord {
   config?: RoomConfigRecord;
   gameId?: string;
   recentRoomCommands?: IdempotencyRecord[];
+  /** Durable create claim. The request id is never generated again on retry. */
+  createRequestId?: string;
+  createActorId?: string;
+  createFingerprint?: string;
+  /** Durable start transaction lease used to recover a crashed starter. */
+  startOwner?: string;
+  startLeaseUntil?: number;
+  startedAt?: number;
+  startAddedAIIds?: string[];
   lastStartFailure?: RoomStartFailure;
+  closedAt?: number;
+  closeReason?: 'dissolved';
   createdAt: number;
   updatedAt?: number;
 }
@@ -126,6 +137,7 @@ export interface RoomRecord {
 export interface CreateRoomRequest {
   actorId: string;
   options: CreateRoomOptionsV31;
+  createRequestId?: string;
 }
 
 export interface JoinRoomRequest {

@@ -59,8 +59,14 @@ const STABLE_CODES = new Set<ProtocolErrorCode>([
   'GAME_START_IN_PROGRESS',
   'GAME_START_FAILED',
   'INVALID_ROLE_SETUP',
+  'IDEMPOTENCY_KEY_REUSED',
   'UNKNOWN_ERROR',
 ]);
+
+export interface SocketTransportOptions {
+  /** Test-only fault injection: commit create, then discard exactly one ACK. */
+  dropCreateAckOnce?: boolean;
+}
 
 const errorResponse = (error: unknown): ProtocolAckError => {
   if (error instanceof RoomServiceError) {
@@ -114,7 +120,14 @@ const mutationRevision = (
   };
 };
 
-export function bindSocketTransport(io: Server, rooms: RoomService): void {
+export function bindSocketTransport(
+  io: Server,
+  rooms: RoomService,
+  options: SocketTransportOptions = {},
+): void {
+  let dropCreateAck =
+    (process.env.NODE_ENV === 'test' || process.env.WW_ENV === 'test') &&
+    (options.dropCreateAckOnce === true || process.env.WW_TEST_DROP_CREATE_ACK_ONCE === '1');
   const pushCurrent = async (target: Socket): Promise<void> => {
     const targetState = state(target);
     const identity = targetState.identity;
@@ -164,6 +177,22 @@ export function bindSocketTransport(io: Server, rooms: RoomService): void {
   // Push each connection's own projection so players, public spectators,
   // and omniscient monitors never share an authority snapshot.
   rooms.subscribeRoomChanges(pushRoom);
+  rooms.subscribeRoomDissolved(async (roomCode, roomId) => {
+    for (const target of io.sockets.sockets.values()) {
+      const targetState = state(target);
+      if (targetState.identity?.roomCode !== roomCode) continue;
+      target.emit('v3:room.closed', {
+        type: 'room.closed',
+        roomCode,
+        roomId,
+        reason: 'dissolved',
+      });
+      const targetIdentity = targetState.identity;
+      target.leave(`room:${roomCode}`);
+      targetState.identity = undefined;
+      await rooms.disconnect(targetIdentity!, target.id).catch(() => undefined);
+    }
+  });
 
   io.on('connection', (socket) => {
     const bind = async (
@@ -177,6 +206,7 @@ export function bindSocketTransport(io: Server, rooms: RoomService): void {
       );
       state(socket).identity = identity;
       state(socket).lastSequence = 0;
+      await rooms.bindConnection(identity, socket.id);
       socket.join(`room:${identity.roomCode}`);
       return identity;
     };
@@ -203,9 +233,29 @@ export function bindSocketTransport(io: Server, rooms: RoomService): void {
             if (state(socket).identity) {
               throw new RoomServiceError({ code: 'IDENTITY_ALREADY_BOUND', messageKey: 'room.error.identity_already_bound' });
             }
-            const access = await rooms.create({ actorId: meta.actorId, options: command.payload });
+            const payload = command.payload as unknown as {
+              createRequestId?: unknown;
+              options?: unknown;
+            };
+            const optionsPayload =
+              payload.options && typeof payload.options === 'object'
+                ? payload.options
+                : command.payload;
+            const createRequestId =
+              typeof payload.createRequestId === 'string' && payload.createRequestId.trim()
+                ? payload.createRequestId
+                : meta.commandId;
+            const access = await rooms.create({
+              actorId: meta.actorId,
+              createRequestId,
+              options: optionsPayload as Parameters<RoomService['create']>[0]['options'],
+            });
             await bind(access, meta.actorId);
-            ack?.({ ok: true, ...access });
+            if (dropCreateAck) {
+              dropCreateAck = false;
+            } else {
+              ack?.({ ok: true, ...access });
+            }
             await pushRoom(access.room.code, 'created');
             return;
           }
@@ -378,7 +428,7 @@ export function bindSocketTransport(io: Server, rooms: RoomService): void {
     socket.on('disconnect', () => {
       const identity = state(socket).identity;
       if (!identity) return;
-      void rooms.disconnect(identity)
+      void rooms.disconnect(identity, socket.id)
         .then(() => pushRoom(identity.roomCode, 'disconnected'))
         .catch(() => undefined);
     });

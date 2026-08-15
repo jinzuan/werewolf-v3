@@ -116,6 +116,46 @@ export class FileRoomRepository implements RoomRepository {
     });
   }
 
+  createOrGetByRequest(
+    requestId: string,
+    actorId: string,
+    fingerprint: string,
+    factory: () => RoomRecord,
+  ): Promise<{ room: RoomRecord; created: boolean }> {
+    return this.enqueue(async () => {
+      const rooms = await this.load();
+      const existing = rooms.find((room) => room.createRequestId === requestId);
+      if (existing) {
+        if (
+          existing.createActorId !== actorId ||
+          existing.createFingerprint !== fingerprint
+        ) {
+          throw new RoomRepositoryError(
+            `Create request ${requestId} was reused with different data`,
+            'IDEMPOTENCY_KEY_REUSED',
+          );
+        }
+        return { room: clone(existing), created: false };
+      }
+
+      const room = migrateRoomRecord(factory());
+      room.createRequestId = requestId;
+      room.createActorId = actorId;
+      room.createFingerprint = fingerprint;
+      const key = roomKey(room.code);
+      if (rooms.some((item) => item.code === key)) {
+        throw new RoomRepositoryError(
+          `Room ${key} already exists`,
+          'ROOM_ALREADY_EXISTS',
+        );
+      }
+      rooms.push(room);
+      this.rooms = rooms;
+      await this.write(rooms);
+      return { room: clone(room), created: true };
+    });
+  }
+
   save(room: RoomRecord): Promise<void> {
     return this.enqueue(async () => {
       const rooms = await this.load();

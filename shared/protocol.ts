@@ -289,6 +289,7 @@ export const PROTOCOL_ERROR_CODES = [
   'GAME_START_IN_PROGRESS',
   'GAME_START_FAILED',
   'INVALID_ROLE_SETUP',
+  'IDEMPOTENCY_KEY_REUSED',
   'UNKNOWN_ERROR',
 ] as const;
 
@@ -437,6 +438,13 @@ export interface GameEventsMessage {
   events: DomainEvent[];
 }
 
+export interface RoomClosedMessage {
+  type: 'room.closed';
+  roomCode: string;
+  roomId: string;
+  reason: 'dissolved';
+}
+
 export interface SpectatorViewMessage {
   type: 'spectator.view';
   viewer: Extract<ViewerContext, { kind: 'spectator' }>;
@@ -446,6 +454,7 @@ export interface SpectatorViewMessage {
 
 export type V3ServerMessage =
   | RoomSnapshotMessage
+  | RoomClosedMessage
   | GameSnapshotMessage
   | GameEventsMessage
   | SpectatorViewMessage;

@@ -46,6 +46,26 @@ const code = () =>
 
 const clone = <T>(value: T): T => structuredClone(value);
 
+const stableValue = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, stableValue(entry)]),
+  );
+};
+
+const createFingerprint = (options: CreateRoomOptionsV31): string => {
+  const nonSecret = { ...options } as Record<string, unknown>;
+  // Credentials are deliberately not part of the request identity. This
+  // lets a caller retry with the same durable claim without persisting or
+  // comparing secret material.
+  delete nonSecret.aiConfig;
+  return JSON.stringify(stableValue(nonSecret));
+};
+
 const makePlayer = (
   roomId: string,
   member: Pick<RoomMember, 'id' | 'name' | 'isAI' | 'seatIndex'>,
@@ -95,6 +115,7 @@ export interface RoomServiceOptions {
   policy?: RoomPolicy;
   projector?: RoomProjector;
   startCoordinator?: GameStartCoordinator;
+  startLeaseMs?: number;
 }
 
 export class RoomService {
@@ -105,6 +126,10 @@ export class RoomService {
   private readonly roomChangeListeners = new Set<
     (roomCode: string, reason: RoomSnapshotReason) => void | Promise<void>
   >();
+  private readonly roomDissolvedListeners = new Set<
+    (roomCode: string, roomId: string) => void | Promise<void>
+  >();
+  private readonly connectionLeases = new Map<string, Set<string>>();
   private readonly aiProvider: AIProvider;
   private readonly catalog: RoomCatalogService;
   private readonly policy: RoomPolicy;
@@ -138,6 +163,7 @@ export class RoomService {
         randomIndex: (maxExclusive) =>
           this.legacyCompatibility ? 0 : randomInt(maxExclusive),
         onRoomChange: (room, reason) => this.notifyRoomChange(room.code, reason),
+        startLeaseMs: options.startLeaseMs,
         sessionFactory: ({ room, players, eventStore, snapshot }) =>
           this.createSession(room, players, eventStore, snapshot),
       });
@@ -147,7 +173,17 @@ export class RoomService {
     this.closed = false;
     const rooms = await this.repository.list();
     for (const room of rooms) {
+      if (room.status === 'starting') {
+        await this.recoverStartingRoom(room.code);
+      }
+    }
+    const restoredRooms = await this.repository.list();
+    for (const room of restoredRooms) {
       if (!room.session || (room.status !== 'playing' && room.status !== 'ended')) {
+        continue;
+      }
+      if (this.sessions.has(room.code)) {
+        this.startAI(room.code, room.config?.mode === 'quick_computer');
         continue;
       }
       const recoverySnapshot = clone(room.session);
@@ -169,6 +205,11 @@ export class RoomService {
     // socket adapter. V3.1-shaped input never enters this branch.
     const options = this.normalizeCreateOptions(request.options);
     const config = this.normalizeCreateConfig(options);
+    const createRequestId = request.createRequestId?.trim() || randomUUID();
+    if (!createRequestId || !request.actorId.trim()) {
+      throw this.error('INVALID_COMMAND', 'room.error.invalid_command');
+    }
+    const fingerprint = createFingerprint(options);
     const roomId = randomUUID();
     const roomCode = await this.uniqueCode();
     if (this.legacyCreatePending) {
@@ -191,56 +232,43 @@ export class RoomService {
       ready: config.mode === 'quick_computer' ? null : false,
       avatarId: options.creator.avatarId,
     };
-    const room: RoomRecord = {
-      id: roomId,
-      code: roomCode,
-      name: options.roomName.trim(),
-      joinToken: token(),
-      omniscientToken: token(),
-      hostId: request.actorId,
-      maxPlayers: config.maxPlayers,
-      status: 'waiting',
-      auto: config.mode === 'quick_computer',
-      debugMode: false,
-      config,
-      configLocked: false,
-      roomRevision: 1,
-      configRevision: 1,
-      schemaVersion: 1,
-      members: [host],
-      players: config.mode === 'quick_computer'
-        ? []
-        : [makePlayer(roomId, host, request.actorId)],
-      recentRoomCommands: [],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
+    const claim = await this.repository.createOrGetByRequest(
+      createRequestId,
+      request.actorId,
+      fingerprint,
+      () => ({
+        id: roomId,
+        code: roomCode,
+        name: options.roomName.trim(),
+        joinToken: token(),
+        omniscientToken: token(),
+        hostId: request.actorId,
+        maxPlayers: config.maxPlayers,
+        status: 'waiting',
+        auto: config.mode === 'quick_computer',
+        debugMode: false,
+        config,
+        configLocked: false,
+        roomRevision: 1,
+        configRevision: 1,
+        schemaVersion: 1,
+        members: [host],
+        players: config.mode === 'quick_computer'
+          ? []
+          : [makePlayer(roomId, host, request.actorId)],
+        recentRoomCommands: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }),
+    );
 
-    await this.repository.create(room);
-    if (config.mode === 'quick_computer') {
-      const current = await this.requireRoom(roomCode);
-      await this.repository.mutate(roomCode, current.roomRevision!, (draft) => {
-        draft.status = 'ready_check';
-        draft.configLocked = true;
-        for (const member of draft.members) {
-          if (member.kind === 'player' && !member.isAI) member.ready = true;
-        }
-      });
-      await this.startWithRevision(roomCode, request.actorId, token(), (await this.requireRoom(roomCode)).roomRevision!);
+    if (claim.room.config?.mode === 'quick_computer') {
+      await this.resumeQuickCreate(claim.room.code, request.actorId, createRequestId);
     }
 
-    const current = await this.requireRoom(roomCode);
-    this.startAI(roomCode, config.mode === 'quick_computer');
-    return {
-      room: this.projectRoom(current, request.actorId),
-      credentials: {
-        resumeToken,
-        joinToken: current.joinToken,
-        ...(config.mode === 'quick_computer'
-          ? { omniscientToken: current.omniscientToken }
-          : {}),
-      },
-    };
+    const current = await this.requireRoom(claim.room.code);
+    this.startAI(current.code, current.config?.mode === 'quick_computer');
+    return this.createdAccess(current, request.actorId);
   }
 
   async join(request: JoinRoomRequest): Promise<RoomAccess> {
@@ -331,6 +359,22 @@ export class RoomService {
     return { room: this.projectRoom(room, actorId), credentials: { resumeToken } };
   }
 
+  /** Bind one physical socket to a logical member lease. */
+  async bindConnection(identity: SocketIdentity, connectionId: string): Promise<void> {
+    const room = await this.requireRoom(identity.roomCode);
+    const member = assertIdentityRoom(identity, room);
+    const key = `${room.code}:${member.id}`;
+    const leases = this.connectionLeases.get(key) ?? new Set<string>();
+    leases.add(connectionId);
+    this.connectionLeases.set(key, leases);
+    if (!member.connected) {
+      await this.repository.mutate(room.code, (draft) => {
+        const current = assertIdentityRoom(identity, draft);
+        current.connected = true;
+      });
+    }
+  }
+
   async identity(roomCode: string, actorId: string, resumeToken: string): Promise<SocketIdentity> {
     const room = await this.requireRoom(roomCode);
     const member = room.members.find(
@@ -348,11 +392,29 @@ export class RoomService {
     };
   }
 
-  async disconnect(identity: SocketIdentity): Promise<void> {
+  async disconnect(identity: SocketIdentity, connectionId?: string): Promise<void> {
+    const key = `${identity.roomCode.toUpperCase()}:${identity.actorId}`;
+    const leases = this.connectionLeases.get(key);
+    if (connectionId && leases) {
+      leases.delete(connectionId);
+      if (leases.size > 0) return;
+      this.connectionLeases.delete(key);
+    } else if (connectionId) {
+      // A disconnect can race a process restart. The persisted connected bit
+      // is still corrected when no live lease is known.
+      this.connectionLeases.delete(key);
+    }
     await this.repository.mutate(identity.roomCode, (room) => {
       const member = assertIdentityRoom(identity, room);
       if (member.connected) member.connected = false;
     });
+  }
+
+  subscribeRoomDissolved(
+    listener: (roomCode: string, roomId: string) => void | Promise<void>,
+  ): () => void {
+    this.roomDissolvedListeners.add(listener);
+    return () => this.roomDissolvedListeners.delete(listener);
   }
 
   async list(): Promise<RoomSummary[]> {
@@ -529,7 +591,18 @@ export class RoomService {
       assertIdentityRoom(identity, draft);
       draft.lastStartFailure = undefined;
       draft.status = 'ended';
+      draft.closedAt = Date.now();
+      draft.closeReason = 'dissolved';
     });
+    const tombstone = await this.requireRoom(identity.roomCode);
+    await Promise.allSettled(
+      [...this.roomDissolvedListeners].map((listener) =>
+        listener(tombstone.code, tombstone.id),
+      ),
+    );
+    for (const key of [...this.connectionLeases.keys()]) {
+      if (key.startsWith(`${tombstone.code}:`)) this.connectionLeases.delete(key);
+    }
     await this.repository.remove(identity.roomCode);
   }
 
@@ -607,6 +680,117 @@ export class RoomService {
     const aiConfig = this.normalizeRoomAIConfig(options.aiConfig);
     if (aiConfig) config.aiConfig = aiConfig;
     return config;
+  }
+
+  private createdAccess(room: RoomRecord, actorId: string): RoomAccess {
+    const member = room.members.find((candidate) => candidate.id === actorId);
+    if (!member) throw this.error('UNAUTHENTICATED', 'room.error.unauthenticated');
+    return {
+      room: this.projectRoom(room, actorId),
+      credentials: {
+        resumeToken: member.resumeToken,
+        joinToken: room.joinToken,
+        ...(room.config?.mode === 'quick_computer'
+          ? { omniscientToken: room.omniscientToken }
+          : {}),
+      },
+    };
+  }
+
+  private async resumeQuickCreate(
+    roomCode: string,
+    actorId: string,
+    createRequestId: string,
+  ): Promise<void> {
+    const startCommandId = `create:${createRequestId}`;
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const room = await this.requireRoom(roomCode);
+      if (room.status === 'playing' || room.status === 'ended') return;
+      if (room.status === 'starting') {
+        if ((room.startLeaseUntil ?? 0) <= Date.now()) {
+          await this.recoverStartingRoom(room.code);
+          continue;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        continue;
+      }
+      if (room.status === 'waiting') {
+        await this.repository.mutate(room.code, room.roomRevision!, (draft) => {
+          draft.status = 'ready_check';
+          draft.configLocked = true;
+          for (const member of draft.members) {
+            if (member.kind === 'player' && !member.isAI) member.ready = true;
+          }
+        });
+        continue;
+      }
+      if (room.status === 'ready_check') {
+        await this.startWithRevision(
+          room.code,
+          actorId,
+          startCommandId,
+          room.roomRevision!,
+        );
+        return;
+      }
+      return;
+    }
+    throw this.error('GAME_START_IN_PROGRESS', 'room.error.game_start_in_progress');
+  }
+
+  /**
+   * A starting claim is intentionally recoverable without reconstructing a
+   * random room. A committed session is promoted; an uncommitted claim is
+   * rolled back, including AI seats added by that claim.
+   */
+  private async recoverStartingRoom(roomCode: string): Promise<void> {
+    const current = await this.repository.get(roomCode);
+    if (!current || current.status !== 'starting') return;
+    if ((current.startLeaseUntil ?? 0) > Date.now()) return;
+    const recovered = await this.repository.mutate(
+      current.code,
+      current.roomRevision!,
+      (room) => {
+        if (room.status !== 'starting') return;
+        const hasCommittedSession = Boolean(
+          room.session?.state?.gameId || room.gameId,
+        );
+        if (hasCommittedSession && room.session) {
+          room.status = 'playing';
+          room.configLocked = true;
+          room.gameId ??= room.session.state.gameId;
+        } else {
+          const added = new Set(room.startAddedAIIds ?? []);
+          room.members = room.members.filter((member) => !added.has(member.id));
+          room.players = room.players.filter((player) => !added.has(player.id));
+          room.status = 'ready_check';
+          room.configLocked = true;
+          delete room.gameId;
+          delete room.session;
+          room.lastStartFailure = {
+            code: 'GAME_START_FAILED',
+            messageKey: 'room.error.game_start_failed',
+            occurredAt: Date.now(),
+          };
+        }
+        delete room.startOwner;
+        delete room.startLeaseUntil;
+        delete room.startedAt;
+        delete room.startAddedAIIds;
+        return room;
+      },
+    );
+    await this.notifyRoomChange(current.code, 'status_changed');
+    if (recovered?.status === 'playing' && recovered.session) {
+      const session = this.createSession(
+        recovered,
+        recovered.players,
+        this.eventStore,
+        recovered.session,
+      );
+      session.restoreScheduling();
+      this.sessions.set(recovered.code, session);
+    }
   }
 
   private normalizeRoomAIConfig(value: unknown): RoomAIConfig | undefined {

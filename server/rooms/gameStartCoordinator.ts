@@ -91,6 +91,8 @@ export interface GameStartCoordinatorOptions {
   sessionFactory?: GameStartSessionFactory;
   sessionOptions?: Omit<SessionOptions, 'onChanged'>;
   now?: () => number;
+  /** How long a persisted starting claim remains owned after a crash. */
+  startLeaseMs?: number;
   /** Test seam; production uses crypto.randomInt through roleDeckBuilder. */
   randomIndex?: SecureRandomIndex;
   /** Notification seam for the application/transport layer. */
@@ -577,6 +579,10 @@ export class GameStartCoordinator {
           const addedAIIds = addComputerMembers(room, plan);
           room.status = 'starting';
           room.configLocked = true;
+          room.startOwner = command.actorId;
+          room.startedAt = this.now();
+          room.startLeaseUntil = this.now() + (this.options.startLeaseMs ?? 15_000);
+          room.startAddedAIIds = [...addedAIIds];
           delete room.lastStartFailure;
           return { kind: 'claimed', addedAIIds };
         },
@@ -667,6 +673,10 @@ export class GameStartCoordinator {
           room.gameId = outcome.gameId;
           room.players = clone(assignedPlayers);
           room.session = clone(session!.serialize());
+          delete room.startOwner;
+          delete room.startLeaseUntil;
+          delete room.startedAt;
+          delete room.startAddedAIIds;
           room.recentRoomCommands = [
             ...(room.recentRoomCommands ?? []).filter(
               (entry) => entry.commandId !== command.commandId,
@@ -740,6 +750,10 @@ export class GameStartCoordinator {
           room.configLocked = true;
           delete room.gameId;
           delete room.session;
+          delete room.startOwner;
+          delete room.startLeaseUntil;
+          delete room.startedAt;
+          delete room.startAddedAIIds;
           room.lastStartFailure = {
             code: failure.code,
             occurredAt: this.now(),

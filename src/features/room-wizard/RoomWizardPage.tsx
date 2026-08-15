@@ -595,6 +595,8 @@ export function RoomWizardPage() {
   const { step: rawStep } = useParams<{ step: string }>();
   const currentStep = normalizeWizardStep(rawStep) ?? 'players';
   const catalog = useV3Store((state) => state.catalog);
+  const catalogStatus = useV3Store((state) => state.catalogStatus);
+  const catalogError = useV3Store((state) => state.catalogError);
   const connected = useV3Store((state) => state.connected);
   const error = useV3Store((state) => state.error);
   const refreshCatalog = useV3Store((state) => state.refreshCatalog);
@@ -605,8 +607,8 @@ export function RoomWizardPage() {
   const [aiConfig, setAIConfig] = useState<RoomAIConfig>(createInitialAIConfig);
 
   useEffect(() => {
-    if (!catalog) void refreshCatalog();
-  }, [catalog, refreshCatalog]);
+    if (!catalog && catalogStatus === 'idle') void refreshCatalog();
+  }, [catalog, catalogStatus, refreshCatalog]);
 
   useEffect(() => {
     if (!catalog || draft) return;
@@ -697,7 +699,7 @@ export function RoomWizardPage() {
     setBusy(true);
     const response = await createRoomWithOptions(optionsFromDraft(draft, aiConfig));
     if (response.ok === false) {
-      const mapped = serverIssuesToWizardIssues(response.issues);
+      const mapped = serverIssuesToWizardIssues('issues' in response ? response.issues : undefined);
       const nextIssues = mapped.length > 0 ? mapped : [{ path: '', message: messageForIssue(response.code), step: codeFallbackStep(response.code), errorCode: response.code }];
       setServerIssues(nextIssues);
       navigate(WIZARD_STEP_PATHS[nextIssues[0].step]);
@@ -709,7 +711,17 @@ export function RoomWizardPage() {
   };
 
   if (!catalog || !draft) {
-    return <AppShell title="创建房间" eyebrow="开房向导"><Card className="v3-empty-state" aria-live="polite"><strong>正在载入房间目录</strong><span>{error ?? '正在从服务端读取可用人数与规则，请稍候。'}</span></Card></AppShell>;
+    const failed = catalogStatus === 'error';
+    return <AppShell title="创建房间" eyebrow="开房向导" connected={connected}>
+      <Card className="v3-empty-state" aria-live="polite">
+        <strong>{failed ? '房间目录加载失败' : '正在载入房间目录'}</strong>
+        <span>{failed ? (catalogError ?? '服务暂时不可用，请重试。') : '正在从服务端读取可用人数与规则，请稍候。'}</span>
+        {failed ? <div className="v3-action-stack">
+          <Button onClick={() => void refreshCatalog({ force: true })}>重新载入目录</Button>
+          <Button variant="quiet" onClick={() => navigate('/lobby')}>返回大厅</Button>
+        </div> : null}
+      </Card>
+    </AppShell>;
   }
 
   const pageTitle = WIZARD_STEPS.find((item) => item.id === currentStep)?.title ?? WIZARD_STEPS[0].title;

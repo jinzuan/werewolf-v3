@@ -70,6 +70,7 @@ const CORE_ERROR_MESSAGES = {
   INVALID_ROLE_SETUP: '角色配置不可用，请重新选择房间规则。',
   COMMAND_NOT_IMPLEMENTED: '当前版本暂不支持这个操作。',
   PUSH_FAILED: '实时更新中断，正在重新连接。',
+  IDEMPOTENCY_KEY_REUSED: '创建请求与已有房间配置不一致，请重新开始创建。',
   UNKNOWN_ERROR: '请求未完成，请稍后重试。',
 } satisfies Record<LegacyProtocolErrorCode, string>;
 
@@ -135,6 +136,7 @@ const RECOVERIES: Record<PresentationProtocolErrorCode, ErrorRecovery> = {
   MEMBER_OFFLINE: 'refresh_room',
   CONFIG_LOCKED: 'refresh_room',
   GAME_START_IN_PROGRESS: 'refresh_room',
+  IDEMPOTENCY_KEY_REUSED: 'return_lobby',
 };
 
 const UNKNOWN_ERROR_PRESENTATION: ErrorPresentation = {

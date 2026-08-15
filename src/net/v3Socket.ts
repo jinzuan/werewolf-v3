@@ -4,6 +4,7 @@ import type {
   GameSnapshotMessage,
   RoomSnapshotMessage,
   V3ServerMessage,
+  RoomClosedMessage,
 } from '../../shared/protocol';
 import type {
   CreateRoomAck,
@@ -43,8 +44,27 @@ type ClientCommand = V3Command & {
 
 type RoomCommandAck = ProtocolAck<{ room?: RoomSnapshotMessage['room'] }>;
 
-let socket: Socket | null = null;
-let authKey = '';
+export type TransportFailureCode =
+  | 'TRANSPORT_REPLACED'
+  | 'TRANSPORT_UNAVAILABLE'
+  | 'CONNECT_TIMEOUT'
+  | 'ACK_TIMEOUT'
+  | 'CANCELLED';
+
+export interface TransportFailure {
+  ok: false;
+  kind: 'transport';
+  code: TransportFailureCode;
+  message: string;
+}
+
+export type ClientAck<TPayload extends object = Record<string, never>> =
+  | ProtocolAck<TPayload>
+  | TransportFailure;
+
+let publicSocket: Socket | null = null;
+let roomSocket: Socket | null = null;
+let roomAuthKey = '';
 let currentAuth: SocketAuth = {};
 
 const connectionListeners = new Set<(connected: boolean) => void>();
@@ -53,6 +73,7 @@ const eventListeners = new Set<(message: GameEventsMessage) => void>();
 const snapshotListeners = new Set<(message: GameSnapshotMessage) => void>();
 const messageListeners = new Set<(message: V3ServerMessage) => void>();
 const errorListeners = new Set<(error: ProtocolAckError) => void>();
+const transportRequests = new Map<Socket, Set<(failure: TransportFailure) => void>>();
 
 /**
  * Socket.IO queues emits while it is connecting, but an ACK callback is never
@@ -97,6 +118,9 @@ const emitMessage = (message: V3ServerMessage): void => {
   for (const listener of messageListeners) listener(message);
   if (message.type === 'room.snapshot') {
     for (const listener of roomListeners) listener(message);
+  } else if (message.type === 'room.closed') {
+    // Room close is delivered through the generic message subscription so the
+    // authority store can leave a resolver immediately.
   } else if (message.type === 'game.events') {
     for (const listener of eventListeners) listener(message);
   } else if (message.type === 'game.snapshot') {
@@ -104,15 +128,43 @@ const emitMessage = (message: V3ServerMessage): void => {
   }
 };
 
-const attachListeners = (active: Socket): void => {
-  active.on('connect', () => {
-    for (const listener of connectionListeners) listener(true);
-  });
-  active.on('disconnect', () => {
-    for (const listener of connectionListeners) listener(false);
+const isRoomClosedMessage = (message: unknown): message is RoomClosedMessage =>
+  isRecord(message) &&
+  message.type === 'room.closed' &&
+  typeof message.roomCode === 'string' &&
+  typeof message.roomId === 'string' &&
+  message.reason === 'dissolved';
+
+const notifyConnection = (): void => {
+  const connected = Boolean(publicSocket?.connected || roomSocket?.connected);
+  for (const listener of connectionListeners) listener(connected);
+};
+
+const attachPublicListeners = (active: Socket): void => {
+  active.on('connect', notifyConnection);
+  active.on('disconnect', notifyConnection);
+};
+
+const attachRoomListeners = (active: Socket): void => {
+  active.on('connect', notifyConnection);
+  active.on('disconnect', (reason: string) => {
+    const pending = transportRequests.get(active);
+    if (pending && pending.size > 0) {
+      const failure: TransportFailure = {
+        ok: false,
+        kind: 'transport',
+        code: reason === 'io client disconnect' ? 'TRANSPORT_REPLACED' : 'TRANSPORT_UNAVAILABLE',
+        message: reason,
+      };
+      for (const cancel of [...pending]) cancel(failure);
+    }
+    notifyConnection();
   });
   active.on('v3:room', (message: unknown) => {
     if (isRoomSnapshotMessage(message)) emitMessage(message);
+  });
+  active.on('v3:room.closed', (message: unknown) => {
+    if (isRoomClosedMessage(message)) emitMessage(message);
   });
   active.on('v3:events', (message: unknown) => {
     if (isGameEventsMessage(message)) emitMessage(message);
@@ -128,19 +180,47 @@ const attachListeners = (active: Socket): void => {
   });
 };
 
-const openConnection = (auth?: SocketAuth, forceFresh = false): Socket => {
-  if (socket && auth === undefined && !forceFresh) return socket;
+const openPublicConnection = (): Socket => {
+  if (publicSocket) return publicSocket;
+  publicSocket = io(getServerUrl(), {
+    auth: {},
+    transports: ['websocket', 'polling'],
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    timeout: 20000,
+    ...(typeof window === 'undefined' ? { autoUnref: true } : {}),
+  });
+  attachPublicListeners(publicSocket);
+  return publicSocket;
+};
+
+const cancelSocketRequests = (active: Socket, failure: TransportFailure): void => {
+  const pending = transportRequests.get(active);
+  if (!pending) return;
+  for (const cancel of [...pending]) cancel(failure);
+};
+
+const openRoomConnection = (auth?: SocketAuth, forceFresh = false): Socket => {
+  if (roomSocket && auth === undefined && !forceFresh) return roomSocket;
   const nextAuth = auth ?? currentAuth;
   const nextKey = keyFor(nextAuth);
-  if (socket && !forceFresh && authKey === nextKey) return socket;
+  if (roomSocket && !forceFresh && roomAuthKey === nextKey) return roomSocket;
 
-  if (socket) {
-    socket.removeAllListeners();
-    socket.disconnect();
+  if (roomSocket) {
+    cancelSocketRequests(roomSocket, {
+      ok: false,
+      kind: 'transport',
+      code: 'TRANSPORT_REPLACED',
+      message: 'Room transport was replaced.',
+    });
+    roomSocket.removeAllListeners();
+    roomSocket.disconnect();
   }
-  authKey = nextKey;
+  roomAuthKey = nextKey;
   currentAuth = { ...nextAuth };
-  socket = io(getServerUrl(), {
+  roomSocket = io(getServerUrl(), {
     auth: nextAuth,
     transports: ['websocket', 'polling'],
     reconnection: true,
@@ -148,27 +228,37 @@ const openConnection = (auth?: SocketAuth, forceFresh = false): Socket => {
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,
     timeout: 20000,
+    ...(typeof window === 'undefined' ? { autoUnref: true } : {}),
   });
-  attachListeners(socket);
-  return socket;
+  attachRoomListeners(roomSocket);
+  return roomSocket;
 };
 
-export const resetV3Connection = (): void => {
-  if (socket) {
-    socket.removeAllListeners();
-    socket.disconnect();
+export const resetRoomTransport = (): void => {
+  if (roomSocket) {
+    cancelSocketRequests(roomSocket, {
+      ok: false,
+      kind: 'transport',
+      code: 'TRANSPORT_REPLACED',
+      message: 'Room transport was reset.',
+    });
+    roomSocket.removeAllListeners();
+    roomSocket.disconnect();
   }
-  socket = null;
-  authKey = '';
+  roomSocket = null;
+  roomAuthKey = '';
   currentAuth = {};
-  for (const listener of connectionListeners) listener(false);
+  notifyConnection();
 };
+
+/** Compatibility alias; callers should use the room-scoped name. */
+export const resetV3Connection = resetRoomTransport;
 
 export const adoptV3Identity = (resumeToken: string): void => {
   const auth = { resumeToken };
   currentAuth = auth;
-  authKey = keyFor(auth);
-  if (socket) socket.auth = auth;
+  roomAuthKey = keyFor(auth);
+  if (roomSocket) roomSocket.auth = auth;
 };
 
 const commandMeta = (actorId: string, roomId?: string) => ({
@@ -178,36 +268,64 @@ const commandMeta = (actorId: string, roomId?: string) => ({
   ...(roomId ? { roomId } : {}),
 });
 
-const unavailableAck = <TAck extends { ok: boolean }>(): TAck => ({
-  ok: false,
-  code: 'UNKNOWN_ERROR',
-} as unknown as TAck);
+const transportFailure = (
+  code: TransportFailureCode,
+  message: string,
+): TransportFailure => ({ ok: false, kind: 'transport', code, message });
 
-const emitAck = <TAck extends { ok: boolean }>(
+const isAck = (value: unknown): value is { ok: boolean } =>
+  isRecord(value) && typeof value.ok === 'boolean';
+
+const emitAck = <TAck extends object>(
   active: Socket,
   event: string,
   payload: unknown,
-): Promise<TAck> =>
+): Promise<ClientAck<TAck>> =>
   new Promise((resolve) => {
     let settled = false;
     let requestSent = false;
     let requestTimer: ReturnType<typeof setTimeout> | undefined;
     let connectTimer: ReturnType<typeof setTimeout> | undefined;
 
-    const finish = (response: TAck): void => {
+    const unregister = (): void => {
+      const pending = transportRequests.get(active);
+      pending?.delete(cancel);
+      if (pending?.size === 0) transportRequests.delete(active);
+    };
+
+    const finish = (response: ClientAck<TAck>): void => {
       if (settled) return;
       settled = true;
       if (requestTimer) clearTimeout(requestTimer);
       if (connectTimer) clearTimeout(connectTimer);
       active.off('connect', onConnect);
+      active.off('disconnect', onDisconnect);
+      active.off('connect_error', onConnectError);
+      unregister();
       resolve(response);
     };
+
+    const cancel = (failure: TransportFailure): void => finish(failure);
+
+    const onDisconnect = (): void =>
+      finish(transportFailure('TRANSPORT_UNAVAILABLE', 'Socket disconnected.'));
+    const onConnectError = (error: Error): void =>
+      finish(transportFailure('TRANSPORT_UNAVAILABLE', error.message));
 
     const send = (): void => {
       if (settled || requestSent) return;
       requestSent = true;
-      requestTimer = setTimeout(() => finish(unavailableAck<TAck>()), ACK_TIMEOUT_MS);
-      active.emit(event, payload, (response: TAck) => finish(response));
+      requestTimer = setTimeout(
+        () => finish(transportFailure('ACK_TIMEOUT', 'The server did not acknowledge the request.')),
+        ACK_TIMEOUT_MS,
+      );
+      active.emit(event, payload, (response: TAck) => {
+        finish(
+          isAck(response)
+            ? (response as ClientAck<TAck>)
+            : transportFailure('TRANSPORT_UNAVAILABLE', 'Invalid server acknowledgement.'),
+        );
+      });
     };
 
     function onConnect(): void {
@@ -215,13 +333,22 @@ const emitAck = <TAck extends { ok: boolean }>(
       send();
     }
 
+    active.on('disconnect', onDisconnect);
+    active.on('connect_error', onConnectError);
+    const pending = transportRequests.get(active) ?? new Set();
+    pending.add(cancel);
+    transportRequests.set(active, pending);
+
     if (active.connected) {
       send();
       return;
     }
 
     active.once('connect', onConnect);
-    connectTimer = setTimeout(() => finish(unavailableAck<TAck>()), ACK_TIMEOUT_MS);
+    connectTimer = setTimeout(
+      () => finish(transportFailure('CONNECT_TIMEOUT', 'The server connection timed out.')),
+      ACK_TIMEOUT_MS,
+    );
     // A socket that was just created auto-connects. Calling connect here also
     // covers a socket that was left disconnected by a previous auth switch.
     if (!active.active) active.connect();
@@ -254,8 +381,8 @@ export const subscribeV3Connection = (
   onChange: (connected: boolean) => void,
 ): (() => void) => {
   connectionListeners.add(onChange);
-  const active = openConnection();
-  onChange(active.connected);
+  const active = openPublicConnection();
+  onChange(Boolean(active.connected || roomSocket?.connected));
   return () => connectionListeners.delete(onChange);
 };
 
@@ -263,7 +390,7 @@ export const subscribeV3Messages = (
   onMessage: (message: V3ServerMessage) => void,
 ): (() => void) => {
   messageListeners.add(onMessage);
-  openConnection();
+  openRoomConnection();
   return () => messageListeners.delete(onMessage);
 };
 
@@ -271,7 +398,7 @@ export const subscribeV3RoomSnapshots = (
   onMessage: (message: RoomSnapshotMessage) => void,
 ): (() => void) => {
   roomListeners.add(onMessage);
-  openConnection();
+  openRoomConnection();
   return () => roomListeners.delete(onMessage);
 };
 
@@ -279,7 +406,7 @@ export const subscribeV3Events = (
   onMessage: (message: GameEventsMessage) => void,
 ): (() => void) => {
   eventListeners.add(onMessage);
-  openConnection();
+  openRoomConnection();
   return () => eventListeners.delete(onMessage);
 };
 
@@ -287,7 +414,7 @@ export const subscribeV3Snapshots = (
   onMessage: (message: GameSnapshotMessage) => void,
 ): (() => void) => {
   snapshotListeners.add(onMessage);
-  openConnection();
+  openRoomConnection();
   return () => snapshotListeners.delete(onMessage);
 };
 
@@ -295,17 +422,35 @@ export const subscribeV3Errors = (
   onError: (error: ProtocolAckError) => void,
 ): (() => void) => {
   errorListeners.add(onError);
-  openConnection();
+  openRoomConnection();
   return () => errorListeners.delete(onError);
 };
 
-export const listV3Rooms = async (): Promise<RoomListAck> =>
-  emitAck<RoomListAck>(openConnection(), 'v3:rooms', {});
+const isRetryableTransport = <TPayload extends object>(
+  response: ClientAck<TPayload>,
+): response is TransportFailure =>
+  response.ok === false &&
+  'kind' in response &&
+  response.kind === 'transport' &&
+  (response.code === 'TRANSPORT_REPLACED' || response.code === 'TRANSPORT_UNAVAILABLE');
 
-export const getV3Catalog = async (): Promise<
-  ProtocolAck<{ catalog: import('../../shared/roomContract').RoomCreationCatalog }>
-> =>
-  emitAck(openConnection(), 'v3:command', {
+const publicRead = async <TAck extends object>(
+  event: string,
+  payload: unknown,
+): Promise<ClientAck<TAck>> => {
+  let response = await emitAck<TAck>(openPublicConnection(), event, payload);
+  for (let attempt = 0; attempt < 2 && isRetryableTransport(response); attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)));
+    response = await emitAck<TAck>(openPublicConnection(), event, payload);
+  }
+  return response;
+};
+
+export const listV3Rooms = async (): Promise<ClientAck<{ rooms: RoomListAck extends ProtocolAck<infer P> ? P extends { rooms: infer R } ? R : never : never }>> =>
+  publicRead('v3:rooms', {});
+
+export const getV3Catalog = async (): Promise<ClientAck<{ catalog: import('../../shared/roomContract').RoomCreationCatalog }>> =>
+  publicRead('v3:command', {
     ...roomReadRequest('catalog-reader', {
       type: 'catalog.get',
       payload: {},
@@ -316,13 +461,14 @@ export const createV3Room = (
   actorId: string,
   actorName: string,
   options: CreateRoomOptionsV31,
-): Promise<CreateRoomAck> =>
-  emitAck<CreateRoomAck>(
-    openConnection(),
+  createRequestId: string,
+): Promise<ClientAck<CreateRoomAck extends ProtocolAck<infer P> ? P : never>> =>
+  emitAck(
+    openRoomConnection(),
     'v3:command',
     roomReadRequest(
       actorId,
-      { type: 'room.create', payload: options },
+      { type: 'room.create', payload: { createRequestId, options } },
       actorName,
     ),
   );
@@ -332,9 +478,9 @@ export const joinV3Room = (
   actorName: string,
   roomCode: string,
   joinToken: string,
-): Promise<JoinRoomAck> =>
-  emitAck<JoinRoomAck>(
-    openConnection(),
+): Promise<ClientAck<JoinRoomAck extends ProtocolAck<infer P> ? P : never>> =>
+  emitAck(
+    openRoomConnection(),
     'v3:command',
     roomReadRequest(
       actorId,
@@ -352,7 +498,7 @@ export const spectateV3Room = (
   roomCode: string,
   joinToken: string,
   omniscientToken?: string,
-): Promise<JoinRoomAck> => {
+): Promise<ClientAck<JoinRoomAck extends ProtocolAck<infer P> ? P : never>> => {
   const command: SpectatorCommand = {
     type: 'spectator.join',
     payload: { roomCode, omniscientToken },
@@ -362,8 +508,8 @@ export const spectateV3Room = (
     command,
     actorName,
   } as ClientCommand;
-  return emitAck<JoinRoomAck>(
-    openConnection({ joinToken }, true),
+  return emitAck(
+    openRoomConnection({ joinToken }, true),
     'v3:command',
     request,
   );
@@ -377,9 +523,9 @@ export const resumeV3Room = (
   _roomId?: string,
   resumeToken?: string,
   _afterSequence?: number,
-): Promise<ResumeRoomAck> =>
-  emitAck<ResumeRoomAck>(
-    openConnection({ resumeToken }, true),
+): Promise<ClientAck<ResumeRoomAck extends ProtocolAck<infer P> ? P : never>> =>
+  emitAck(
+    openRoomConnection({ resumeToken }, true),
     'v3:command',
     roomReadRequest(
       actorId,
@@ -392,9 +538,9 @@ export const getV3Room = (
   actorId: string,
   roomCode: string,
   roomId?: string,
-): Promise<RoomViewAck> =>
-  emitAck<RoomViewAck>(
-    openConnection(),
+): Promise<ClientAck<RoomViewAck extends ProtocolAck<infer P> ? P : never>> =>
+  emitAck(
+    openRoomConnection(),
     'v3:command',
     {
       meta: commandMeta(actorId, roomId),
@@ -407,9 +553,9 @@ export const sendV3RoomCommand = (
   roomId: string,
   expectedRoomRevision: number,
   command: RoomMutationCommand,
-): Promise<RoomCommandAck> =>
-  emitAck<RoomCommandAck>(
-    openConnection(),
+): Promise<ClientAck<RoomCommandAck extends ProtocolAck<infer P> ? P : never>> =>
+  emitAck(
+    openRoomConnection(),
     'v3:command',
     roomMutationRequest(
       actorId,
@@ -423,9 +569,9 @@ export const startV3Game = (
   actorId: string,
   roomId: string,
   expectedRoomRevision: number,
-): Promise<RoomViewAck> =>
-  emitAck<RoomViewAck>(
-    openConnection(),
+): Promise<ClientAck<RoomViewAck extends ProtocolAck<infer P> ? P : never>> =>
+  emitAck(
+    openRoomConnection(),
     'v3:command',
     roomMutationRequest(
       actorId,
@@ -441,9 +587,9 @@ export const sendGameCommand = (
   gameId: string,
   expectedStageRevision: number,
   command: GameCommand,
-): Promise<GameCommandAck> =>
-  emitAck<GameCommandAck>(
-    openConnection(),
+): Promise<ClientAck<GameCommandAck extends ProtocolAck<infer P> ? P : never>> =>
+  emitAck(
+    openRoomConnection(),
     'v3:command',
     {
       meta: {
@@ -459,9 +605,9 @@ export const sendGameCommand = (
 export const fetchV3Snapshot = (
   roomCode: string,
   actorId: string,
-): Promise<SnapshotAck> =>
-  emitAck<SnapshotAck>(
-    openConnection(),
+): Promise<ClientAck<SnapshotAck extends ProtocolAck<infer P> ? P : never>> =>
+  emitAck(
+    openRoomConnection(),
     'v3:snapshot',
     { roomCode, actorId },
   );

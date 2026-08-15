@@ -41,6 +41,13 @@ export interface RoomRepository {
   list(): Promise<RoomRecord[]>;
   get(code: string): Promise<RoomRecord | undefined>;
   create(room: RoomRecord): Promise<RoomRecord>;
+  /** Atomically claim a durable create request, returning the existing room on retry. */
+  createOrGetByRequest(
+    requestId: string,
+    actorId: string,
+    fingerprint: string,
+    factory: () => RoomRecord,
+  ): Promise<{ room: RoomRecord; created: boolean }>;
   save(room: RoomRecord): Promise<void>;
   remove(code: string): Promise<void>;
 
@@ -189,6 +196,12 @@ abstract class SerializedRoomRepository implements RoomRepository {
   abstract list(): Promise<RoomRecord[]>;
   abstract get(code: string): Promise<RoomRecord | undefined>;
   abstract create(room: RoomRecord): Promise<RoomRecord>;
+  abstract createOrGetByRequest(
+    requestId: string,
+    actorId: string,
+    fingerprint: string,
+    factory: () => RoomRecord,
+  ): Promise<{ room: RoomRecord; created: boolean }>;
   abstract save(room: RoomRecord): Promise<void>;
   abstract remove(code: string): Promise<void>;
   protected abstract readForMutation(code: string): Promise<RoomRecord | undefined>;
@@ -286,6 +299,44 @@ export class InMemoryRoomRepository extends SerializedRoomRepository {
       }
       this.rooms.set(key, migrated);
       return clone(migrated);
+    });
+  }
+
+  createOrGetByRequest(
+    requestId: string,
+    actorId: string,
+    fingerprint: string,
+    factory: () => RoomRecord,
+  ): Promise<{ room: RoomRecord; created: boolean }> {
+    return this.enqueue(async () => {
+      const existing = [...this.rooms.values()].find(
+        (room) => room.createRequestId === requestId,
+      );
+      if (existing) {
+        if (
+          existing.createActorId !== actorId ||
+          existing.createFingerprint !== fingerprint
+        ) {
+          throw new RoomRepositoryError(
+            `Create request ${requestId} was reused with different data`,
+            'IDEMPOTENCY_KEY_REUSED',
+          );
+        }
+        return { room: clone(existing), created: false };
+      }
+      const room = migrateRoomRecord(factory());
+      const key = roomKey(room.code);
+      if (this.rooms.has(key)) {
+        throw new RoomRepositoryError(
+          `Room ${key} already exists`,
+          'ROOM_ALREADY_EXISTS',
+        );
+      }
+      room.createRequestId = requestId;
+      room.createActorId = actorId;
+      room.createFingerprint = fingerprint;
+      this.rooms.set(key, room);
+      return { room: clone(room), created: true };
     });
   }
 

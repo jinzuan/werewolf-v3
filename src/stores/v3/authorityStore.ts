@@ -4,7 +4,6 @@ import type {
   ProjectedSnapshot,
 } from '../../../shared/events';
 import type {
-  CreateRoomAck,
   CreateRoomOptionsV31,
   GameCommand,
   GameEventsMessage,
@@ -13,6 +12,7 @@ import type {
   RoomMutationCommand,
   RoomSummary,
   RoomView,
+  RoomAccess,
 } from '../../../shared/protocol';
 import {
   adoptV3Identity,
@@ -29,11 +29,13 @@ import {
   spectateV3Room,
   startV3Game,
   subscribeV3Connection,
+  subscribeV3Messages,
   subscribeV3Errors,
   subscribeV3Events,
   subscribeV3RoomSnapshots,
   subscribeV3Snapshots,
 } from '../../net/v3Socket';
+import type { ClientAck, TransportFailure } from '../../net/v3Socket';
 import { getErrorMessage } from '../../v3/presentation';
 import {
   mergeEventEnvelope,
@@ -72,6 +74,41 @@ const persistSession = (session: V3Session | null): void => {
 };
 
 const newActorId = (): string => crypto.randomUUID();
+
+const PENDING_CREATE_KEY = 'werewolf-v3-pending-create';
+type PendingCreate = { createRequestId: string; actorId: string };
+
+const pendingCreateStorage = (): Storage | null =>
+  typeof sessionStorage === 'undefined' ? null : sessionStorage;
+
+const readPendingCreate = (): PendingCreate | null => {
+  const target = pendingCreateStorage();
+  if (!target) return null;
+  try {
+    const parsed = JSON.parse(target.getItem(PENDING_CREATE_KEY) ?? 'null') as Partial<PendingCreate> | null;
+    return parsed && typeof parsed.createRequestId === 'string' && typeof parsed.actorId === 'string'
+      ? parsed as PendingCreate
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+const writePendingCreate = (pending: PendingCreate): void => {
+  try { pendingCreateStorage()?.setItem(PENDING_CREATE_KEY, JSON.stringify(pending)); } catch { /* cache only */ }
+};
+
+const clearPendingCreate = (): void => {
+  try { pendingCreateStorage()?.removeItem(PENDING_CREATE_KEY); } catch { /* cache only */ }
+};
+
+const isTransportFailure = (response: ClientAck): response is TransportFailure =>
+  response.ok === false && 'kind' in response && response.kind === 'transport';
+
+const responseMessage = (response: ClientAck): string =>
+  isTransportFailure(response)
+    ? response.message || '连接暂时不可用，请重试。'
+    : getErrorMessage(response.code);
 
 const isRoomStatusWithGame = (status: RoomView['status']): boolean =>
   status === 'playing' || status === 'ended';
@@ -114,9 +151,11 @@ export interface V3Store {
   connected: boolean;
   loading: boolean;
   recovering: boolean;
-  /** Explicit three-state recovery status for route guards and shells. */
-  authorityStatus: 'resolving' | 'authorized' | 'unauthorized';
+  /** Explicit recovery state for route guards and retryable resolver errors. */
+  authorityStatus: 'resolving' | 'authorized' | 'unauthorized' | 'error';
   error: string | null;
+  catalogStatus: 'idle' | 'loading' | 'ready' | 'error';
+  catalogError: string | null;
   pendingRoomCommand: string | null;
   rooms: RoomSummary[];
   catalog: RoomCreationCatalog | null;
@@ -125,7 +164,7 @@ export interface V3Store {
   snapshot: ProjectedSnapshot | null;
   events: DomainEvent[];
   initialize: () => () => void;
-  refreshCatalog: () => Promise<boolean>;
+  refreshCatalog: (options?: { force?: boolean }) => Promise<boolean>;
   refreshRooms: () => Promise<void>;
   refreshRoom: () => Promise<boolean>;
   createRoom: (
@@ -134,7 +173,7 @@ export interface V3Store {
     auto: boolean,
   ) => Promise<boolean>;
   /** Full V3.1 create action used by the four-step room wizard. */
-  createRoomWithOptions: (options: CreateRoomOptionsV31) => Promise<CreateRoomAck>;
+  createRoomWithOptions: (options: CreateRoomOptionsV31) => Promise<ClientAck<RoomAccess>>;
   joinRoom: (
     name: string,
     roomCode: string,
@@ -160,6 +199,7 @@ export interface V3Store {
 
 let recoveryPromise: Promise<boolean> | null = null;
 let roomRefreshPromise: Promise<void> | null = null;
+let catalogRefreshPromise: Promise<boolean> | null = null;
 let transportCleanup: (() => void) | null = null;
 
 /** Events can arrive before the matching snapshot during reconnect. */
@@ -182,7 +222,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
     persistSession(null);
     set({
       ...createEmptyAuthorityState(),
-      connected: false,
+      connected: get().connected,
       loading: false,
       pendingRoomCommand: null,
       recovering: false,
@@ -357,7 +397,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
       current.session.actorId,
     );
     if (response.ok === false) {
-      set({ error: getErrorMessage(response.code) });
+      set({ error: responseMessage(response) });
       return false;
     }
     return acceptSnapshot(
@@ -385,7 +425,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
         before.lastSeenSeq,
       );
       if (response.ok === false) {
-        const message = getErrorMessage(response.code);
+        const message = responseMessage(response);
         if (
           response.code === 'UNAUTHENTICATED' ||
           response.code === 'IDENTITY_MISMATCH' ||
@@ -393,7 +433,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
         ) {
           clearAuthority(message);
         } else {
-          set({ recovering: false, authorityStatus: 'unauthorized', error: message });
+          set({ recovering: false, authorityStatus: 'error', error: message });
         }
         return false;
       }
@@ -404,7 +444,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
 
       // Apply the room revision through the same path used by broadcasts.
       if (!applyRoomView(response.room)) {
-        set({ recovering: false, authorityStatus: 'unauthorized' });
+        set({ recovering: false, authorityStatus: 'error' });
         return false;
       }
       const current = get();
@@ -439,7 +479,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
       const projected = await recoverGameProjection();
       set({
         recovering: false,
-        authorityStatus: projected ? 'authorized' : 'resolving',
+        authorityStatus: projected ? 'authorized' : 'error',
         error: projected ? null : get().error,
       });
       return projected;
@@ -455,6 +495,12 @@ export const useV3Store = create<V3Store>()((set, get) => {
       subscribeV3Connection((connected) => {
         set({ connected });
         if (connected && get().session && !get().recovering) void recover();
+      }),
+      subscribeV3Messages((message) => {
+        if (message.type !== 'room.closed') return;
+        const current = get();
+        if (current.session?.roomCode !== message.roomCode) return;
+        clearAuthority('房间已解散。');
       }),
       subscribeV3RoomSnapshots((message) => {
         const accepted = applyRoomView(message.room);
@@ -514,7 +560,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
       current.session.roomId,
     );
     if (response.ok === false) {
-      set({ error: getErrorMessage(response.code) });
+      set({ error: responseMessage(response) });
       return false;
     }
     return applyRoomView(response.room);
@@ -544,8 +590,8 @@ export const useV3Store = create<V3Store>()((set, get) => {
       command,
     );
     if (response.ok === false) {
-      if (response.room) applyRoomView(response.room);
-      set({ loading: false, pendingRoomCommand: null, error: getErrorMessage(response.code) });
+      if (!isTransportFailure(response) && response.room) applyRoomView(response.room);
+      set({ loading: false, pendingRoomCommand: null, error: responseMessage(response) });
       return false;
     }
     if (response.room) applyRoomView(response.room);
@@ -560,6 +606,8 @@ export const useV3Store = create<V3Store>()((set, get) => {
     recovering: false,
     authorityStatus: loadSession() ? 'resolving' : 'unauthorized',
     error: null,
+    catalogStatus: 'idle',
+    catalogError: null,
     pendingRoomCommand: null,
     rooms: [],
     catalog: null,
@@ -574,19 +622,28 @@ export const useV3Store = create<V3Store>()((set, get) => {
       if (current.session) void recover();
       void get().refreshCatalog();
       void get().refreshRooms();
-      return () => {
-        transportCleanup?.();
-      };
+      // Transport ownership is process-wide. StrictMode may call this cleanup
+      // between two mounts; leaving the shared subscriptions in place avoids
+      // cancelling a request another consumer is still awaiting.
+      return () => undefined;
     },
 
-    refreshCatalog: async () => {
-      const response = await getV3Catalog();
-      if (response.ok === false) {
-        set({ error: getErrorMessage(response.code) });
-        return false;
-      }
-      set({ catalog: response.catalog });
-      return true;
+    refreshCatalog: async (refreshOptions = {}) => {
+      if (catalogRefreshPromise && !refreshOptions.force) return catalogRefreshPromise;
+      set({ catalogStatus: 'loading', catalogError: null });
+      catalogRefreshPromise = (async () => {
+        const response = await getV3Catalog();
+        if (response.ok === false) {
+          const message = responseMessage(response);
+          set({ catalogStatus: 'error', catalogError: message });
+          return false;
+        }
+        set({ catalog: response.catalog, catalogStatus: 'ready', catalogError: null });
+        return true;
+      })().finally(() => {
+        catalogRefreshPromise = null;
+      });
+      return catalogRefreshPromise;
     },
 
     refreshRooms: async () => {
@@ -594,7 +651,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
       roomRefreshPromise = (async () => {
         const response = await listV3Rooms();
         if (response.ok === false) {
-          set({ error: getErrorMessage(response.code) });
+          set({ error: responseMessage(response) });
           return;
         }
         set({ rooms: response.rooms, error: null });
@@ -605,15 +662,12 @@ export const useV3Store = create<V3Store>()((set, get) => {
     },
 
     createRoom: async (name, roomName, auto) => {
-      clearAuthority();
-      ensureTransportSubscriptions();
-      set({ loading: true, authorityStatus: 'resolving' });
       const catalogResponse = await getV3Catalog();
       if (catalogResponse.ok === false) {
-        set({ loading: false, error: getErrorMessage(catalogResponse.code) });
+        set({ error: responseMessage(catalogResponse) });
         return false;
       }
-      set({ catalog: catalogResponse.catalog });
+      set({ catalog: catalogResponse.catalog, catalogStatus: 'ready' });
       const options = buildDefaultOptions(
         catalogResponse.catalog,
         name,
@@ -621,54 +675,43 @@ export const useV3Store = create<V3Store>()((set, get) => {
         auto,
       );
       if (!options) {
-        set({ loading: false, error: '当前没有可用的房间规则。' });
+        set({ error: '当前没有可用的房间规则。', authorityStatus: 'error' });
         return false;
       }
-      const actorName = name.trim() || '玩家';
-      const response = await createV3Room(
-        newActorId(),
-        actorName,
-        options,
-      );
-      if (response.ok === false) {
-        set({ loading: false, error: getErrorMessage(response.code) });
-        return false;
-      }
-      const accepted = establish(
-        response.room,
-        response.credentials,
-        actorName,
-      );
-      if (accepted && isRoomStatusWithGame(response.room.status)) {
-        await recoverGameProjection();
-      }
-      await get().refreshRooms();
-      return accepted;
+      return (await get().createRoomWithOptions(options)).ok;
     },
 
     createRoomWithOptions: async (options) => {
+      const pending = readPendingCreate() ?? {
+        createRequestId: newActorId(),
+        actorId: newActorId(),
+      };
+      writePendingCreate(pending);
       clearAuthority();
       ensureTransportSubscriptions();
       set({ loading: true, authorityStatus: 'resolving' });
       const actorName = options.creator.name.trim() || '玩家';
-      const response = await createV3Room(
-        newActorId(),
-        actorName,
-        options,
-      );
-      if (response.ok === false) {
-        set({ loading: false, error: getErrorMessage(response.code) });
+      try {
+        const response = await createV3Room(
+          pending.actorId,
+          actorName,
+          options,
+          pending.createRequestId,
+        );
+        if (response.ok === false) {
+          if (!isTransportFailure(response)) clearPendingCreate();
+          set({ loading: false, authorityStatus: 'error', error: responseMessage(response) });
+          return response;
+        }
+        clearPendingCreate();
+        const accepted = establish(response.room, response.credentials, actorName);
+        if (accepted && isRoomStatusWithGame(response.room.status)) {
+          await recoverGameProjection();
+        }
         return response;
+      } finally {
+        set({ loading: false });
       }
-      const accepted = establish(
-        response.room,
-        response.credentials,
-        actorName,
-      );
-      if (accepted && isRoomStatusWithGame(response.room.status)) {
-        await recoverGameProjection();
-      }
-      return response;
     },
 
     joinRoom: async (name, roomCode, joinToken) => {
@@ -676,17 +719,21 @@ export const useV3Store = create<V3Store>()((set, get) => {
       ensureTransportSubscriptions();
       set({ loading: true, authorityStatus: 'resolving' });
       const actorName = name.trim() || '玩家';
-      const response = await joinV3Room(
-        newActorId(),
-        actorName,
-        roomCode.trim().toUpperCase(),
-        joinToken,
-      );
-      if (response.ok === false) {
-        set({ loading: false, error: getErrorMessage(response.code) });
-        return false;
+      try {
+        const response = await joinV3Room(
+          newActorId(),
+          actorName,
+          roomCode.trim().toUpperCase(),
+          joinToken,
+        );
+        if (response.ok === false) {
+          set({ authorityStatus: 'error', error: responseMessage(response) });
+          return false;
+        }
+        return establish(response.room, response.credentials, actorName);
+      } finally {
+        set({ loading: false });
       }
-      return establish(response.room, response.credentials, actorName);
     },
 
     spectateRoom: async (name, roomCode, joinToken, omniscientToken) => {
@@ -694,22 +741,26 @@ export const useV3Store = create<V3Store>()((set, get) => {
       ensureTransportSubscriptions();
       set({ loading: true, authorityStatus: 'resolving' });
       const actorName = name.trim() || '观战者';
-      const response = await spectateV3Room(
-        newActorId(),
-        actorName,
-        roomCode.trim().toUpperCase(),
-        joinToken,
-        omniscientToken,
-      );
-      if (response.ok === false) {
-        set({ loading: false, error: getErrorMessage(response.code) });
-        return false;
+      try {
+        const response = await spectateV3Room(
+          newActorId(),
+          actorName,
+          roomCode.trim().toUpperCase(),
+          joinToken,
+          omniscientToken,
+        );
+        if (response.ok === false) {
+          set({ authorityStatus: 'error', error: responseMessage(response) });
+          return false;
+        }
+        const accepted = establish(response.room, response.credentials, actorName);
+        if (accepted && isRoomStatusWithGame(response.room.status)) {
+          await recoverGameProjection();
+        }
+        return accepted;
+      } finally {
+        set({ loading: false });
       }
-      const accepted = establish(response.room, response.credentials, actorName);
-      if (accepted && isRoomStatusWithGame(response.room.status)) {
-        await recoverGameProjection();
-      }
-      return accepted;
     },
 
     resumeSession: recover,
@@ -745,8 +796,8 @@ export const useV3Store = create<V3Store>()((set, get) => {
         current.room.roomRevision,
       );
       if (response.ok === false) {
-        if (response.room) applyRoomView(response.room);
-        set({ loading: false, pendingRoomCommand: null, error: getErrorMessage(response.code) });
+        if (!isTransportFailure(response) && response.room) applyRoomView(response.room);
+        set({ loading: false, pendingRoomCommand: null, error: responseMessage(response) });
         return false;
       }
       applyRoomView(response.room);
@@ -768,7 +819,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
       );
       set({ loading: false });
       if (response.ok === false) {
-        set({ error: getErrorMessage(response.code) });
+        set({ error: responseMessage(response) });
         if (
           response.code === 'STALE_STAGE_REVISION' ||
           response.code === 'EXPIRED_COMMAND'
@@ -797,7 +848,10 @@ export const useV3Store = create<V3Store>()((set, get) => {
       return recoverGameProjection();
     },
 
-    leaveRoom: () => clearAuthority(),
+    leaveRoom: () => {
+      clearPendingCreate();
+      clearAuthority();
+    },
     clearAuthority,
     clearError: () => set({ error: null }),
     refreshRoom,
