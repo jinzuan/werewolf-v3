@@ -40,13 +40,17 @@ export const setReviewStorageBackend = (backend: ReviewStorageBackend | null): v
 
 const safeGet = (): ReviewStore => {
   try {
+    let raw: string | null = null;
     if (storageBackend) {
-      const raw = storageBackend.get(STORAGE_KEY);
-      return raw ? (JSON.parse(raw) as ReviewStore) : {};
+      raw = storageBackend.get(STORAGE_KEY);
+    } else {
+      if (typeof localStorage === 'undefined') return {};
+      raw = localStorage.getItem(STORAGE_KEY);
     }
-    if (typeof localStorage === 'undefined') return {};
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as ReviewStore) : {};
+    const parsed = raw ? (JSON.parse(raw) as unknown) : {};
+    const migrated = migrateReviewStore(parsed);
+    if (!storesEqual(parsed as ReviewStore, migrated)) safeSet(migrated);
+    return migrated;
   } catch {
     return {};
   }
@@ -102,12 +106,38 @@ const hasVerifiableEventReference = (
   insight: string,
   evidence?: ReviewEvidence,
 ): boolean => {
-  const specificReference = /第\d+[晚天]|首夜|昨晚|被(?:投票出局|票出|狼刀|毒杀)|(?:查验|验人)(?:到|出|结果|时间线)|查杀|金水|票狼|投狼|跟票|狼刀|刀口|毒杀|守过|守护(?:成功|失败)|解药(?:救|未)|猎人开枪|公开票型|平票/;
+  // A bare mention of “票型/新证据/行动” is still generic.  Require a
+  // concrete round, outcome, or action/result pair so old template prose
+  // cannot survive a restart merely because it contains a domain word.
+  const specificReference = /第\d+[晚天]|首夜|昨晚|被(?:投票出局|票出|狼刀|毒杀)|(?:查验|验人)(?:到|出|结果)|查杀|金水|票狼|投狼|跟票(?:给|投)|狼刀(?:到|杀)|刀口(?:是|为)|毒杀(?:了|到)|守过|守护(?:成功|失败)|解药(?:救|未)|猎人开枪|平票(?:后|时)/;
   if (!specificReference.test(insight)) return false;
 
   if (!evidence || evidence.tags.length === 0) return true;
   return evidence.tags.some((tag) => tag.length > 0 && insight.includes(tag));
 };
+
+/**
+ * Runtime review data predates the event-reference gate and is intentionally
+ * stored as plain strings.  Normalize that old shape on read and remove only
+ * entries that cannot point to a concrete game event; evidence-backed lessons
+ * remain untouched.
+ */
+const migrateReviewStore = (value: unknown): ReviewStore => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const migrated: ReviewStore = {};
+  Object.entries(value as Record<string, unknown>).forEach(([role, raw]) => {
+    if (!Array.isArray(raw)) return;
+    const insights = raw
+      .filter((item): item is string => typeof item === 'string')
+      .map(cleanInsight)
+      .filter((item) => item.length > 0 && hasVerifiableEventReference(item));
+    if (insights.length > 0) migrated[role] = insights.slice(-MAX_INSIGHTS_PER_ROLE);
+  });
+  return migrated;
+};
+
+const storesEqual = (left: ReviewStore, right: ReviewStore): boolean =>
+  JSON.stringify(left) === JSON.stringify(right);
 
 /** 取该职业待归并的复盘心得 */
 export const getReviewInsights = (role: Role): string[] => {

@@ -119,3 +119,34 @@ test('archive callback and engine log expose the same complete final event sourc
   );
   assert.match(archives[0].gameLogEvents?.at(-1)?.line || '', /游戏结束/);
 });
+
+test('legacy exile enters last words before a vote can finish the game', async () => {
+  const engine = new RoomEngine({
+    roomName: 'legacy exile last words test',
+    maxPlayers: 4,
+    reviewEnabled: false,
+    noArchive: true,
+    aiAdapter: adapter(),
+    hub: { broadcastRoom: () => {}, destroyRoom: () => {} },
+  });
+  engine.fillAIPlayers(4);
+  (engine as unknown as { beginRoles: () => void }).beginRoles();
+  const wolf = engine.players.find((player) => player.role === 'wolf');
+  assert.ok(wolf);
+  engine.game!.phase = 'vote';
+
+  await (engine as unknown as {
+    applyVoteResult: (targetId: string) => Promise<void>;
+  }).applyVoteResult(wolf.id);
+
+  assert.equal(engine.winnerTeam, 'good');
+  assert.ok(
+    engine.messages.some(
+      (message) => message.playerId === wolf.id && message.type === 'public',
+    ),
+  );
+  assert.match(
+    engine.getGameLogEvents().find((event) => event.line.includes(`${wolf.name} 遗言`))?.line || '',
+    new RegExp(`${wolf.name} 遗言`),
+  );
+});

@@ -166,10 +166,18 @@ test('atomic exile victory ends the game before the next night', async () => {
     });
   }
   for (let round = 0; round < 2; round += 1) {
-    await dispatch(session, wolf.id, {
+    const lastWords = await dispatch(session, wolf.id, {
       type: 'game.skip_speech',
       payload: {},
     });
+    assert.equal(
+      lastWords.events.some(
+        (event) =>
+          event.eventType === 'day.speech_skipped' &&
+          (event.payload as { lastWords?: boolean }).lastWords === true,
+      ),
+      true,
+    );
   }
   assert.equal(session.serialize().state.gameState.phase, 'ended');
   assert.equal(session.serialize().state.gameState.winner, 'good');

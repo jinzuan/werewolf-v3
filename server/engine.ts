@@ -1906,11 +1906,11 @@ export class RoomEngine {
     this.recordDeath(voted, this.game.day, '被投票出局');
     this.addSystem(`【公告】第${this.game.day}天 被投票出局：${voted.name}`);
     this.broadcast();
-    if (this.checkWinner()) return;
-    // v2.4.7b：白天票完（含 PK 判定）好人仅存 1 人 → 直接终局进复盘，跳过夜晚/遗言/猎人
-    if (this.forceEndIfGoodOneLeft()) return;
 
-    // 遗言
+    // A vote elimination always owns the last-words stage.  Victory is
+    // evaluated after it (and a possible exile hunter shot), otherwise a
+    // final wolf or the last good player ends the game before their prompt is
+    // ever generated.
     this.game.phase = 'lastWords';
     this.game.lastWordsPlayer = targetId;
     this.pendingHunterShoot = voted.role === 'hunter';
@@ -1924,6 +1924,11 @@ export class RoomEngine {
     if (this.winnerTeam) return;
     const afterLastWords = this.game as GameState | null;
     if (afterLastWords && afterLastWords.phase === 'hunterShoot') await this.runHunterShoot();
+    if (this.winnerTeam) return;
+    if (this.checkWinner()) return;
+    // v2.4.7b: retain the direct end condition, but only after the voted
+    // player's last words (and hunter entitlement) have been completed.
+    this.forceEndIfGoodOneLeft();
   }
 
   /* ==================== 遗言 / 猎人开枪 ==================== */
