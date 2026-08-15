@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { BookOpen, Circle, Skull, Trophy } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { AppShell } from '../../components/shell/AppShell';
@@ -32,6 +33,19 @@ export function MatchResultPage() {
   const session = useV3Store((state) => state.session);
   const snapshot = useV3Store((state) => state.snapshot);
   const events = useV3Store((state) => state.events);
+  const review = useV3Store((state) => state.review);
+  const refreshReview = useV3Store((state) => state.refreshReview);
+
+  useEffect(() => {
+    if (room?.status !== 'ended') return undefined;
+    void refreshReview();
+    const timer = window.setInterval(() => {
+      const current = useV3Store.getState().review;
+      if (current?.status === 'completed' || current?.status === 'disabled' || current?.status === 'failed') return;
+      void refreshReview();
+    }, 1_000);
+    return () => window.clearInterval(timer);
+  }, [refreshReview, room?.status]);
 
   if (!room || !session) return null;
 
@@ -141,7 +155,7 @@ export function MatchResultPage() {
 
       <Card>
         <div className="v3-panel-heading">
-          <div><span>按本视角可见内容</span><h2>复盘记录</h2></div>
+          <div><span>按本视角可见内容</span><h2>对局时间线</h2></div>
           <Badge tone="info">{replay.length} 条记录</Badge>
         </div>
         {replay.length === 0 ? (
@@ -158,6 +172,40 @@ export function MatchResultPage() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <div className="v3-panel-heading">
+          <div><span>服务端复盘管线</span><h2>AI 复盘与心得</h2></div>
+          <Badge tone={review?.status === 'completed' ? 'success' : review?.status === 'failed' ? 'danger' : 'info'}>
+            {review?.status === 'completed'
+              ? '已完成'
+              : review?.status === 'disabled'
+                ? '未启用'
+                : review?.status === 'failed'
+                  ? '处理失败'
+                  : '整理中'}
+          </Badge>
+        </div>
+        {!review || review.status === 'pending' || review.status === 'running' ? (
+          <p className="v3-inline-note">复盘正在由服务端整理，刷新页面会继续恢复进度。</p>
+        ) : review.status === 'disabled' ? (
+          <p className="v3-inline-note">本房间未启用局后复盘；服务端仍已保存本局权威时间线。</p>
+        ) : review.status === 'failed' ? (
+          <p className="v3-inline-note">复盘暂时未完成（{review.errorCode ?? '服务端处理失败'}），本局时间线不受影响。</p>
+        ) : (
+          <div className="v3-summary-list">
+            {review.messages.map((message) => (
+              <div key={message.id}><BookOpen size={16} /><span>{message.text}</span></div>
+            ))}
+            {review.insights.map((insight) => (
+              <div key={insight.id}><BookOpen size={16} /><span>角色心得：{insight.text}</span></div>
+            ))}
+            {review.messages.length === 0 && review.insights.length === 0 && (
+              <p className="v3-inline-note">当前视角没有可展示的复盘结论。</p>
+            )}
           </div>
         )}
       </Card>

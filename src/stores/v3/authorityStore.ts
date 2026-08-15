@@ -14,12 +14,14 @@ import type {
   RoomView,
   RoomAccess,
 } from '../../../shared/protocol';
+import type { PostGameReviewView } from '../../../shared/reviewContract';
 import {
   adoptV3Identity,
   createV3Room,
   fetchV3Snapshot,
   getV3Catalog,
   getV3Room,
+  getV3Review,
   joinV3Room,
   listV3Rooms,
   resetV3Connection,
@@ -163,6 +165,7 @@ export interface V3Store {
   session: V3Session | null;
   snapshot: ProjectedSnapshot | null;
   events: DomainEvent[];
+  review: PostGameReviewView | null;
   initialize: () => () => void;
   refreshCatalog: (options?: { force?: boolean }) => Promise<boolean>;
   refreshRooms: () => Promise<void>;
@@ -187,6 +190,7 @@ export interface V3Store {
   ) => Promise<boolean>;
   resumeSession: () => Promise<boolean>;
   refreshSnapshot: () => Promise<boolean>;
+  refreshReview: () => Promise<boolean>;
   beginReadyCheck: () => Promise<boolean>;
   cancelReadyCheck: () => Promise<boolean>;
   setReady: (ready: boolean) => Promise<boolean>;
@@ -232,6 +236,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
       // identity changes, otherwise a new room can render stale room cards.
       rooms: [],
       catalog: get().catalog,
+      review: null,
     });
   };
 
@@ -271,6 +276,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
       room,
       session: nextSession,
       ...(gameChanged ? { snapshot: null, events: [] } : {}),
+      review: gameChanged || room.status !== 'ended' ? null : current.review,
       authorityStatus: previousSession ? 'authorized' : current.authorityStatus,
       error: null,
     });
@@ -292,6 +298,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
       session,
       snapshot: null,
       events: [],
+      review: null,
       loading: false,
       recovering: false,
       authorityStatus: 'authorized',
@@ -400,10 +407,12 @@ export const useV3Store = create<V3Store>()((set, get) => {
       set({ error: responseMessage(response) });
       return false;
     }
-    return acceptSnapshot(
+    const accepted = acceptSnapshot(
       response.snapshot,
       current.session.gameId === response.snapshot.gameId,
     );
+    if (accepted && get().room?.status === 'ended') await refreshReview();
+    return accepted;
   };
 
   const recover = async (): Promise<boolean> => {
@@ -512,6 +521,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
         ) {
           void recoverGameProjection();
         }
+        if (accepted && message.room.status === 'ended') void refreshReview();
       }),
       subscribeV3Events((message) => {
         const accepted = acceptEnvelope(message);
@@ -566,6 +576,25 @@ export const useV3Store = create<V3Store>()((set, get) => {
     return applyRoomView(response.room);
   };
 
+  const refreshReview = async (): Promise<boolean> => {
+    const current = get();
+    if (!current.session || !current.room || current.room.status !== 'ended') {
+      set({ review: null });
+      return false;
+    }
+    const response = await getV3Review(
+      current.session.actorId,
+      current.session.roomCode,
+      current.session.roomId,
+    );
+    if (response.ok === false) {
+      set({ error: responseMessage(response) });
+      return false;
+    }
+    set({ review: response.review, error: null });
+    return true;
+  };
+
   const runRoomMutation = async (
     command: RoomMutationCommand,
   ): Promise<boolean> => {
@@ -615,6 +644,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
     session: loadSession(),
     snapshot: null,
     events: [],
+    review: null,
 
     initialize: () => {
       ensureTransportSubscriptions();
@@ -766,6 +796,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
     resumeSession: recover,
 
     refreshSnapshot: async () => recoverGameProjection(),
+    refreshReview,
 
     beginReadyCheck: () =>
       runRoomMutation({

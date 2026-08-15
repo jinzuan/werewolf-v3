@@ -3,6 +3,9 @@ import { Server } from 'socket.io';
 import { FileEventStore } from './events/fileStore';
 import { FileRoomRepository } from './rooms/fileRepository';
 import { RoomService } from './rooms/roomService';
+import { FileInsightStore } from './review/insightStore';
+import { FileReviewRepository } from './review/fileReviewRepository';
+import { ReviewPipeline } from './review/reviewPipeline';
 import { bindSocketTransport } from './transport/socketTransport';
 
 const port = Number(process.env.PORT ?? 3001);
@@ -23,10 +26,15 @@ const io = new Server(httpServer, {
   },
 });
 const eventStore = new FileEventStore();
+const reviewRepository = new FileReviewRepository();
+const insightStore = new FileInsightStore();
+const reviewPipeline = new ReviewPipeline(eventStore, reviewRepository, { insightStore });
 const roomService = new RoomService(new FileRoomRepository(), eventStore, {
   // Mixed rooms hand computer turns back to the room service after each
   // human command. Quick computer rooms already opt into this path directly.
   autoDrive: true,
+  reviewPipeline,
+  insightStore,
 });
 
 await roomService.restore();

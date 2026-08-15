@@ -246,7 +246,8 @@ export type RoomReadCommand =
   | { type: 'room.create'; payload: CreateRoomCommandPayload }
   | { type: 'room.join'; payload: { roomCode: string; joinToken?: string } }
   | { type: 'room.resume'; payload: { roomCode: string } }
-  | { type: 'room.get'; payload: { roomCode: string } };
+  | { type: 'room.get'; payload: { roomCode: string } }
+  | { type: 'review.get'; payload: { roomCode: string } };
 
 export type RoomMutationCommand =
   | {

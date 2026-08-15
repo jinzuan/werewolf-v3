@@ -15,6 +15,7 @@ import type {
   ProtocolAck,
   ProtocolAckError,
   ResumeRoomAck,
+  ReviewViewAck,
   RoomCommand,
   RoomListAck,
   RoomMutationCommand,
@@ -545,6 +546,20 @@ export const getV3Room = (
     {
       meta: commandMeta(actorId, roomId),
       command: { type: 'room.get', payload: { roomCode } },
+    } satisfies ClientCommand,
+  );
+
+export const getV3Review = (
+  actorId: string,
+  roomCode: string,
+  roomId?: string,
+): Promise<ClientAck<ReviewViewAck extends ProtocolAck<infer P> ? P : never>> =>
+  emitAck(
+    openRoomConnection(),
+    'v3:command',
+    {
+      meta: commandMeta(actorId, roomId),
+      command: { type: 'review.get', payload: { roomCode } },
     } satisfies ClientCommand,
   );
 

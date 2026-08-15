@@ -23,6 +23,14 @@ import type {
   RoomMutationCommand,
   RoomReadCommand,
 } from './roomContract';
+import type { PostGameReviewView } from './reviewContract';
+export type {
+  PostGameReviewView,
+  ReviewEvidenceRef,
+  ReviewInsight,
+  ReviewJobStatus,
+  ReviewMessage,
+} from './reviewContract';
 
 export * from './roomContract';
 
@@ -329,6 +337,7 @@ export type RoomViewAck = ProtocolAck<{ room: RoomView }>;
 export type GameCommandAck = ProtocolAck<{ events: DomainEvent[] }>;
 export type RoomListAck = ProtocolAck<{ rooms: RoomSummary[] }>;
 export type SnapshotAck = ProtocolAck<{ snapshot: ProjectedSnapshot }>;
+export type ReviewViewAck = ProtocolAck<{ review: PostGameReviewView }>;
 
 /** Compatibility import path; the old aiCount/auto/spectator DTO is gone. */
 export type RoomCreateOptions = CreateRoomOptionsV31;
