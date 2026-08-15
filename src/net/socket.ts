@@ -8,10 +8,12 @@ import type { ClientAction, RoomCreateOptions, Snapshot, ArchiveRecord, RoomSumm
 
 const SERVER_URL_KEY = 'wolf-server-url';
 let socket: Socket | null = null;
-let serverUrl = getStoredServerUrl();
 
-const buildMode = String((import.meta.env as Record<string, unknown>).MODE ?? 'development');
-const configuredServerUrl = (import.meta.env as Record<string, unknown>).VITE_V3_SERVER_URL;
+const clientEnv: Record<string, unknown> = (import.meta as ImportMeta & {
+  env?: Record<string, unknown>;
+}).env ?? {};
+const buildMode = String(clientEnv.MODE ?? 'development');
+const configuredServerUrl = clientEnv.VITE_V3_SERVER_URL;
 
 const isLoopback = (hostname: string): boolean =>
   ['localhost', '127.0.0.1', '::1'].includes(hostname.toLowerCase());
@@ -30,8 +32,8 @@ export const validateSocketUrl = (value: string): string => {
   } catch {
     throw new SocketConfigurationError('服务器地址无效');
   }
-  const pageProtocol = window.location.protocol;
-  const explicitDevelopment = (import.meta.env as Record<string, unknown>).VITE_WW_ENV;
+  const pageProtocol = typeof window === 'undefined' ? 'http:' : window.location.protocol;
+  const explicitDevelopment = clientEnv.VITE_WW_ENV;
   const environment = explicitDevelopment === 'production' || buildMode === 'production'
     ? 'production'
     : explicitDevelopment === 'test' ? 'test' : 'development';
@@ -61,11 +63,14 @@ function getStoredServerUrl(): string {
     /* ignore */
   }
   if (saved) return validateSocketUrl(saved);
-  const page = window.location;
-  if (page.protocol === 'https:') return page.origin;
-  const hostname = page.hostname || 'localhost';
+  const pageProtocol = typeof window === 'undefined' ? 'http:' : window.location.protocol;
+  const pageOrigin = typeof window === 'undefined' ? '' : window.location.origin;
+  if (pageProtocol === 'https:') return pageOrigin;
+  const hostname = typeof window === 'undefined' ? 'localhost' : window.location.hostname || 'localhost';
   return validateSocketUrl(`http://${isLoopback(hostname) ? hostname : '127.0.0.1'}:3001`);
 }
+
+let serverUrl = getStoredServerUrl();
 
 export function getServerUrl(): string {
   return serverUrl;
