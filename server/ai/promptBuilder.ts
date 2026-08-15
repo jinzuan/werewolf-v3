@@ -209,6 +209,7 @@ const buildOutputContract = (
   context: AIRequestContext,
   promptContext: AIPromptContext,
 ): string => {
+  const isLastWords = context.phase === 'lastWords' || context.stage === 'last_words';
   const allowed = context.allowedCommandTypes
     .map((commandType) => COMMAND_ACTION_NAMES[commandType])
     .filter((name): name is string => Boolean(name));
@@ -227,7 +228,9 @@ const buildOutputContract = (
       case 'skip_night':
         return '{"action":"skip_night"}';
       case 'skip_speech':
-        return '{"action":"skip_speech"}';
+        return isLastWords
+          ? '{"action":"skip_speech","reason":"没有新的信息可补充"}'
+          : '{"action":"skip_speech"}';
       case 'hunter_shoot':
         return '{"action":"hunter_shoot","target":"合法玩家名"}';
       default:
@@ -249,6 +252,9 @@ const buildOutputContract = (
     `action 只能是：${allowed.join('、') || '无'}.`,
     ...examples,
     `发言/理由最多 ${speechLimit(context)} 字。`,
+    ...(isLastWords && context.allowedCommandTypes.includes('game.skip_speech')
+      ? ['遗言可以放弃，但不得静默：选择 skip_speech 时必须同时提供非空 reason；无理由的跳过不合法。']
+      : []),
   ].join('\n');
 };
 
@@ -321,7 +327,9 @@ const formatPublicEvent = (
     case 'day.speech':
       return `${actor}：${String(payload.content ?? '')}`;
     case 'day.speech_skipped':
-      return `${actor}：跳过发言`;
+      return payload.lastWords === true
+        ? `${actor}：放弃遗言（理由：${String(payload.reason ?? '未提供')}）`
+        : `${actor}：跳过发言`;
     case 'day.vote_cast':
       return typeof payload.targetId === 'string'
         ? `${actor} 投票给 ${playerName(players, payload.targetId)}`
@@ -462,7 +470,7 @@ const placeholderValues = (
     legal_actions: listText(legalActions.map((action) => ACTION_LABELS[action])),
     legal_targets: targetNames.length > 0 ? targetNames.join('、') : '无',
     abstain_policy: promptContext.abstainAllowed ? '允许弃票' : '禁止弃票',
-    last_words_policy: `仅被投票放逐者获得遗言，共 ${ruleValue('speech.last_words_scope')}。`,
+    last_words_policy: `仅被投票放逐者获得遗言，共 ${ruleValue('speech.last_words_scope')}；可以放弃，但必须给出理由，不能静默缺失。`,
     experience:
       promptContext.experience ??
       context.projectedContext?.experience ??

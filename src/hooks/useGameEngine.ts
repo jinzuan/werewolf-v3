@@ -25,8 +25,15 @@ export function useGameEngine(roomCode: string, playerId: string | null) {
   const remainingMs = getRemainingMs(snapshot?.deadlineTs, offset, now);
   const deadlineExpired = remainingMs !== null && remainingMs <= 0;
   const act = useCallback((action: ClientAction) => {
-    if (roomCode && playerId) sendAction(roomCode, playerId, action);
-  }, [playerId, roomCode]);
+    if (!roomCode || !playerId) return;
+    if (action.t === 'skip-speech' && snapshot?.gameState?.phase === 'lastWords' && !action.reason?.trim()) {
+      const reason = window.prompt('请填写放弃遗言的理由（例如“懒得说”）')?.trim();
+      if (!reason) return;
+      sendAction(roomCode, playerId, { ...action, reason });
+      return;
+    }
+    sendAction(roomCode, playerId, action);
+  }, [playerId, roomCode, snapshot?.gameState?.phase]);
 
   const me = snapshot?.players.find((player) => player.id === playerId);
   const state = snapshot?.gameState;

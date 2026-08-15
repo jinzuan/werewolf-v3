@@ -953,6 +953,7 @@ export const buildLegacyAIPrompt = (params: GeneratePromptParams): { system: str
     prompt += `如果你是神职（预言家/女巫/守卫/猎人）：这是向好人传递信息的最后通道——尽量报出你的真实身份、查验结果、守护/用药情况、你盘的狼坑与建议归票方向；\n`;
     prompt += `如果你是平民：把你观察到的票型与逻辑疑点交代清楚，帮好人继续盘狼。\n`;
     prompt += `只能说你真实做过的事（真的查验/守护/用药），禁止编造不存在的查验或行动；禁止"我记得XX说过"式虚构。\n\n`;
+    prompt += `遗言可以放弃，但不能静默缺失：如选择放弃，必须输出“放弃遗言：理由”（理由哪怕是“懒得说”也可以）；只输出“跳过/没话说”而没有理由属于错误。\n\n`;
     const deathHistory = (visibleGameHistory?.deadPlayers || []).map(
       (death) => `${death.name}（${formatDeathDetail(death.day, death.reason)}）`,
     );
@@ -1138,6 +1139,9 @@ export const buildLegacyAIPrompt = (params: GeneratePromptParams): { system: str
   prompt += `【输出格式】\n`;
   // v2.4.4 任务 A：按阶段限长（轮次≤100 / 自由讨论≤150 / 遗言≤80 / 争辩≤100）
   prompt += `⚠️ 本阶段发言长度要求：${getSpeechLimit(gamePhase).label}。重点信息 3 句说完，禁止长篇大论、禁止复述前面内容。\n`;
+  if (gamePhase === '遗言') {
+    prompt += `⚠️ 遗言可放弃但须理由：请输出“放弃遗言：理由”；空白、单独“跳过”或单独“没话说”均视为遗言缺失。\n`;
+  }
   // v2.4.10 任务1：捋人放宽到 ≤300；非捋人保持限长（分析可展开 ≤200）
   prompt += isSorter
     ? `⚠️ 你是今日捋人：可全盘梳理，字数放宽到 ≤300 字（时间线/票型/公开信息/矛盾点），不要为了凑字硬注水。\n`

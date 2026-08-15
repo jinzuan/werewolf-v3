@@ -255,6 +255,14 @@ export class GameSession {
     const rejected = this.validateMeta(meta, queuedAt);
     if (rejected) return rejected;
 
+    if (
+      command.type === 'game.skip_speech' &&
+      this.state.dayFlow.stage === 'last_words' &&
+      !command.payload.reason?.trim()
+    ) {
+      return this.reject('REASON_REQUIRED');
+    }
+
     const actor = this.state.players.find((player) => player.id === meta.actorId);
     if (!actor) return this.reject('ACTOR_NOT_FOUND');
     if (!actor.isAlive && !this.deadActorMayAct(actor, command)) {
@@ -679,7 +687,13 @@ export class GameSession {
               content: command.payload.content.slice(0, 300),
               lastWords: isLastWords,
             }
-          : { actorId: actor.id, lastWords: isLastWords },
+          : {
+              actorId: actor.id,
+              lastWords: isLastWords,
+              ...(isLastWords && command.payload.reason?.trim()
+                ? { reason: command.payload.reason.trim().slice(0, 80) }
+                : {}),
+            },
         'public_timeline',
         undefined,
         correlationId,
@@ -1215,7 +1229,15 @@ export class GameSession {
       return actor
         ? this.applySpeech(
             actor,
-            { type: 'game.skip_speech', payload: {} },
+            {
+              type: 'game.skip_speech',
+              payload: {
+                reason:
+                  this.state.dayFlow.stage === 'last_words'
+                    ? '超时未想到新的内容'
+                    : undefined,
+              },
+            },
             correlationId,
           ) ?? []
         : [];

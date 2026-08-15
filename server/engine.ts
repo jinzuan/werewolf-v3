@@ -102,6 +102,24 @@ const isSkipResponse = (text: string): boolean => {
   const t = (text || '').replace(/[，。！？!？\s]/g, '');
   return !t || t === '过' || t === '跳过' || t === '过过' || t === '没话说';
 };
+
+interface LastWordsAIResult {
+  content: string;
+  skipReason: string | null;
+}
+
+const parseLastWordsAIResult = (text: string): LastWordsAIResult => {
+  const value = (text || '').trim();
+  if (!value) return { content: '', skipReason: null };
+  const match = /^(放弃遗言|跳过遗言|跳过|放弃|过过|过|没话说|不想说|懒得说)\s*(?:[：:,，；;\-]\s*(.*))?$/u.exec(value);
+  if (!match) return { content: value, skipReason: null };
+  const explicitReason = match[2]?.trim() || '';
+  const shortReason = ['没话说', '不想说', '懒得说'].includes(match[1]) ? match[1] : '';
+  return {
+    content: '',
+    skipReason: explicitReason || shortReason || null,
+  };
+};
 const MAX_MESSAGE_LENGTH = 1000;
 const limitContent = (value: unknown): string =>
   typeof value === 'string' ? value.trim().slice(0, MAX_MESSAGE_LENGTH) : '';
@@ -551,6 +569,18 @@ export class RoomEngine {
       day,
       phase: kind === 'lastWords' ? '遗言' : kind === 'pk' ? 'PK争辩' : kind === 'free' ? '自由讨论' : '白天发言',
       event: content,
+      actor: player.name,
+    });
+  }
+
+  private recordLastWordsSkip(player: Player, reason: string): void {
+    const day = this.game?.day ?? 1;
+    const line = `第${day}天 ${player.name} 遗言：放弃（理由：${reason}）`;
+    this.appendGameLog(line, player.isAI ? this.aiOutputSource() : undefined);
+    this.appendReviewEvent({
+      day,
+      phase: '遗言',
+      event: `放弃遗言（理由：${reason}）`,
       actor: player.name,
     });
   }
@@ -1948,10 +1978,17 @@ export class RoomEngine {
     if (p.isAI) {
       this.broadcast();
       const text = await this.callLastWords(p);
-      if (text && !isSkipResponse(text)) {
-        this.messages.push(this.makeMessage(p, text, 'public', this.aiOutputSource()));
-        this.recordSpeechLog(p, text, 'lastWords');
+      const result = parseLastWordsAIResult(text);
+      if (result.content) {
+        this.messages.push(this.makeMessage(p, result.content, 'public', this.aiOutputSource()));
+        this.recordSpeechLog(p, result.content, 'lastWords');
         this.broadcast();
+      } else if (result.skipReason) {
+        this.recordLastWordsSkip(p, result.skipReason.slice(0, 80));
+        this.addDebugLog('event', 'info', `${p.name} 放弃遗言（理由：${result.skipReason}）`);
+        this.broadcast();
+      } else {
+        this.addDebugLog('error', 'error', `${p.name} 遗言缺失：AI 未提供发言或放弃理由`);
       }
       await this.sleep(500);
       this.afterLastWords();
@@ -2158,6 +2195,12 @@ export class RoomEngine {
           this.turnDone = true;
           this.broadcast();
         } else if (this.game.phase === 'lastWords' && p && this.game.lastWordsPlayer === p.id) {
+          const reason = action.reason?.trim();
+          if (!reason) {
+            this.addDebugLog('error', 'error', `${p.name} 遗言静默放弃：缺少理由`);
+            return;
+          }
+          this.recordLastWordsSkip(p, reason.slice(0, 80));
           this.turnDone = true;
           this.broadcast();
         }

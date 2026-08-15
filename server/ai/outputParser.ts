@@ -24,7 +24,7 @@ export type ParsedAIOutput =
 
 type ParseContext = Pick<
   AIRequestContext,
-  'allowedCommandTypes' | 'players' | 'playerId' | 'role' | 'promptContext'
+  'allowedCommandTypes' | 'players' | 'playerId' | 'role' | 'phase' | 'stage' | 'promptContext'
 >;
 
 const fail = (
@@ -87,6 +87,34 @@ const isSkip = (value: unknown): boolean =>
   /^(?:跳过|弃票|不用|不行动|放弃|空刀|不杀|skip|pass|null)$/iu.test(
     cleanText(value),
   );
+
+const lastWordsSkipLine = /^(?:放弃遗言|跳过遗言|跳过|放弃|过过|过|没话说|不想说|懒得说)\s*(?:[：:,，；;\-]\s*(.*))?$/u;
+
+const isLastWordsContext = (context: ParseContext): boolean =>
+  context.phase === 'lastWords' ||
+  context.stage === 'last_words' ||
+  context.promptContext?.lastWordsRoundsRemaining !== undefined;
+
+const parseSkipSpeech = (
+  reason: unknown,
+  context: ParseContext,
+): ParsedAIOutput => {
+  if (!allowed(context, 'game.skip_speech')) {
+    return fail('ACTION_NOT_ALLOWED', 'game.skip_speech is not allowed.');
+  }
+  const cleanReason = cleanText(reason);
+  if (isLastWordsContext(context) && !cleanReason) {
+    return fail('REASON_REQUIRED', 'A last-words skip reason is required.');
+  }
+  return {
+    ok: true,
+    command: {
+      type: 'game.skip_speech',
+      payload: cleanReason ? { reason: cleanReason.slice(0, 80) } : {},
+    },
+    reason: cleanReason ? `parsed speech skip: ${cleanReason}` : 'parsed speech skip',
+  };
+};
 
 const parseJson = (raw: string): Record<string, unknown> | null => {
   const cleaned = cleanText(raw);
@@ -291,9 +319,7 @@ const parseObject = (
     case 'skip_night':
       return parseSkipNight(context);
     case 'skip_speech':
-      return allowed(context, 'game.skip_speech')
-        ? { ok: true, command: { type: 'game.skip_speech', payload: {} }, reason: 'parsed speech skip' }
-        : fail('ACTION_NOT_ALLOWED', 'game.skip_speech is not allowed.');
+      return parseSkipSpeech(object.reason, context);
     case 'abstain':
       return parseVote(null, '弃票', context, 'game.vote');
     case 'hunter_shoot':
@@ -355,7 +381,14 @@ const parsePlain = (raw: string, context: ParseContext): ParsedAIOutput => {
     return parseHunter(isSkip(first) ? null : first, isSkip(first) ? first : undefined, context);
   }
   if (allowed(context, 'game.skip_speech') && isSkip(first)) {
-    return { ok: true, command: { type: 'game.skip_speech', payload: {} }, reason: 'parsed speech skip' };
+    return parseSkipSpeech(lines.slice(1).join(' '), context);
+  }
+  if (allowed(context, 'game.skip_speech') && isLastWordsContext(context)) {
+    const skipLine = lastWordsSkipLine.exec(first);
+    if (skipLine) {
+      const shortReason = ['没话说', '不想说', '懒得说'].includes(first) ? first : '';
+      return parseSkipSpeech(skipLine[1] || shortReason || lines.slice(1).join(' '), context);
+    }
   }
   if (allowed(context, 'game.speak')) return parseSpeech(raw, context, 'game.speak');
   if (allowed(context, 'game.wolf_speak')) return parseSpeech(raw, context, 'game.wolf_speak');

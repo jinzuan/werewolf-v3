@@ -332,7 +332,13 @@ export class AIOrchestrator {
     }
     if (allowed.has('skip_speech')) {
       return {
-        command: { type: 'game.skip_speech', payload: {} },
+        command: {
+          type: 'game.skip_speech',
+          payload:
+            context.phase === 'lastWords' || context.stage === 'last_words'
+              ? { reason: '没有新的信息可补充' }
+              : {},
+        },
         reason: 'deterministic speech skip fallback',
       };
     }
@@ -393,7 +399,13 @@ export class AIOrchestrator {
     const commandType = context.allowedCommandTypes[0];
     if (commandType === 'game.skip_speech') {
       return {
-        command: { type: 'game.skip_speech', payload: {} },
+        command: {
+          type: 'game.skip_speech',
+          payload:
+            context.phase === 'lastWords' || context.stage === 'last_words'
+              ? { reason: '没有新的信息可补充' }
+              : {},
+        },
         reason: 'deterministic compatibility fallback',
       };
     }

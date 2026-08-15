@@ -166,7 +166,13 @@ const validCommandPayload = (
     case 'game.wolf_speak':
       return typeof command.payload.content === 'string';
     case 'game.skip_speech':
-      return Object.keys(command.payload).length === 0;
+      if (context.phase === 'lastWords' || context.stage === 'last_words') {
+        return typeof command.payload.reason === 'string' && command.payload.reason.trim().length > 0;
+      }
+      return (
+        command.payload.reason === undefined ||
+        (typeof command.payload.reason === 'string' && command.payload.reason.trim().length > 0)
+      );
     case 'game.vote':
     case 'game.wolf_vote':
     case 'game.hunter_shoot':

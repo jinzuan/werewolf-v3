@@ -103,7 +103,7 @@ test('exiled hunter gets two last words rounds and one validated shot', async ()
   for (let round = 0; round < 2; round += 1) {
     const result = await dispatch(session, hunter.id, {
       type: 'game.skip_speech',
-      payload: {},
+      payload: { reason: '暂时没有新的信息' },
     });
     assert.equal(result.ok, true);
   }
@@ -133,8 +133,14 @@ test('exiled hunter gets two last words rounds and one validated shot', async ()
     type: 'game.vote',
     payload: { targetId: skippedWolf.id },
   });
-  await dispatch(skippedCase.session, skippedHunter.id, { type: 'game.skip_speech', payload: {} });
-  await dispatch(skippedCase.session, skippedHunter.id, { type: 'game.skip_speech', payload: {} });
+  await dispatch(skippedCase.session, skippedHunter.id, {
+    type: 'game.skip_speech',
+    payload: { reason: '不想补充' },
+  });
+  await dispatch(skippedCase.session, skippedHunter.id, {
+    type: 'game.skip_speech',
+    payload: { reason: '没有新的信息' },
+  });
   const skipped = await dispatch(skippedCase.session, skippedHunter.id, {
     type: 'game.hunter_shoot',
     payload: { targetId: null },
@@ -168,7 +174,7 @@ test('atomic exile victory ends the game before the next night', async () => {
   for (let round = 0; round < 2; round += 1) {
     const lastWords = await dispatch(session, wolf.id, {
       type: 'game.skip_speech',
-      payload: {},
+      payload: { reason: '暂时没有新的信息' },
     });
     assert.equal(
       lastWords.events.some(
@@ -181,4 +187,64 @@ test('atomic exile victory ends the game before the next night', async () => {
   }
   assert.equal(session.serialize().state.gameState.phase, 'ended');
   assert.equal(session.serialize().state.gameState.winner, 'good');
+});
+
+test('last words skip requires a reason and records a reasoned skip', async () => {
+  const { session, players } = await createDaySession(() => undefined);
+  const exiled = players.find((player) => player.role === 'villager')!;
+  for (const voter of players.filter((player) => player.id !== exiled.id)) {
+    await dispatch(session, voter.id, {
+      type: 'game.vote',
+      payload: { targetId: exiled.id },
+    });
+  }
+  await dispatch(session, exiled.id, {
+    type: 'game.vote',
+    payload: { targetId: players.find((player) => player.id !== exiled.id)!.id },
+  });
+  assert.equal(session.serialize().state.dayFlow.stage, 'last_words');
+
+  const missingReason = await dispatch(session, exiled.id, {
+    type: 'game.skip_speech',
+    payload: {},
+  });
+  assert.equal(missingReason.ok, false);
+  assert.equal(missingReason.code, 'REASON_REQUIRED');
+  assert.equal(session.serialize().state.dayFlow.lastWordsRemaining, 2);
+
+  const skipped = await dispatch(session, exiled.id, {
+    type: 'game.skip_speech',
+    payload: { reason: '懒得说' },
+  });
+  assert.equal(skipped.ok, true);
+  assert.deepEqual(skipped.events[0]?.payload, {
+    actorId: exiled.id,
+    lastWords: true,
+    reason: '懒得说',
+  });
+});
+
+test('normal last words speech remains a public event', async () => {
+  const { session, players } = await createDaySession(() => undefined);
+  const exiled = players.find((player) => player.role === 'villager')!;
+  for (const voter of players.filter((player) => player.id !== exiled.id)) {
+    await dispatch(session, voter.id, {
+      type: 'game.vote',
+      payload: { targetId: exiled.id },
+    });
+  }
+  await dispatch(session, exiled.id, {
+    type: 'game.vote',
+    payload: { targetId: players.find((player) => player.id !== exiled.id)!.id },
+  });
+  const spoken = await dispatch(session, exiled.id, {
+    type: 'game.speak',
+    payload: { content: '我的判断基于第一天的票型。' },
+  });
+  assert.equal(spoken.ok, true);
+  assert.deepEqual(spoken.events[0]?.payload, {
+    actorId: exiled.id,
+    content: '我的判断基于第一天的票型。',
+    lastWords: true,
+  });
 });

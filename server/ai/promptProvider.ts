@@ -58,6 +58,8 @@ export class PromptAIProvider implements AIProvider {
         players: context.players,
         playerId: context.playerId,
         role: context.role,
+        phase: context.phase,
+        stage: context.stage,
         promptContext,
       });
       if (parsed.ok === false) {

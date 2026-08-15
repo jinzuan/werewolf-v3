@@ -49,7 +49,7 @@ const ACTION_HELP: Record<GameAction, string> = {
   poison: '选择一名其他存活玩家使用毒药。',
   skip_night: '放弃当前角色的夜间行动。',
   speak: '向公开时间线提交本轮发言。',
-  skip_speech: '跳过当前发言机会。',
+  skip_speech: '白天可直接跳过；遗言阶段若放弃，必须填写理由（例如“懒得说”）。',
   vote: '仅显示本轮服务端规则允许的候选人。',
   abstain: '本轮允许弃票。',
   hunter_shoot: '选择一名其他存活玩家开枪。',
@@ -155,12 +155,16 @@ export function GamePage() {
       : null;
   const message =
     actionDraft.activeAction === activeAction ? actionDraft.message : '';
+  const lastWordsSkip =
+    activeAction === 'skip_speech' && state?.phase === 'lastWords';
+  const showsTextInput = definition?.input === 'text' || lastWordsSkip;
   const notifiedHealTarget = healTargetId(events);
   const resolvedTarget =
     activeAction === 'heal' ? notifiedHealTarget : selectedTarget;
   const canSubmit =
     activeAction !== null &&
-    (definition?.input === 'immediate' ||
+    ((definition?.input === 'immediate' && !lastWordsSkip) ||
+      (lastWordsSkip && message.trim().length > 0) ||
       (definition?.input === 'text' && message.trim().length > 0) ||
       (definition?.input === 'confirm' && resolvedTarget !== null) ||
       (definition?.input === 'target' &&
@@ -338,7 +342,7 @@ export function GamePage() {
                     {activeAction ? ACTION_HELP[activeAction] : ''}
                   </p>
 
-                  {definition?.input === 'text' ? (
+                  {showsTextInput ? (
                     <Input
                       value={message}
                       onChange={(event) =>
@@ -348,6 +352,9 @@ export function GamePage() {
                         }))
                       }
                       placeholder={
+                        lastWordsSkip
+                          ? '填写放弃遗言的理由'
+                          :
                         activeAction === 'wolf_speak'
                           ? '发送到狼人频道'
                           : '输入本轮公开发言'

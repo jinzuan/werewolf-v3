@@ -236,6 +236,42 @@ test('last words distinguishes an invisible fact from a service record that was 
   assert.match(prompt.user, /第1晚：平安夜/);
 });
 
+test('last-words skip requires a reason in the prompt and parser', () => {
+  const lastWordsContext = context({
+    phase: 'lastWords',
+    stage: 'last_words',
+    allowedCommandTypes: ['game.speak', 'game.skip_speech'],
+    promptContext: {
+      ...context().promptContext,
+      lastWordsRound: 2,
+      lastWordsRoundsRemaining: 1,
+      legalActions: ['speak', 'skip_speech'],
+    },
+  });
+  const prompt = buildAIPrompt(lastWordsContext);
+  assert.match(prompt.user, /skip_speech.*reason/);
+  assert.match(prompt.user, /不得静默/);
+
+  const withReason = parseAIOutput(
+    '{"action":"skip_speech","reason":"懒得说"}',
+    lastWordsContext,
+  );
+  assert.equal(withReason.ok, true);
+  if (withReason.ok) {
+    assert.deepEqual(withReason.command, {
+      type: 'game.skip_speech',
+      payload: { reason: '懒得说' },
+    });
+  }
+
+  const withoutReason = parseAIOutput(
+    '{"action":"skip_speech"}',
+    lastWordsContext,
+  );
+  assert.equal(withoutReason.ok, false);
+  if (!withoutReason.ok) assert.equal(withoutReason.code, 'REASON_REQUIRED');
+});
+
 test('legacy last words use the same death ledger and retain seer checks on dead targets', () => {
   const legacyPlayers = [
     { ...players[0], role: 'seer' as const, isAlive: false },

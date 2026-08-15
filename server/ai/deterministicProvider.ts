@@ -53,7 +53,13 @@ export class DeterministicAIProvider implements AIProvider {
     }
     if (allowed.has('game.skip_speech')) {
       return {
-        command: { type: 'game.skip_speech' as const, payload: {} },
+        command: {
+          type: 'game.skip_speech' as const,
+          payload:
+            context.phase === 'lastWords' || context.stage === 'last_words'
+              ? { reason: '没有新的信息可补充' }
+              : {},
+        },
         reason: 'deterministic speech skip',
       };
     }

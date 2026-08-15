@@ -273,7 +273,9 @@ export const buildGameCommand = ({
           }
         : null;
     case 'skip_speech':
-      return { type: 'game.skip_speech', payload: {} };
+      return content.trim()
+        ? { type: 'game.skip_speech', payload: { reason: content.trim().slice(0, 80) } }
+        : { type: 'game.skip_speech', payload: {} };
     case 'vote':
       return targetId
         ? { type: 'game.vote', payload: { targetId } }

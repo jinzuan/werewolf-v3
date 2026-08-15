@@ -205,7 +205,15 @@ export const OnlineGameRoom = ({ onNavigate }: { onNavigate: (path: string) => v
   };
   const handleWolfNextSpeaker = () => doAction({ t: 'wolf-next-speaker' });
   const handleHunterShoot = (targetId: string) => doAction({ t: 'hunter-shoot', targetId });
-  const handleSkipSpeech = () => doAction({ t: 'skip-speech' });
+  const handleSkipSpeech = () => {
+    if (gameState?.phase === 'lastWords') {
+      const reason = window.prompt('请填写放弃遗言的理由（例如“懒得说”）')?.trim();
+      if (!reason) return;
+      doAction({ t: 'skip-speech', reason });
+      return;
+    }
+    doAction({ t: 'skip-speech' });
+  };
   const handleStartVote = () => doAction({ t: 'start-vote' });
   const handleReviewSpeak = () => {
     if (reviewInput.trim()) {

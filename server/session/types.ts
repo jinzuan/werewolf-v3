@@ -45,6 +45,7 @@ export interface CommandResult {
     | 'ACTOR_NOT_FOUND'
     | 'ACTOR_DEAD'
     | 'ACTION_NOT_ALLOWED'
+    | 'REASON_REQUIRED'
     | 'INVALID_TARGET'
     | 'INVALID_COMMAND';
   events: DomainEvent[];
