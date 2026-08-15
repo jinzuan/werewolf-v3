@@ -30,7 +30,7 @@ export function RoomPage() {
         <Card className="v3-empty-state">
           <ShieldAlert size={24} />
           <strong>当前没有该房间的有效身份</strong>
-          <span>请从大厅使用邀请令牌加入，或恢复已保存的身份。</span>
+          <span>请从大厅使用房间码和邀请口令加入，或恢复已保存的身份。</span>
         </Card>
       </AppShell>
     );

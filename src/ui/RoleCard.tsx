@@ -1,9 +1,12 @@
 import type { ReactNode } from 'react';
+import type { Role } from '../../shared/types';
 import { cn } from '../lib/utils';
+import { roleAssetMap } from './assetRegistry';
 
 export type RoleFaction = 'village' | 'wolf' | 'neutral';
 
 interface RoleCardProps {
+  role?: Role;
   name: string;
   faction: string;
   factionTone?: RoleFaction;
@@ -16,6 +19,7 @@ interface RoleCardProps {
 }
 
 export function RoleCard({
+  role,
   name,
   faction,
   factionTone = 'village',
@@ -28,7 +32,9 @@ export function RoleCard({
 }: RoleCardProps) {
   const content = (
     <>
-      <span className="ww-role-card__badge" aria-hidden="true">{badge || '徽'}</span>
+      <span className="ww-role-card__badge">
+        {role ? <img src={roleAssetMap[role].src} alt="" aria-hidden="true" /> : badge || '徽'}
+      </span>
       <span className="ww-role-card__body">
         <strong>{name}</strong>
         <span className={`ww-role-card__faction ww-role-card__faction--${factionTone}`}>

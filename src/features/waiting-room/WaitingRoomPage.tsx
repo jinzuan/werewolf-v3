@@ -273,9 +273,8 @@ export function WaitingRoomPage() {
         />
 
         <Card className="waiting-room__footer-note">
-          <span>房间修订号</span>
-          <strong className="v3-numeric">{room.roomRevision}</strong>
-          <span>· 刷新或重连后会从服务端恢复最新房间状态。</span>
+          <span>房间状态会自动同步</span>
+          <span>· 刷新或重连后会恢复最新房间信息。</span>
         </Card>
       </div>
     </AppShell>

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-labelledby="title">
+  <title id="title">月影村狼人杀</title>
+  <rect width="32" height="32" rx="8" fill="#17213B"/>
+  <circle cx="17" cy="16" r="9" fill="#FFD166" stroke="#8B6B4A" stroke-width="1.5"/>
+  <path d="M7 10 11 4l4 5 5-3 3 5 5-2-3 12H8Z" fill="#8E4A6B" stroke="#FFF4D6" stroke-width="1.5" stroke-linejoin="round"/>
+  <circle cx="15" cy="15" r="1.2" fill="#FFF4D6"/>
+  <circle cx="21" cy="15" r="1.2" fill="#FFF4D6"/>
+</svg>

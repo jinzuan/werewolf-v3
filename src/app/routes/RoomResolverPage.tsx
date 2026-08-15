@@ -91,7 +91,7 @@ export function RoomResolverPage() {
     <AppShell title="正在恢复房间" eyebrow="房间入口" connected={connected}>
       <Card className="v3-empty-state" aria-live="polite">
         <strong>正在恢复房间状态</strong>
-        <span>正在核对当前身份与服务端房间权限，请稍候。</span>
+        <span>正在核对你的房间身份，请稍候。</span>
       </Card>
     </AppShell>
   );

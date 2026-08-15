@@ -32,7 +32,7 @@ export function WaitingRoomHeader({
         <div>
           <span className="waiting-room__eyebrow">{roomModeLabel(room.config.mode)}</span>
           <h1 id="waiting-room-title">{room.name}</h1>
-          <p>房间事实来自服务端，成员和席位会实时更新。</p>
+          <p>成员、席位和准备状态会实时更新。</p>
         </div>
         <Badge tone={room.status === 'starting' ? 'purple' : 'gold'}>
           {WAITING_STATUS_LABELS[room.status]}

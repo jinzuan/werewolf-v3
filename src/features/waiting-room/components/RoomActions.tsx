@@ -58,7 +58,7 @@ export function RoomActions({
           <ShieldAlert size={20} />
         </div>
         <div>
-          <span className="waiting-room__eyebrow">按服务端授权显示</span>
+          <span className="waiting-room__eyebrow">可用操作</span>
           <h2 id="room-actions-title">房间操作</h2>
         </div>
         {isHost ? <Badge tone="gold">房主</Badge> : null}
@@ -111,7 +111,7 @@ export function RoomActions({
           </Button>
         ) : isHost && room.status === 'ready_check' ? (
           <p className="waiting-room__action-hint">
-            开局按钮会在所有服务端检查通过后出现。
+            开局按钮会在所有检查通过后出现。
           </p>
         ) : null}
 
