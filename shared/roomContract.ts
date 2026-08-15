@@ -29,20 +29,27 @@ export const READY_POLICIES = ['all_connected_humans'] as const;
 
 export type ReadyPolicy = (typeof READY_POLICIES)[number];
 
-/** Host-supplied provider settings for computer players. Secrets are never
- * included in RoomConfigView or any RoomView projection. */
+/** Non-sensitive provider settings safe to persist with a room. */
 export type RoomAIProvider = 'siliconflow' | 'deepseek' | 'local' | 'custom';
 export type RoomAIBehavior = 'aggressive' | 'conservative' | 'random';
 
-export interface RoomAIConfig {
+export interface RoomAIProviderConfig {
   provider: RoomAIProvider;
   model: string;
-  apiKey: string;
-  token: string;
   endpoint: string;
   temperature: number;
   maxTokens: number;
   behavior: RoomAIBehavior;
+}
+
+/**
+ * Create-time input only. `apiKey`/`token` are accepted over the protected
+ * transport and are immediately moved to the server SecretStore; they must
+ * never be copied into RoomRecord, RoomView, events, or logs.
+ */
+export interface RoomAIConfig extends RoomAIProviderConfig {
+  apiKey?: string;
+  token?: string;
 }
 
 export interface RoomRolePreset {
@@ -86,6 +93,7 @@ export interface CreateRoomOptionsV31 {
   readyPolicy: ReadyPolicy;
   allowPublicSpectators: boolean;
   reviewEnabled: boolean;
+  /** Create-time only; values are moved to SecretStore immediately. */
   aiConfig?: RoomAIConfig;
 }
 

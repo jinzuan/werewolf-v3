@@ -2,6 +2,7 @@ import type { GameCommand } from '../../shared/protocol';
 import type { AIConfig, GameAction } from '../../shared/types';
 import { AI_TIMEOUT_MS } from '../../shared/config/aiDefaults';
 import { loadAIConfig } from '../config';
+import { EndpointPolicy, EndpointPolicyError } from '../security/endpointPolicy';
 import type {
   AIProvider,
   AIProviderError,
@@ -12,6 +13,7 @@ import { AIProviderError as ProviderError } from './types';
 
 interface ProviderSettings {
   key: string;
+  provider: 'siliconflow' | 'deepseek' | 'local';
   endpoint: string;
   apiKey: string;
   model: string;
@@ -26,6 +28,7 @@ export interface HttpAIProviderOptions {
   timeoutMs?: number;
   maxRetries?: number;
   baseDelayMs?: number;
+  endpointPolicy?: EndpointPolicy;
 }
 
 interface ResponseEnvelope {
@@ -99,6 +102,7 @@ const settingsFor = (config: AIConfig): ProviderSettings => {
         : config.local;
   return {
     key: `${config.apiType}:${endpoint}:${selected.model}`,
+    provider: config.apiType,
     endpoint,
     apiKey: selected.apiKey,
     model: selected.model,
@@ -334,6 +338,7 @@ export class HttpAIProvider implements AIProvider {
   private readonly maxRetries: number;
   private readonly baseDelayMs: number;
   private readonly behavior: AIConfig['defaultBehavior'];
+  private readonly endpointPolicy: EndpointPolicy;
 
   constructor(
     config: AIConfig = loadAIConfig(),
@@ -348,6 +353,7 @@ export class HttpAIProvider implements AIProvider {
     this.timeoutMs = options.timeoutMs ?? AI_TIMEOUT_MS;
     this.maxRetries = options.maxRetries ?? 2;
     this.baseDelayMs = options.baseDelayMs ?? 250;
+    this.endpointPolicy = options.endpointPolicy ?? new EndpointPolicy();
   }
 
   async suggest(context: AIRequestContext): Promise<AISuggestion> {
@@ -382,6 +388,18 @@ export class HttpAIProvider implements AIProvider {
   private async requestOnce(
     prompt: { system: string; user: string },
   ): Promise<ResponseEnvelope> {
+    let endpoint: string;
+    try {
+      endpoint = (await this.endpointPolicy.validate(this.settings.endpoint, {
+        provider: this.settings.provider,
+        allowReservedTestHost: this.fetchImpl !== globalThis.fetch,
+      })).url;
+    } catch (error) {
+      if (error instanceof EndpointPolicyError) {
+        throw new ProviderError('endpoint_policy', 0);
+      }
+      throw error;
+    }
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
@@ -392,7 +410,7 @@ export class HttpAIProvider implements AIProvider {
     });
     try {
       const response = await Promise.race([
-        this.fetchImpl(this.settings.endpoint, {
+        this.fetchImpl(endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -410,12 +428,16 @@ export class HttpAIProvider implements AIProvider {
               { role: 'user', content: prompt.user },
             ],
           }),
+          redirect: 'manual',
           signal: controller.signal,
         }),
         timeout,
       ]);
       if (response.status === 429) {
         return { status: response.status, headers: response.headers };
+      }
+      if (response.status >= 300 && response.status < 400) {
+        throw new ProviderError('redirect_blocked', 0, response.status);
       }
       if (!response.ok) {
         throw new ProviderError('http_error', 0, response.status);

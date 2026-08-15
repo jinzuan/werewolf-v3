@@ -3,23 +3,68 @@ import type { ClientAction, RoomCreateOptions, Snapshot, ArchiveRecord, RoomSumm
 
 /**
  * src/net/socket.ts — 联机模式 socket.io 客户端单例。
- * 默认连接地址：<页面 host>:3001（手机/电脑同房时通过访问 PC 的页面地址自动命中），
- * 可在 OnlineLobby 里手动改成局域网 IP。
+ * V3 生产连接只允许 HTTPS/WSS；开发 HTTP 例外仅允许 loopback。
  */
 
 const SERVER_URL_KEY = 'wolf-server-url';
 let socket: Socket | null = null;
 let serverUrl = getStoredServerUrl();
 
-function getStoredServerUrl(): string {
+const buildMode = String((import.meta.env as Record<string, unknown>).MODE ?? 'development');
+const configuredServerUrl = (import.meta.env as Record<string, unknown>).VITE_V3_SERVER_URL;
+
+const isLoopback = (hostname: string): boolean =>
+  ['localhost', '127.0.0.1', '::1'].includes(hostname.toLowerCase());
+
+export class SocketConfigurationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SocketConfigurationError';
+  }
+}
+
+export const validateSocketUrl = (value: string): string => {
+  let parsed: URL;
   try {
-    const saved = localStorage.getItem(SERVER_URL_KEY);
-    if (saved) return saved;
+    parsed = new URL(value);
+  } catch {
+    throw new SocketConfigurationError('服务器地址无效');
+  }
+  const pageProtocol = window.location.protocol;
+  const explicitDevelopment = (import.meta.env as Record<string, unknown>).VITE_WW_ENV;
+  const environment = explicitDevelopment === 'production' || buildMode === 'production'
+    ? 'production'
+    : explicitDevelopment === 'test' ? 'test' : 'development';
+  if (environment === 'production' || pageProtocol === 'https:') {
+    if (parsed.protocol !== 'https:') {
+      throw new SocketConfigurationError('HTTPS 页面不能连接明文 HTTP/WS 服务');
+    }
+  } else if (parsed.protocol === 'http:' && (!isLoopback(parsed.hostname) || !['development', 'test'].includes(environment))) {
+    throw new SocketConfigurationError('开发/测试明文服务只能使用 loopback 地址');
+  } else if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new SocketConfigurationError('服务器地址必须使用 HTTPS 或 HTTP');
+  }
+  if (parsed.username || parsed.password || parsed.hash) {
+    throw new SocketConfigurationError('服务器地址不能包含用户信息或片段');
+  }
+  return parsed.origin;
+};
+
+function getStoredServerUrl(): string {
+  if (typeof configuredServerUrl === 'string' && configuredServerUrl.trim()) {
+    return validateSocketUrl(configuredServerUrl.trim());
+  }
+  let saved: string | null = null;
+  try {
+    saved = localStorage.getItem(SERVER_URL_KEY);
   } catch {
     /* ignore */
   }
-  const hostname = window.location.hostname || 'localhost';
-  return `http://${hostname}:3001`;
+  if (saved) return validateSocketUrl(saved);
+  const page = window.location;
+  if (page.protocol === 'https:') return page.origin;
+  const hostname = page.hostname || 'localhost';
+  return validateSocketUrl(`http://${isLoopback(hostname) ? hostname : '127.0.0.1'}:3001`);
 }
 
 export function getServerUrl(): string {
@@ -27,9 +72,9 @@ export function getServerUrl(): string {
 }
 
 export function setServerUrl(url: string): void {
-  serverUrl = url;
+  serverUrl = validateSocketUrl(url);
   try {
-    localStorage.setItem(SERVER_URL_KEY, url);
+    localStorage.setItem(SERVER_URL_KEY, serverUrl);
   } catch {
     /* ignore */
   }

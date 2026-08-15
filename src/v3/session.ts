@@ -3,6 +3,7 @@ import type {
   IdentityCredentials,
   RoomView,
 } from '../../shared/protocol';
+import { SENSITIVE_KEYS } from '../../shared/redact';
 
 export const V3_SESSION_KEY = 'werewolf-v3-session';
 export const V3_SESSION_VERSION = 2 as const;
@@ -66,6 +67,7 @@ export const readV3Session = (
     const raw = storage.getItem(V3_SESSION_KEY);
     if (!raw) return null;
     const value = JSON.parse(raw) as unknown;
+    if (containsForbiddenSessionSecrets(value)) return null;
     if (
       !isRecord(value) ||
       value.version !== V3_SESSION_VERSION ||
@@ -91,13 +93,36 @@ export const writeV3Session = (
   session: V3Session | null,
 ): void => {
   if (session) {
+    if (containsForbiddenSessionSecrets(session)) {
+      throw new Error('拒绝将敏感 AI 凭据写入浏览器会话存储');
+    }
     storage.setItem(V3_SESSION_KEY, JSON.stringify(session));
   } else {
     storage.removeItem(V3_SESSION_KEY);
   }
 };
 
-const SENSITIVE_KEYS = new Set([
+const containsForbiddenSessionSecrets = (
+  value: unknown,
+  path: string[] = [],
+  seen = new Set<object>(),
+): boolean => {
+  if (!value || typeof value !== 'object') return false;
+  if (seen.has(value)) return false;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    return value.some((child, index) => containsForbiddenSessionSecrets(child, [...path, String(index)], seen));
+  }
+  return Object.entries(value as Record<string, unknown>).some(([key, child]) => {
+    const normalized = key.replace(/[-\s]/g, '_').toLowerCase();
+    const allowedCredential = path[0] === 'credentials' &&
+      ['resumetoken', 'jointoken', 'omniscienttoken', 'resume_token', 'join_token', 'omniscient_token'].includes(normalized);
+    if (SENSITIVE_KEYS.has(normalized) && !allowedCredential) return true;
+    return containsForbiddenSessionSecrets(child, [...path, normalized], seen);
+  });
+};
+
+const ROOM_SENSITIVE_KEYS = new Set([
   'joinToken',
   'resumeToken',
   'omniscientToken',
@@ -150,7 +175,7 @@ const containsKeys = (
 
 export const containsSensitiveKeys = (
   value: unknown,
-): boolean => containsKeys(value, SENSITIVE_KEYS);
+): boolean => containsKeys(value, ROOM_SENSITIVE_KEYS);
 
 export const isPublicRoomViewSafe = (room: RoomView): boolean =>
   !containsKeys(room, ROOM_PRIVATE_KEYS);

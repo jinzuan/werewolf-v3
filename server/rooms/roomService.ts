@@ -12,7 +12,7 @@ import type {
   RoomView,
 } from '../../shared/protocol';
 import { AI_DEFAULTS } from '../../shared/config/aiDefaults';
-import type { RoomAIConfig } from '../../shared/roomContract';
+import type { RoomAIConfig, RoomAIProviderConfig } from '../../shared/roomContract';
 import type { AIConfig, GameAction, Player, Role } from '../../shared/types';
 import { AIOrchestrator } from '../ai/orchestrator';
 import { DeterministicAIProvider } from '../ai/deterministicProvider';
@@ -29,6 +29,14 @@ import { RoomPolicy, RoomPolicyError, roomCounts } from './roomPolicy';
 import { RoomProjector, assertIdentityRoom } from './roomProjector';
 import type { RoomRepository } from './repository';
 import { RoomRevisionConflictError } from './repository';
+import {
+  EndpointPolicy,
+  EndpointPolicyError,
+} from '../security/endpointPolicy';
+import {
+  InMemoryCredentialStore,
+  type RoomCredentialStore,
+} from '../security/roomCredentialStore';
 import type {
   CreateRoomRequest,
   JoinRoomRequest,
@@ -59,10 +67,12 @@ const stableValue = (value: unknown): unknown => {
 
 const createFingerprint = (options: CreateRoomOptionsV31): string => {
   const nonSecret = { ...options } as Record<string, unknown>;
-  // Credentials are deliberately not part of the request identity. This
-  // lets a caller retry with the same durable claim without persisting or
-  // comparing secret material.
-  delete nonSecret.aiConfig;
+  // Credentials are deliberately not part of the request identity, while
+  // provider/model/endpoint tuning remains part of the frozen create input.
+  if (options.aiConfig) {
+    const { apiKey: _apiKey, token: _token, ...providerConfig } = options.aiConfig;
+    nonSecret.aiConfig = providerConfig;
+  }
   return JSON.stringify(stableValue(nonSecret));
 };
 
@@ -116,6 +126,9 @@ export interface RoomServiceOptions {
   projector?: RoomProjector;
   startCoordinator?: GameStartCoordinator;
   startLeaseMs?: number;
+  credentialStore?: RoomCredentialStore;
+  credentialNamespace?: string;
+  endpointPolicy?: EndpointPolicy;
 }
 
 export class RoomService {
@@ -135,6 +148,9 @@ export class RoomService {
   private readonly policy: RoomPolicy;
   private readonly projector: RoomProjector;
   private readonly starter: GameStartCoordinator;
+  private readonly credentialStore: RoomCredentialStore;
+  private readonly credentialNamespace: string;
+  private readonly endpointPolicy: EndpointPolicy;
   private readonly legacyRoomCodes = new Set<string>();
   private legacyCompatibility = false;
   private legacyCreatePending = false;
@@ -145,6 +161,9 @@ export class RoomService {
     private readonly eventStore: EventStore,
     private readonly options: RoomServiceOptions = {},
   ) {
+    if (process.env.WW_ENV === 'production' && !options.credentialStore) {
+      throw new Error('production RoomService requires an injected encrypted RoomCredentialStore');
+    }
     this.aiProvider = options.aiProvider ?? new DeterministicAIProvider();
     this.catalog = options.catalog ?? defaultRoomCatalogService;
     this.policy = options.policy ?? new RoomPolicy({ registry: this.catalog.registry });
@@ -154,6 +173,9 @@ export class RoomService {
         policy: this.policy,
         registry: this.catalog.registry,
       });
+    this.credentialStore = options.credentialStore ?? new InMemoryCredentialStore();
+    this.credentialNamespace = options.credentialNamespace ?? process.env.WW_DEPLOYMENT_NAMESPACE ?? 'development';
+    this.endpointPolicy = options.endpointPolicy ?? new EndpointPolicy();
     this.starter =
       options.startCoordinator ??
       new GameStartCoordinator(repository, {
@@ -172,6 +194,17 @@ export class RoomService {
   async restore(): Promise<number> {
     this.closed = false;
     const rooms = await this.repository.list();
+    for (const room of rooms) {
+      if (!room.config?.credentialRef) continue;
+      try {
+        await this.credentialStore.assertAvailable?.(
+          { namespace: this.credentialNamespace, roomCode: room.code },
+          room.config.credentialRef,
+        );
+      } catch {
+        throw this.error('SECRET_STORE_UNAVAILABLE', 'room.error.secret_store_unavailable');
+      }
+    }
     for (const room of rooms) {
       if (room.status === 'starting') {
         await this.recoverStartingRoom(room.code);
@@ -212,6 +245,36 @@ export class RoomService {
     const fingerprint = createFingerprint(options);
     const roomId = randomUUID();
     const roomCode = await this.uniqueCode();
+    let candidateCredentialRef: string | undefined;
+    if (options.aiConfig) {
+      const aiConfig = this.normalizeRoomAIConfig(options.aiConfig);
+      if (!aiConfig) throw this.error('INVALID_ROOM_CONFIG', 'room.error.invalid_ai_config');
+      try {
+        await this.endpointPolicy.validate(aiConfig.endpoint, {
+          provider: aiConfig.provider,
+        });
+        candidateCredentialRef = await this.credentialStore.put(
+          { namespace: this.credentialNamespace, roomCode },
+          { apiKey: options.aiConfig.apiKey, token: options.aiConfig.token },
+        );
+        config.credentialRef = candidateCredentialRef;
+      } catch (error) {
+        if (candidateCredentialRef) {
+          await this.credentialStore.delete(
+            { namespace: this.credentialNamespace, roomCode },
+            candidateCredentialRef,
+          ).catch(() => undefined);
+        }
+        if (error instanceof EndpointPolicyError) {
+          throw this.error('AI_ENDPOINT_NOT_ALLOWED', 'room.error.ai_endpoint_not_allowed', undefined, [{
+            path: 'aiConfig.endpoint',
+            messageKey: 'room.error.ai_endpoint_not_allowed',
+            errorCode: error.code,
+          }]);
+        }
+        throw this.error('SECRET_STORE_UNAVAILABLE', 'room.error.secret_store_unavailable');
+      }
+    }
     if (this.legacyCreatePending) {
       this.legacyRoomCodes.add(roomCode);
       this.legacyCreatePending = false;
@@ -232,35 +295,52 @@ export class RoomService {
       ready: config.mode === 'quick_computer' ? null : false,
       avatarId: options.creator.avatarId,
     };
-    const claim = await this.repository.createOrGetByRequest(
-      createRequestId,
-      request.actorId,
-      fingerprint,
-      () => ({
-        id: roomId,
-        code: roomCode,
-        name: options.roomName.trim(),
-        joinToken: token(),
-        omniscientToken: token(),
-        hostId: request.actorId,
-        maxPlayers: config.maxPlayers,
-        status: 'waiting',
-        auto: config.mode === 'quick_computer',
-        debugMode: false,
-        config,
-        configLocked: false,
-        roomRevision: 1,
-        configRevision: 1,
-        schemaVersion: 1,
-        members: [host],
-        players: config.mode === 'quick_computer'
-          ? []
-          : [makePlayer(roomId, host, request.actorId)],
-        recentRoomCommands: [],
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      }),
-    );
+    let claim: Awaited<ReturnType<RoomRepository['createOrGetByRequest']>>;
+    try {
+      claim = await this.repository.createOrGetByRequest(
+        createRequestId,
+        request.actorId,
+        fingerprint,
+        () => ({
+          id: roomId,
+          code: roomCode,
+          name: options.roomName.trim(),
+          joinToken: token(),
+          omniscientToken: token(),
+          hostId: request.actorId,
+          maxPlayers: config.maxPlayers,
+          status: 'waiting',
+          auto: config.mode === 'quick_computer',
+          debugMode: false,
+          config,
+          configLocked: false,
+          roomRevision: 1,
+          configRevision: 1,
+          schemaVersion: 1,
+          members: [host],
+          players: config.mode === 'quick_computer'
+            ? []
+            : [makePlayer(roomId, host, request.actorId)],
+          recentRoomCommands: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        }),
+      );
+    } catch (error) {
+      if (candidateCredentialRef) {
+        await this.credentialStore.delete(
+          { namespace: this.credentialNamespace, roomCode },
+          candidateCredentialRef,
+        ).catch(() => undefined);
+      }
+      throw error;
+    }
+    if (!claim.created && candidateCredentialRef && claim.room.config?.credentialRef !== candidateCredentialRef) {
+      await this.credentialStore.delete(
+        { namespace: this.credentialNamespace, roomCode },
+        candidateCredentialRef,
+      ).catch(() => undefined);
+    }
 
     if (claim.room.config?.mode === 'quick_computer') {
       await this.resumeQuickCreate(claim.room.code, request.actorId, createRequestId);
@@ -457,9 +537,10 @@ export class RoomService {
     config: RoomConfigView,
     expectedRoomRevision: number,
   ): Promise<RoomView> {
+    const existing = await this.requireRoom(identity.roomCode);
     const input = {
       ...config,
-      roomName: (await this.requireRoom(identity.roomCode)).name,
+      roomName: existing.name,
       creator: { name: '房主', avatarId: 'avatar-default' },
     };
     const result = this.catalog.validator.validate(input);
@@ -468,8 +549,11 @@ export class RoomService {
       const next = result.config as RoomConfigRecord;
       room.config = {
         ...clone(next),
-        ...(next.mode !== 'human' && room.config?.aiConfig
-          ? { aiConfig: clone(room.config.aiConfig) }
+        ...(next.mode !== 'human' && room.config?.aiProviderConfig
+          ? { aiProviderConfig: clone(room.config.aiProviderConfig) }
+          : {}),
+        ...(next.mode !== 'human' && room.config?.credentialRef
+          ? { credentialRef: room.config.credentialRef }
           : {}),
       };
       room.maxPlayers = next.maxPlayers;
@@ -479,6 +563,10 @@ export class RoomService {
         if (member.kind === 'player' && !member.isAI) member.ready = false;
       });
     });
+    const updated = await this.requireRoom(identity.roomCode);
+    if (existing.config?.credentialRef && !updated.config?.credentialRef) {
+      await this.deleteRoomCredential(existing);
+    }
     return this.get(identity.roomCode, identity.actorId);
   }
 
@@ -562,6 +650,9 @@ export class RoomService {
     });
     const current = await this.repository.get(identity.roomCode);
     if (!current || current.members.length === 0) {
+      if (current?.config?.credentialRef) {
+        await this.deleteRoomCredential(current);
+      }
       await this.repository.remove(identity.roomCode);
       return undefined;
     }
@@ -603,6 +694,7 @@ export class RoomService {
     for (const key of [...this.connectionLeases.keys()]) {
       if (key.startsWith(`${tombstone.code}:`)) this.connectionLeases.delete(key);
     }
+    await this.deleteRoomCredential(tombstone);
     await this.repository.remove(identity.roomCode);
   }
 
@@ -655,7 +747,18 @@ export class RoomService {
   }
 
   async getRecord(roomCode: string): Promise<RoomRecord | undefined> {
-    return this.repository.get(roomCode);
+    const room = await this.repository.get(roomCode);
+    // Compatibility for the pre-C in-process diagnostic API. It is
+    // deliberately non-enumerable and contains no credential values; all
+    // persisted/projection shapes use aiProviderConfig + credentialRef.
+    if (room?.config?.aiProviderConfig) {
+      Object.defineProperty(room.config, 'aiConfig', {
+        configurable: true,
+        enumerable: false,
+        value: { ...room.config.aiProviderConfig, apiKey: '', token: '' },
+      });
+    }
+    return room;
   }
 
   session(roomCode: string): GameSession | undefined {
@@ -677,9 +780,26 @@ export class RoomService {
     const result = this.catalog.validator.validate(options);
     if (result.ok === false) throw this.validationError(result);
     const config = clone(result.config as RoomConfigRecord);
-    const aiConfig = this.normalizeRoomAIConfig(options.aiConfig);
-    if (aiConfig) config.aiConfig = aiConfig;
+    const aiProviderConfig = this.normalizeRoomAIConfig(options.aiConfig);
+    if (aiProviderConfig) {
+      const { apiKey: _apiKey, token: _token, ...nonSecretConfig } = aiProviderConfig;
+      config.aiProviderConfig = nonSecretConfig as RoomAIProviderConfig;
+    }
     return config;
+  }
+
+  private async deleteRoomCredential(room: RoomRecord): Promise<void> {
+    const credentialRef = room.config?.credentialRef;
+    if (!credentialRef) return;
+    try {
+      await this.credentialStore.delete(
+        { namespace: this.credentialNamespace, roomCode: room.code },
+        credentialRef,
+      );
+    } catch {
+      // Keep the room lifecycle committed. The store operation is safe to
+      // retry by an operator and its logs must never contain the secret.
+    }
   }
 
   private createdAccess(room: RoomRecord, actorId: string): RoomAccess {
@@ -806,8 +926,8 @@ export class RoomService {
     return {
       provider: raw.provider as RoomAIConfig['provider'],
       model,
-      apiKey: typeof raw.apiKey === 'string' ? raw.apiKey.trim().slice(0, 512) : '',
-      token: typeof raw.token === 'string' ? raw.token.trim().slice(0, 512) : '',
+      ...(typeof raw.apiKey === 'string' ? { apiKey: raw.apiKey.trim().slice(0, 4_096) } : {}),
+      ...(typeof raw.token === 'string' ? { token: raw.token.trim().slice(0, 4_096) } : {}),
       endpoint,
       temperature: typeof raw.temperature === 'number' && Number.isFinite(raw.temperature)
         ? Math.min(2, Math.max(0, raw.temperature))
@@ -819,8 +939,8 @@ export class RoomService {
     };
   }
 
-  private providerForRoom(room: RoomRecord): AIProvider {
-    const roomConfig = room.config?.aiConfig;
+  private async providerForRoom(room: RoomRecord): Promise<AIProvider> {
+    const roomConfig = room.config?.aiProviderConfig;
     if (!roomConfig) return this.aiProvider;
     const roomKey = room.code.toUpperCase();
     const existing = this.roomAIProviders.get(roomKey);
@@ -835,12 +955,22 @@ export class RoomService {
         ? providerConfig.deepseek
         : providerConfig.local;
     selected.model = roomConfig.model;
-    selected.apiKey = roomConfig.token || roomConfig.apiKey;
+    // The credential value exists only in this short-lived provider object;
+    // it is never copied into the RoomRecord or any projection.
+    const credential = room.config?.credentialRef
+      ? this.credentialStore.get(
+          { namespace: this.credentialNamespace, roomCode: room.code },
+          room.config.credentialRef,
+      )
+      : Promise.resolve(undefined);
+    const values = await credential;
+    selected.apiKey = values?.token || values?.apiKey || '';
     selected.temperature = roomConfig.temperature;
     selected.maxTokens = roomConfig.maxTokens;
     if (providerConfig.apiType === 'local') providerConfig.local.apiUrl = roomConfig.endpoint;
     const provider = new HttpAIProvider(providerConfig, {
       timeoutMs: this.options.aiTimeoutMs,
+      endpointPolicy: this.endpointPolicy,
     });
     this.roomAIProviders.set(roomKey, provider);
     return provider;
@@ -1088,7 +1218,7 @@ export class RoomService {
         playerId: actor.id,
         role: actor.role,
       });
-      const provider = this.providerForRoom(room);
+      const provider = await this.providerForRoom(room);
       const promptContext = provider.requiresPromptContext
         ? buildAIRuntimeContext({
             actorId: actor.id,

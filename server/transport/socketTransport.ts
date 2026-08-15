@@ -9,6 +9,11 @@ import type {
 } from '../../shared/protocol';
 import type { RoomAccess, SocketIdentity } from '../rooms/types';
 import { RoomService, RoomServiceError } from '../rooms/roomService';
+import {
+  effectiveRequestProtocol,
+  isAllowedOrigin,
+  type RuntimeSecurityConfig,
+} from '../security/runtimeSecurityConfig';
 
 interface SocketState {
   identity?: SocketIdentity;
@@ -60,12 +65,17 @@ const STABLE_CODES = new Set<ProtocolErrorCode>([
   'GAME_START_FAILED',
   'INVALID_ROLE_SETUP',
   'IDEMPOTENCY_KEY_REUSED',
+  'AI_ENDPOINT_NOT_ALLOWED',
+  'INSECURE_TRANSPORT',
+  'SECRET_STORE_UNAVAILABLE',
+  'LEGACY_SECRET_DATA',
   'UNKNOWN_ERROR',
 ]);
 
 export interface SocketTransportOptions {
   /** Test-only fault injection: commit create, then discard exactly one ACK. */
   dropCreateAckOnce?: boolean;
+  security?: RuntimeSecurityConfig;
 }
 
 const errorResponse = (error: unknown): ProtocolAckError => {
@@ -195,6 +205,17 @@ export function bindSocketTransport(
   });
 
   io.on('connection', (socket) => {
+    if (options.security) {
+      const origin = socket.handshake.headers.origin;
+      const protocol = effectiveRequestProtocol(socket.handshake.headers, options.security.trustProxy);
+      if (
+        (origin && !isAllowedOrigin(origin, options.security)) ||
+        (options.security.environment === 'production' && protocol !== 'https')
+      ) {
+        socket.disconnect(true);
+        return;
+      }
+    }
     const bind = async (
       access: RoomAccess,
       actorId: string,

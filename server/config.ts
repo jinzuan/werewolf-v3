@@ -17,7 +17,6 @@ const normalizeServerUrl = (url: string): string =>
   url
     .replace(/\/api\/lm-studio\/?$/, '')
     .replace('http://localhost:1234', 'http://127.0.0.1:1234')
-    .replace('https://localhost:1234', 'http://127.0.0.1:1234')
     .replace(/^http:\/\/localhost(?::|$)/, 'http://127.0.0.1$1');
 
 export function loadAIConfig(): AIConfig {

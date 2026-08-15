@@ -1,40 +1,86 @@
-/**
- * redact.ts — 日志层统一脱敏（雲鵺 A4.14，P0）。
- * 服务端 console 日志与 debug:log 共用同一份脱敏函数。
- * 调试环形缓冲**不录** AI 请求头原始值（apiKey 只在服务端，任何日志/缓冲只出现 Bearer ***后4位）。
- */
+/** Shared recursive redaction boundary for logs, diagnostics and debug buffers. */
 
-/** Bearer <key> → Bearer ***<后4位>；非 Authorization 形态原样返回 */
+export const SENSITIVE_KEYS = new Set([
+  'aiconfig',
+  'apikey',
+  'api_key',
+  'access_token',
+  'accesstoken',
+  'authorization',
+  'credential',
+  'credentialref',
+  'join_token',
+  'jointoken',
+  'omniscient_token',
+  'omniscienttoken',
+  'password',
+  'resume_token',
+  'resumetoken',
+  'secret',
+  'token',
+]);
+
+const normalizedKey = (key: string): string => key.replace(/[-\s]/g, '_').toLowerCase();
+const isSensitiveKey = (key: string): boolean => {
+  const normalized = normalizedKey(key);
+  return SENSITIVE_KEYS.has(normalized) ||
+    normalized.endsWith('apikey') || normalized.endsWith('accesstoken');
+};
+
+/** Bearer <key> → Bearer ***<后4位>; raw values are never retained by key-aware redaction. */
 export const redactAuthorization = (text: string): string => {
   if (!text) return text;
   return text.replace(
-    /Bearer\s+([A-Za-z0-9._-]+)/gi,
-    (_, token: string) => `Bearer ***${token.length > 4 ? token.slice(-4) : '****'}`
+    /Bearer\s+([^\s,;]+)/gi,
+    (_, token: string) => `Bearer ***${token.length > 4 ? token.slice(-4) : '****'}`,
   );
 };
 
-/** 通用敏感值脱敏：key 出现即脱敏（含对象序列化后的字符串、URL query 里的 key=...） */
+/** Redact common key=value/JSON forms without echoing the complete URL query. */
 export const redactSensitive = (text: string): string => {
   if (!text) return text;
-  let t = redactAuthorization(text);
-  t = t.replace(/(api[_-]?key|apikey|authorization|token|secret)\s*[:=]\s*"?[A-Za-z0-9._-]+"?/gi, '$1=***');
-  return t;
+  let result = redactAuthorization(text);
+  result = result.replace(
+    /([?&](?:api[_-]?key|access[_-]?token|authorization|credential|secret|token|password)=)([^&#\s,;]+)/gi,
+    '$1***',
+  );
+  result = result.replace(
+    /(["']?(?:api[_-]?key|apikey|access[_-]?token|authorization|credential(?:ref)?|secret|token|password|joinToken|resumeToken|omniscientToken)["']?\s*[:=]\s*["']?)([^"'&\s,}]+)/gi,
+    '$1***',
+  );
+  return result;
 };
 
-/** 递归脱敏任意 JSON 结构（日志对象/快照字段用；返回新对象，不改入参） */
-export const redactJson = (value: unknown): unknown => {
+export const containsSensitiveKeys = (
+  value: unknown,
+  seen = new Set<object>(),
+): boolean => {
+  if (!value || typeof value !== 'object') return false;
+  if (seen.has(value)) return false;
+  seen.add(value);
+  if (Array.isArray(value)) return value.some((item) => containsSensitiveKeys(item, seen));
+  return Object.entries(value as Record<string, unknown>).some(([key, child]) =>
+    isSensitiveKey(key) || containsSensitiveKeys(child, seen));
+};
+
+/**
+ * Sensitive values are replaced at the key boundary, including aliases that
+ * are easy to miss in nested provider/config payloads. The input is cloned.
+ */
+export const redactJson = (value: unknown, seen = new Map<object, unknown>()): unknown => {
   if (typeof value === 'string') return redactSensitive(value);
-  if (Array.isArray(value)) return value.map((v) => redactJson(v));
-  if (value && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      if (typeof v === 'string' && /authorization|api[_-]?key|token|secret/i.test(k)) {
-        out[k] = redactSensitive(v);
-      } else {
-        out[k] = redactJson(v);
-      }
-    }
+  if (!value || typeof value !== 'object') return value;
+  if (seen.has(value)) return seen.get(value);
+  if (Array.isArray(value)) {
+    const out: unknown[] = [];
+    seen.set(value, out);
+    for (const item of value) out.push(redactJson(item, seen));
     return out;
   }
-  return value;
+  const out: Record<string, unknown> = {};
+  seen.set(value, out);
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    out[key] = isSensitiveKey(key) ? '[REDACTED]' : redactJson(child, seen);
+  }
+  return out;
 };
