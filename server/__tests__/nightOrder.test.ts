@@ -58,6 +58,17 @@ test('night order is guard_seer then wolf discussion/vote then witch then resolv
   );
   assert.equal(session.serialize().state.night.stage, 'wolf_discussion');
 
+  const wolfSpeech = await dispatch(session, wolves[0].id, {
+    type: 'game.wolf_speak',
+    payload: { content: '先看票型，今晚统一刀口。' },
+  });
+  assert.equal(wolfSpeech.ok, true);
+  assert.equal(wolfSpeech.events[0]?.eventType, 'wolf.message');
+  assert.equal(
+    (wolfSpeech.events[0]?.payload as { content: string }).content,
+    '先看票型，今晚统一刀口。',
+  );
+
   for (const wolf of wolves) {
     const result = await dispatch(session, wolf.id, {
       type: 'game.wolf_vote',
@@ -66,6 +77,18 @@ test('night order is guard_seer then wolf discussion/vote then witch then resolv
     assert.equal(result.ok, true);
   }
   assert.equal(session.serialize().state.night.stage, 'witch');
+  const wolfEvents = await session.eventsFor({
+    kind: 'player',
+    playerId: wolves[0].id,
+    role: 'wolf',
+  });
+  assert.ok(wolfEvents.some((event) => event.eventType === 'wolf.message'));
+  assert.ok(wolfEvents.some((event) => event.eventType === 'wolf.vote_cast'));
+  const killLocked = wolfEvents.find((event) => event.eventType === 'wolf.kill_locked');
+  assert.equal(
+    (killLocked?.payload as { targetId: string }).targetId,
+    villager.id,
+  );
 
   const witchResult = await dispatch(session, witch.id, {
     type: 'game.skip_night',

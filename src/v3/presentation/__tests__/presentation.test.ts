@@ -92,6 +92,23 @@ test('事件模板只显示安全中文，未知事件不回显原始值', () =>
   );
 });
 
+test('狼人时间线展示逐狼投票目标，普通视角只看到安全提示', () => {
+  const playerName = (id: string | null) => id === 'p1' ? '一号玩家' : id === 'p2' ? '二号玩家' : '未知目标';
+  const vote = event('wolf.vote_cast', { actorId: 'p1', targetId: 'p2' });
+  assert.equal(
+    describeEvent(vote, playerName, {
+      viewer: { kind: 'player', playerId: 'p1', role: 'wolf' },
+    }),
+    '一号玩家已投向二号玩家。',
+  );
+  assert.equal(
+    describeEvent(vote, playerName, {
+      viewer: { kind: 'player', playerId: 'p2', role: 'villager' },
+    }),
+    '一号玩家已提交狼人投票。',
+  );
+});
+
 test('未知错误码使用安全兜底并提供恢复意图', () => {
   assert.equal(getErrorMessage('not-a-protocol-code'), '请求未完成，请稍后重试。');
   assert.equal(getErrorMessage('__proto__'), '请求未完成，请稍后重试。');

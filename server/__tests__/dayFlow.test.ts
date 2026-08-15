@@ -117,7 +117,30 @@ test('exiled hunter gets two last words rounds and one validated shot', async ()
     session.players.find((player) => player.id === wolf.id)?.isAlive,
     false,
   );
+  assert.equal(shot.events.some((event) => event.eventType === 'hunter.shot'), true);
   assert.equal(session.serialize().state.gameState.phase, 'night');
+
+  const skippedCase = await createDaySession(() => undefined);
+  const skippedHunter = skippedCase.players.find((player) => player.role === 'hunter')!;
+  const skippedWolf = skippedCase.players.find((player) => player.role === 'wolf')!;
+  for (const voter of skippedCase.players.filter((player) => player.id !== skippedHunter.id)) {
+    await dispatch(skippedCase.session, voter.id, {
+      type: 'game.vote',
+      payload: { targetId: skippedHunter.id },
+    });
+  }
+  await dispatch(skippedCase.session, skippedHunter.id, {
+    type: 'game.vote',
+    payload: { targetId: skippedWolf.id },
+  });
+  await dispatch(skippedCase.session, skippedHunter.id, { type: 'game.skip_speech', payload: {} });
+  await dispatch(skippedCase.session, skippedHunter.id, { type: 'game.skip_speech', payload: {} });
+  const skipped = await dispatch(skippedCase.session, skippedHunter.id, {
+    type: 'game.hunter_shoot',
+    payload: { targetId: null },
+  });
+  assert.equal(skipped.ok, true);
+  assert.equal(skipped.events.some((event) => event.eventType === 'hunter.shot_skipped'), true);
 });
 
 test('atomic exile victory ends the game before the next night', async () => {

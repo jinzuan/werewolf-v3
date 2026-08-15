@@ -7,7 +7,7 @@
  * RoomEngine 真实实现驱动。规则一改，test-drive 无需跟改（消除第三套实现）。
  *
  * 事件输出格式与旧版对齐（qc.py 解析不变）：
- *   - 完整发言：第N天 X: 全文（轮次） / 第N天 X: 全文 [mock]（自由讨论）
+ *   - 完整发言：第N天 X: 全文（轮次/自由讨论；来源写入结构化日志 source）
  *   - PK 争辩：第N天 PK X: 全文
  *   - 投票：第N天 X 投→Y（理由：...） / 第N天 X PK投→Y（理由：...）
  *   - 遗言：第N天 X 遗言: ...
@@ -27,6 +27,7 @@ import { pathToFileURL } from 'url';
 import { RoomEngine, type EngineAIAdapter, type EngineHub } from './server/engine';
 import { getAlivePlayers } from './shared/gameLogic';
 import type { AIConfig, Player, Role, Message, NightAction } from './shared/types';
+import type { GameTimelineEvent } from './shared/protocol';
 import { PERSONAS, getPlayerMemory } from './shared/memorySystem';
 import { AI_DEFAULTS } from './shared/config/aiDefaults';
 
@@ -34,9 +35,6 @@ const args = process.argv.slice(2);
 const REAL = args.includes('--real');
 const countArg = args.find((a) => /^\d+$/.test(a));
 const PLAYER_COUNT = Math.min(Math.max(Number(countArg) || 12, 4), 12);
-
-// v2.4.6 P1：自由讨论阶段 mock 输出打 [mock] 标记（real 模式下 qc.py 剔除，防止 mock 模板污染套话率/①.9）
-const MOCK_MARKER = '[mock]';
 
 // 可复现伪随机（mulberry32）；可用环境变量 WW_SEED 覆盖
 const seedEnv = Number(process.env.WW_SEED);
@@ -389,9 +387,6 @@ const makeAdapter = (): EngineAIAdapter => {
 
   // 记录每次广播中新出现的【公告】system 消息（死讯/出局透传）——按内容去重，防数组长度差异漏扫
   const announced = new Set<string>();
-  // 狼人刀杀行每晚只发一次（多狼×多轮讨论会重复触发，qc ①.8b 重复检测会误判）
-  let lastWolfKillDay = -1;
-
   const ensureDayState = (day: number) => {
     if (day !== lastDay) {
       lastDay = day;
@@ -415,6 +410,7 @@ const makeAdapter = (): EngineAIAdapter => {
   return {
     resetExperienceCache() {},
     resetSpeechRepeatCache() {},
+    source: REAL && ai ? 'real_ai' : 'template',
 
     async callAIApi(
       config, role, playerName, playersIn, messagesIn, gamePhase, day,
@@ -443,10 +439,6 @@ const makeAdapter = (): EngineAIAdapter => {
         const aliveOthers = getAlivePlayers(playersIn).filter((x) => x.id !== undefined && x.name !== playerName && x.isAlive);
         const target = aliveOthers.length ? pickOne(aliveOthers) : null;
         if (target) {
-          if (lastWolfKillDay !== day) {
-            lastWolfKillDay = day;
-            events.push(`第${day}晚 狼人刀杀 ${target.name}`);
-          }
           return `我觉得{${target.name}}今天的节奏最带偏，建议这轮刀他，理由是他发言和票型都对不上。`;
         }
         return '我信息少，先听大家分析。';
@@ -457,9 +449,8 @@ const makeAdapter = (): EngineAIAdapter => {
           const resp = await ai.callAIApi(aiConfig ?? config, role, playerName, playersIn, messagesIn, gamePhase, day, _nightActions, _gameHistory, _currentSpeaker, _speakerOrder, _wolfRound, _playerId, _customUserPrompt, isSorter);
           const text = (resp || '').trim();
           if (text && !/^游戏已中止/.test(text)) {
-            const marker = gamePhase === '自由讨论' ? ` ${MOCK_MARKER}` : '';
             if (gamePhase === '自由讨论') events.push(`第${day}天[自由讨论] 插话: ${playerName}`);
-            events.push(`第${day}天 ${playerName}: ${truncateSpeech(text, gamePhase === '自由讨论' ? 150 : isSorter ? 300 : 100)}${marker}`);
+            events.push(`第${day}天 ${playerName}: ${truncateSpeech(text, gamePhase === '自由讨论' ? 150 : isSorter ? 300 : 100)}`);
             speechesToday.set(_playerId || playerName, text);
           }
           return text;
@@ -469,7 +460,7 @@ const makeAdapter = (): EngineAIAdapter => {
         const speech = isSorter ? genSortingSpeech(p || playersIn[0], day, rh) : genSpeech(p || playersIn[0], day);
         const truncated = truncateSpeech(speech, gamePhase === '自由讨论' ? 150 : isSorter ? 300 : 100);
         if (gamePhase === '自由讨论') events.push(`第${day}天[自由讨论] 插话: ${playerName}`);
-        events.push(`第${day}天 ${playerName}: ${truncated}${gamePhase === '自由讨论' ? ` ${MOCK_MARKER}` : ''}`);
+        events.push(`第${day}天 ${playerName}: ${truncated}`);
         speechesToday.set(_playerId || playerName, truncated);
         return truncated;
       }
@@ -506,7 +497,39 @@ const makeAdapter = (): EngineAIAdapter => {
         return text;
       }
 
-      // 复盘等其它阶段：不产出内容
+      if (gamePhase === '复盘') {
+        if (REAL && ai) {
+          return await ai.callAIApi(
+            aiConfig ?? config,
+            role,
+            playerName,
+            playersIn,
+            messagesIn,
+            gamePhase,
+            day,
+            _nightActions,
+            _gameHistory,
+            _currentSpeaker,
+            _speakerOrder,
+            _wolfRound,
+            _playerId,
+            _customUserPrompt,
+            isSorter,
+          );
+        }
+        if (_customUserPrompt?.includes('全场合议')) {
+          return '本局关键在于把公开票型和夜间信息对齐；下一局先核对证据链，再决定归票。';
+        }
+        if (_customUserPrompt?.includes('狼人队内部')) {
+          return '狼队应在夜聊明确主刀与备选，并把投票理由和最终刀口对齐，减少分票。';
+        }
+        if (_customUserPrompt?.includes('好人队内部')) {
+          return '好人应及时共享可验证信息，区分事实与猜测，避免重复追逐没有新证据的怀疑。';
+        }
+        return '复盘时只保留可验证的行动和票型，下一局根据新证据更新判断。';
+      }
+
+      // 其它阶段：不产出内容
       return '';
     },
 
@@ -606,12 +629,32 @@ const waitForGameEnd = (engine: RoomEngine, timeoutMs: number): Promise<void> =>
   return new Promise((resolve) => {
     const start = Date.now();
     const timer = setInterval(() => {
-      if (engine.winnerTeam || (Date.now() - start) > timeoutMs) {
+      const reviewDone = !engine.review.enabled || engine.review.stage === 'done';
+      if ((engine.winnerTeam && reviewDone) || (Date.now() - start) > timeoutMs) {
         clearInterval(timer);
         resolve();
       }
     }, 200);
   });
+};
+
+const timelineLine = (event: GameTimelineEvent): string => {
+  const payload = event.payload;
+  const actor = event.actorName || '狼人';
+  switch (event.eventType) {
+    case 'wolf.message':
+      return `第${event.day}晚 狼人讨论 ${actor}: ${String(payload.content || '')}`;
+    case 'wolf.vote_cast':
+      return `第${event.day}晚 狼队投票 ${actor}→${String(payload.targetName || '跳过')}`;
+    case 'wolf.kill_locked':
+      return payload.targetName
+        ? `第${event.day}晚 狼人刀杀 ${String(payload.targetName)}`
+        : `第${event.day}晚 狼人决定不杀人`;
+    case 'hunter.shot':
+      return `第${event.day}天 猎人开枪 ${String(payload.targetName || '目标')}`;
+    case 'hunter.shot_skipped':
+      return `第${event.day}天 猎人选择不开枪`;
+  }
 };
 
 const main = async () => {
@@ -643,13 +686,17 @@ const main = async () => {
 
   // 用 engine 真实规则分配身份（assignRoles 在 beginRoles 内部完成）
   players = initialPlayers;
-  const hub: EngineHub = { broadcastRoom() {}, destroyRoom() {} };
+  const hub: EngineHub = {
+    broadcastRoom() {},
+    destroyRoom() {},
+    onTimelineEvent: (event) => events.push(timelineLine(event)),
+  };
   const engine = new RoomEngine({
     roomName: 'QC模拟局',
     maxPlayers: PLAYER_COUNT,
-    reviewEnabled: false,
+    reviewEnabled: true,
     auto: true,
-    noArchive: true,
+    noArchive: false,
     aiAdapter: makeAdapter(),
     hub,
   });
@@ -679,10 +726,12 @@ const main = async () => {
   const personaLine = engine.players.map((p) => `${p.name}:${playerPersona[p.name] || '未知'}`).join(', ');
 
   const header: string[] = [];
+  const outputSource = REAL && ai ? 'real_ai' : 'template';
   header.push(`# 人设表 ${personaLine}`);
   header.push(`# 身份表 ${identity}`);
   header.push('# 规则 屠边（神职全死或平民全死 → 狼胜；狼全死 → 好人胜）');
-  if (REAL) header.push('# 模式 real（真实AI调用）；模板模式为默认');
+  header.push(`# source ${outputSource}`);
+  if (outputSource === 'real_ai') header.push('# 模式 real（真实AI调用）；模板模式为默认');
 
   const winner = engine.winnerTeam;
   const day = engine.game?.day ?? 1;

@@ -5,6 +5,7 @@ import type {
   NightAction,
   Player,
   Role,
+  AIOutputSource,
 } from './types';
 import type {
   DomainEvent,
@@ -40,6 +41,32 @@ export interface ReviewState {
   /** 同阵营复盘时当前进行中的阵营（meeting 时为空） */
   team: 'wolf' | 'good' | null;
   startedAt: number | null;
+}
+
+/** Durable action log used by the legacy engine/archive bridge. */
+export const GAME_TIMELINE_EVENT_TYPES = [
+  'wolf.message',
+  'wolf.vote_cast',
+  'wolf.kill_locked',
+  'hunter.shot',
+  'hunter.shot_skipped',
+] as const;
+
+export type GameTimelineEventType = (typeof GAME_TIMELINE_EVENT_TYPES)[number];
+
+export interface GameTimelineEvent {
+  id: string;
+  roomId: string;
+  day: number;
+  phase: GameState['phase'];
+  occurredAt: string;
+  eventType: GameTimelineEventType;
+  actorId?: string;
+  actorName?: string;
+  visibility: 'wolf_private' | 'public_timeline';
+  payload: Record<string, unknown>;
+  /** AI-authored events identify whether the output came from a provider or template. */
+  source?: AIOutputSource;
 }
 
 /** 服务端推送给单个客户端的个性化快照（身份视角已按观看者做掩码） */
@@ -163,6 +190,8 @@ export interface ArchiveRecord {
   reviewMessages: Message[];
   /** 复盘归档的经验心得 */
   insights: Array<{ role: Role; text: string }>;
+  /** 狼队协作与猎人行动的结构化时间线；旧存档缺省为空。 */
+  timelineEvents?: GameTimelineEvent[];
   kind: 'online' | 'auto'; // auto = 斗蛐蛐
 }
 

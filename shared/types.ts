@@ -1,5 +1,8 @@
 export type Role = 'wolf' | 'seer' | 'witch' | 'hunter' | 'villager' | 'guardian';
 
+/** Origin of AI-authored output in a durable log. */
+export type AIOutputSource = 'real_ai' | 'template';
+
 export const NIGHT_STAGES = [
   'guard_seer',
   'wolf_discussion',
@@ -159,6 +162,8 @@ export interface Message {
   content: string;
   timestamp: Date;
   type: 'public' | 'private' | 'system' | 'whisper' | 'wolf_chat' | 'night_action';
+  /** Present for AI-authored messages; human/system messages omit it. */
+  source?: AIOutputSource;
 }
 
 export interface SiliconflowConfig {

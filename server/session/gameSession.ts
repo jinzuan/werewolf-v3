@@ -547,7 +547,13 @@ export class GameSession {
       return [
         this.event(
           'wolf.vote_cast',
-          { actorId: actor.id },
+          {
+            actorId: actor.id,
+            targetId,
+            targetName: targetId
+              ? this.state.players.find((player) => player.id === targetId)?.name ?? null
+              : null,
+          },
           'wolf_private',
           undefined,
           correlationId,

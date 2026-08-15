@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { ArchiveRecord } from '../shared/protocol';
+import type { ArchiveRecord, GameTimelineEvent } from '../shared/protocol';
 import type { GameState, Message, Player } from '../shared/types';
 import { atomicWriteFileSync } from './filePersistence';
 
@@ -9,6 +9,7 @@ export interface PersistedRoom {
   joinToken: string; hostId: string | null; players: Player[];
   spectators: Array<{ id: string; name: string }>; game: GameState | null;
   messages: Message[]; wolfChat: Message[]; gameStarted: boolean;
+  timelineEvents?: GameTimelineEvent[];
   winnerTeam: 'wolf' | 'good' | null; aborted: boolean; auto: boolean;
   settings: { hunterShootOnGuardHealDeath: boolean; reviewEnabled: boolean };
   debugMode: boolean; savedAt: number;

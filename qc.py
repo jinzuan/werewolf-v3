@@ -54,8 +54,9 @@ LEGACY_SELECT_KILL_RE = re.compile(r"选择击杀")
 # 必须用 re.match 取模式名——原 `line.split()[-1]` 会取到行尾注释（"为默认"），导致 real 恒判失败（83 处漏报）
 MODE_RE = re.compile(r"^#\s*模式\s+([^\s（(]+)")
 
-# v2.4.6 P1：自由讨论 mock 标记（test-drive 自由讨论阶段打 [mock]，real 模式剔除，防 mock 模板污染套话率/①.9）
+# v2.4.6 P1 兼容：旧日志自由讨论 mock 标记（新日志使用结构化 source 字段）
 MOCK_MARKER = "[mock]"
+SOURCE_RE = re.compile(r"^#\s*source\s+(real_ai|template)\s*$")
 
 # v2.4.9 任务8：门禁标记行（aiClient 硬门禁输出"（与XX发言高度重复，简略表态）"）——
 # 不是真实发言，是防复读拦截的占位，QC 统计时必须排除（防 ①.5/①.9 把占位当模板计数污染指标）
@@ -188,8 +189,12 @@ def parse_events(path: str):
         print(f"{RED}[QC] 找不到文件: {path}{RESET}")
         sys.exit(1)
 
-    # v2.4.6 P1：预扫模式标识（real 模式下 [mock] 行剔除，保证解析前 mode 已知）
+    # 预扫结构化 source；旧日志仍回退到模式行。
     for line in lines:
+        sm = SOURCE_RE.match(line.strip())
+        if sm:
+            mode = "real" if sm.group(1) == "real_ai" else "template"
+            break
         lm = MODE_RE.match(line.strip())
         if lm:
             mode = lm.group(1).strip() or "template"
@@ -219,6 +224,10 @@ def parse_events(path: str):
         m = MODE_RE.match(line)
         if m:
             mode = m.group(1).strip() or "template"
+            continue
+        m = SOURCE_RE.match(line)
+        if m:
+            mode = "real" if m.group(1) == "real_ai" else "template"
             continue
         if line.startswith("#"):
             continue

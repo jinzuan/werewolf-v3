@@ -1,4 +1,4 @@
-import type { AIConfig, GameState, Message, Player, Role, NightAction } from '../shared/types';
+import type { AIConfig, AIOutputSource, GameState, Message, Player, Role, NightAction } from '../shared/types';
 import { randomInt, randomBytes } from 'node:crypto';
 import {
   createInitialGameState,
@@ -22,18 +22,34 @@ import {
 } from '../shared/aiClient';
 import type { GameHistory } from '../shared/aiClient';
 import { initGameMemory } from '../shared/memorySystem';
-import { addReviewInsight, buildReviewPrompt } from '../shared/experienceReview';
+import { addReviewInsight, buildReviewPrompt, setReviewStorageBackend } from '../shared/experienceReview';
 import { loadAIConfig } from './config';
-import { loadReviewStore, saveReviewStore, addArchive } from './persistence';
+import { loadReviewStore, saveReviewStore, addArchive, serverStorage } from './persistence';
 import type { PersistedRoom } from './persistence';
-import type { Snapshot, ReviewState, ArchiveRecord, ReviewStage, DebugSnapshot, DebugLogEntry } from '../shared/protocol';
+import type {
+  Snapshot,
+  ReviewState,
+  ArchiveRecord,
+  ReviewStage,
+  DebugSnapshot,
+  DebugLogEntry,
+  GameTimelineEvent,
+  GameTimelineEventType,
+} from '../shared/protocol';
 import { redactSensitive } from '../shared/redact';
+// The shared review helper uses a browser-shaped storage key. Map it to the
+// server archive key so generated insights survive a process restart.
+setReviewStorageBackend({
+  get: (key) => serverStorage.get(key === 'wolf-exp-review-v1' ? 'review-insights' : key),
+  set: (key, value) => serverStorage.set(key === 'wolf-exp-review-v1' ? 'review-insights' : key, value),
+});
 
 export interface EngineHub {
   broadcastRoom(roomCode: string): void;
   destroyRoom(roomCode: string): void;
   emitDebug?(roomCode: string, event: 'debug:snapshot' | 'debug:log'): void;
   persistRoom?(room: PersistedRoom): void;
+  onTimelineEvent?(event: GameTimelineEvent): void;
 }
 
 /**
@@ -46,6 +62,8 @@ export interface EngineAIAdapter {
   generateAIThought: typeof import('../shared/aiClient').generateAIThought;
   resetExperienceCache: () => void;
   resetSpeechRepeatCache: () => void;
+  /** Source label for AI output injected by a headless driver. */
+  source?: AIOutputSource;
 }
 
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -124,7 +142,7 @@ export class RoomEngine {
   private hub: EngineHub;
   /** 阶段 0b：AI 适配器（可选，缺省=真实 aiClient；test-drive headless 注入用） */
   private aiAdapter: EngineAIAdapter | null = null;
-  /** 阶段 0b：headless 测试用——跳过复盘存档落盘（test-drive 不应污染 server/data/archives.json） */
+  /** Optional headless escape hatch for tests that must not write archives. */
   private noArchive: boolean;
 
   // 局中辅助状态
@@ -143,6 +161,7 @@ export class RoomEngine {
   private wolfDecisions: Record<string, { targetId: string; intention: string; reason: string }> = {};
   private thinkingPlayers: Record<string, number> = {};
   private reviewInsights: Array<{ role: Role; text: string }> = [];
+  private timelineEvents: GameTimelineEvent[] = [];
   private running = false;
   private loopPromise: Promise<void> | null = null;
   private waiters: Array<() => void> = [];
@@ -310,12 +329,13 @@ export class RoomEngine {
   }
 
   private toPersistedRoom(): PersistedRoom {
-    return { roomId: this.roomId, roomCode: this.roomCode, roomName: this.roomName, maxPlayers: this.maxPlayers, joinToken: this.joinToken, hostId: this.hostId, players: this.players, spectators: this.spectators, game: this.game, messages: this.messages, wolfChat: this.wolfChat, gameStarted: this.gameStarted, winnerTeam: this.winnerTeam, aborted: this.aborted, auto: this.auto, settings: this.settings, debugMode: this.debugMode, savedAt: Date.now() };
+    return { roomId: this.roomId, roomCode: this.roomCode, roomName: this.roomName, maxPlayers: this.maxPlayers, joinToken: this.joinToken, hostId: this.hostId, players: this.players, spectators: this.spectators, game: this.game, messages: this.messages, wolfChat: this.wolfChat, timelineEvents: this.timelineEvents, gameStarted: this.gameStarted, winnerTeam: this.winnerTeam, aborted: this.aborted, auto: this.auto, settings: this.settings, debugMode: this.debugMode, savedAt: Date.now() };
   }
 
   private restore(room: PersistedRoom): void {
     this.hostId = room.hostId; this.players = room.players || []; this.spectators = room.spectators || [];
     this.game = room.game || null; this.messages = room.messages || []; this.wolfChat = room.wolfChat || [];
+    this.timelineEvents = room.timelineEvents || [];
     this.gameStarted = !!room.gameStarted; this.winnerTeam = room.winnerTeam || null; this.aborted = !!room.aborted;
     this.settings = room.settings || this.settings; this.connected = {};
     this.players.forEach((player) => { this.connected[player.id] = false; });
@@ -368,7 +388,8 @@ export class RoomEngine {
   private makeMessage(
     who: { id: string; name: string },
     content: string,
-    type: Message['type']
+    type: Message['type'],
+    source?: AIOutputSource,
   ): Message {
     return {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -378,7 +399,49 @@ export class RoomEngine {
       content,
       timestamp: NOW(),
       type,
+      ...(source ? { source } : {}),
     };
+  }
+
+  private aiOutputSource(): AIOutputSource {
+    if (this.aiAdapter?.source) return this.aiAdapter.source;
+    const config = this.aiConfig;
+    if (config.apiType === 'siliconflow') {
+      return config.siliconflow.apiKey.trim() ? 'real_ai' : 'template';
+    }
+    if (config.apiType === 'deepseek') {
+      return config.deepseek.apiKey.trim() ? 'real_ai' : 'template';
+    }
+    return config.local.apiKey.trim() || config.local.apiUrl.trim()
+      ? 'real_ai'
+      : 'template';
+  }
+
+  private appendTimelineEvent(
+    eventType: GameTimelineEventType,
+    visibility: GameTimelineEvent['visibility'],
+    payload: Record<string, unknown>,
+    actor?: Player,
+    source?: AIOutputSource,
+  ): void {
+    const event: GameTimelineEvent = {
+      id: `${this.roomId}-${this.timelineEvents.length + 1}`,
+      roomId: this.roomId,
+      day: this.game?.day ?? 1,
+      phase: this.game?.phase ?? 'waiting',
+      occurredAt: new Date().toISOString(),
+      eventType,
+      visibility,
+      payload,
+      ...(actor ? { actorId: actor.id, actorName: actor.name } : {}),
+      ...(source ? { source } : {}),
+    };
+    this.timelineEvents.push(event);
+    this.hub.onTimelineEvent?.(structuredClone(event));
+  }
+
+  getTimelineEvents(): GameTimelineEvent[] {
+    return structuredClone(this.timelineEvents);
   }
 
   private addSystem(content: string): void {
@@ -461,6 +524,7 @@ export class RoomEngine {
     this.gameHistory = { nightResults: [], votes: {}, deadPlayers: [] };
     this.review = { enabled: this.settings.reviewEnabled, stage: 'idle', messages: [], team: null, startedAt: null };
     this.reviewInsights = [];
+    this.timelineEvents = [];
     this.wolfChat = [];
     this.messages = [];
     this.resetAI();
@@ -668,7 +732,15 @@ export class RoomEngine {
         if (w.isAI) {
           const text = await this.callWolfDiscussion(w);
           if (text && !isSkipResponse(text)) {
-            this.wolfChat.push(this.makeMessage(w, text, 'wolf_chat'));
+            const source = this.aiOutputSource();
+            this.wolfChat.push(this.makeMessage(w, text, 'wolf_chat', source));
+            this.appendTimelineEvent(
+              'wolf.message',
+              'wolf_private',
+              { content: text },
+              w,
+              source,
+            );
             this.pushRepeat(w.name, text, this.game.day);
             this.broadcast();
           }
@@ -706,6 +778,20 @@ export class RoomEngine {
           intention: targetId === 'skip' ? '跳过' : '击杀',
           reason: stated ? '讨论中明确目标' : '随机选择目标',
         };
+        this.appendTimelineEvent(
+          'wolf.vote_cast',
+          'wolf_private',
+          {
+            targetId: targetId === 'skip' ? null : targetId,
+            targetName: targetId === 'skip'
+              ? null
+              : this.players.find((p) => p.id === targetId)?.name ?? null,
+            intention: this.wolfDecisions[w.id].intention,
+            reason: this.wolfDecisions[w.id].reason,
+          },
+          w,
+          this.aiOutputSource(),
+        );
       } else {
         this.wolfVotes[w.id] = 'skip';
         this.broadcast();
@@ -718,6 +804,24 @@ export class RoomEngine {
             this.wolfVotes[w.id] = alive.length ? alive[Math.floor(Math.random() * alive.length)].id : 'skip';
           }
         );
+        if (!this.timelineEvents.some(
+          (event) => event.eventType === 'wolf.vote_cast' && event.actorId === w.id && event.day === this.game?.day,
+        )) {
+          const targetId = this.wolfVotes[w.id];
+          this.appendTimelineEvent(
+            'wolf.vote_cast',
+            'wolf_private',
+            {
+              targetId: targetId === 'skip' ? null : targetId ?? null,
+              targetName: targetId && targetId !== 'skip'
+                ? this.players.find((p) => p.id === targetId)?.name ?? null
+                : null,
+              intention: targetId === 'skip' ? '跳过' : '击杀',
+              reason: this.afkPlayers[w.id] ? '超时自动选择' : '狼群投票',
+            },
+            w,
+          );
+        }
       }
       this.game.wolfVotes = { ...this.wolfVotes };
       this.game.wolfVoteComplete = true;
@@ -725,6 +829,20 @@ export class RoomEngine {
     }
 
     const killTarget = this.resolveWolfVote();
+    const lockedTarget = killTarget && killTarget !== 'skip'
+      ? this.players.find((p) => p.id === killTarget)
+      : undefined;
+    this.appendTimelineEvent(
+      'wolf.kill_locked',
+      'wolf_private',
+      {
+        targetId: lockedTarget?.id ?? null,
+        targetName: lockedTarget?.name ?? null,
+        votes: { ...this.wolfVotes },
+      },
+      undefined,
+      wolves.every((wolf) => wolf.isAI) ? this.aiOutputSource() : undefined,
+    );
     if (killTarget && killTarget !== 'skip') {
       const target = this.players.find((p) => p.id === killTarget);
       this.game.nightActions.push({ playerId: 'wolf', action: 'kill', targetId: killTarget });
@@ -1246,7 +1364,7 @@ export class RoomEngine {
           const text = await this.callDaySpeech(speaker, '白天发言');
           if (!this.game || this.game.phase !== 'day' || this.game.dayPhase.phase !== 'round1') return;
           if (text && !isSkipResponse(text)) {
-            this.messages.push(this.makeMessage(speaker, text, 'public'));
+            this.messages.push(this.makeMessage(speaker, text, 'public', this.aiOutputSource()));
             this.game.dayPhase.allSkipped = false;
             this.broadcast();
           }
@@ -1294,7 +1412,7 @@ export class RoomEngine {
         const text = await this.callDaySpeech(p, '自由讨论');
         if (!this.game || this.game.phase !== 'day') return;
         if (text && !isSkipResponse(text)) {
-          this.messages.push(this.makeMessage(p, text, 'public'));
+          this.messages.push(this.makeMessage(p, text, 'public', this.aiOutputSource()));
           this.game.dayPhase.usedCount = { ...this.game.dayPhase.usedCount, [p.id]: used + 1 };
           this.game.dayPhase.allSkipped = false;
           spoke++;
@@ -1491,7 +1609,7 @@ export class RoomEngine {
         if (tp.isAI) {
           const text = await this.callTieDebate(tp);
           if (text && !isSkipResponse(text)) {
-            this.messages.push(this.makeMessage(tp, text, 'public'));
+            this.messages.push(this.makeMessage(tp, text, 'public', this.aiOutputSource()));
             this.broadcast();
           }
         } else {
@@ -1683,7 +1801,7 @@ export class RoomEngine {
       this.broadcast();
       const text = await this.callLastWords(p);
       if (text && !isSkipResponse(text)) {
-        this.messages.push(this.makeMessage(p, text, 'public'));
+        this.messages.push(this.makeMessage(p, text, 'public', this.aiOutputSource()));
         this.broadcast();
       }
       await this.sleep(500);
@@ -1785,8 +1903,20 @@ export class RoomEngine {
 
   private async afterHunterShoot(targetId: string | null): Promise<void> {
     if (!this.game) return;
+    const hunter = this.players.find((p) => p.id === this.game?.lastWordsPlayer && p.role === 'hunter');
+    const target = targetId ? this.players.find((p) => p.id === targetId) : undefined;
+    this.appendTimelineEvent(
+      targetId ? 'hunter.shot' : 'hunter.shot_skipped',
+      'public_timeline',
+      {
+        hunterId: hunter?.id ?? this.game.lastWordsPlayer,
+        targetId: target?.id ?? null,
+        targetName: target?.name ?? null,
+      },
+      hunter,
+      hunter?.isAI ? this.aiOutputSource() : undefined,
+    );
     if (targetId) {
-      const target = this.players.find((p) => p.id === targetId);
       this.players = this.players.map((p) => (p.id === targetId ? { ...p, isAlive: false } : p));
       this.recordDeath(target, this.game.day, '猎人枪');
       this.addSystem(`🔫 猎人开枪带走 ${target?.name || '目标'}！`);
@@ -1865,6 +1995,7 @@ export class RoomEngine {
           }
         } else if (this.game.phase === 'night' && p && isAlive && p.role === 'wolf') {
           this.wolfChat.push(this.makeMessage(p, content, 'wolf_chat'));
+          this.appendTimelineEvent('wolf.message', 'wolf_private', { content }, p);
           this.broadcast();
         }
         break;
@@ -1908,6 +2039,7 @@ export class RoomEngine {
         const content = limitContent(action.content);
         if (!content) break;
         this.wolfChat.push(this.makeMessage(p, content, 'wolf_chat'));
+        this.appendTimelineEvent('wolf.message', 'wolf_private', { content }, p);
         this.broadcast();
         break;
       }
@@ -1925,6 +2057,17 @@ export class RoomEngine {
           intention: target === 'skip' ? '跳过' : '击杀',
           reason: action.t === 'wolf-vote' ? '狼群投票' : '直接执行',
         };
+        this.appendTimelineEvent(
+          'wolf.vote_cast',
+          'wolf_private',
+          {
+            targetId: target === 'skip' ? null : target,
+            targetName: target === 'skip' ? null : this.players.find((x) => x.id === target)?.name ?? null,
+            intention: this.wolfDecisions[p.id].intention,
+            reason: this.wolfDecisions[p.id].reason,
+          },
+          p,
+        );
         this.game.wolfVotes = { ...this.wolfVotes };
         this.wake();
         this.broadcast();
@@ -2113,6 +2256,7 @@ export class RoomEngine {
     this.aborted = false;
     this.messages = [];
     this.wolfChat = [];
+    this.timelineEvents = [];
     this.deaths = [];
     this.players = this.players.map((p) => ({ ...p, role: null, isAlive: true, isReady: p.isAI }));
     this.review = { enabled: this.settings.reviewEnabled, stage: 'idle', messages: [], team: null, startedAt: null };
@@ -2192,7 +2336,7 @@ export class RoomEngine {
         + `产出必须是可迁移经验：无玩家名、无具体天数例子（对齐经验库口径）。发言 1-3 句，≤100 字，禁止套话模板、禁止复读。`
       );
       if (text) {
-        this.review.messages.push(this.makeMessage(m, text, 'public'));
+        this.review.messages.push(this.makeMessage(m, text, 'public', this.aiOutputSource()));
         this.broadcast();
       }
       await this.sleep(400);
@@ -2219,7 +2363,7 @@ export class RoomEngine {
         + `产出必须是可迁移经验：无玩家名、无具体天数例子。发言 1-3 句，≤100 字，禁止套话模板、禁止复读。`
       );
       if (text) {
-        this.review.messages.push(this.makeMessage(m, text, 'public'));
+        this.review.messages.push(this.makeMessage(m, text, 'public', this.aiOutputSource()));
         this.broadcast();
       }
       await this.sleep(400);
@@ -2331,6 +2475,7 @@ export class RoomEngine {
       deaths: this.deaths,
       reviewMessages: this.review.messages,
       insights: this.reviewInsights,
+      timelineEvents: this.timelineEvents,
       kind: this.auto ? 'auto' : 'online',
     };
     addArchive(record);

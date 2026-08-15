@@ -192,6 +192,12 @@ export const describeEvent = (
     case 'wolf.message':
       return `${actor}：${textValue(payload.content, '')}`.replace(/：$/, '');
     case 'wolf.vote_cast':
+      if (
+        isAdvancedView(event, options) ||
+        (options.viewer?.kind === 'player' && options.viewer.role === 'wolf')
+      ) {
+        return `${actor}已投向${target}。`;
+      }
       return `${actor}已提交狼人投票。`;
     case 'wolf.vote_unresolved':
       return '狼人尚未选出今晚的目标。';
