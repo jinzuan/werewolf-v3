@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { Player, Role } from '../../shared/types';
+import type { RoomAIProviderConfig } from '../../shared/roomContract';
 import {
   CURRENT_ROOM_SCHEMA_VERSION,
   type RoomConfigRecord,
@@ -175,6 +176,20 @@ const normalizeMembers = (room: RoomRecord): RoomMember[] => {
 
 const deriveConfig = (room: RoomRecord): RoomConfigRecord => {
   const source = room.config;
+  const legacyAI = source?.aiConfig as Record<string, unknown> | undefined;
+  const legacyProviderConfig = legacyAI && typeof legacyAI === 'object'
+    ? {
+        provider: legacyAI.provider,
+        model: legacyAI.model,
+        endpoint: legacyAI.endpoint,
+        temperature: legacyAI.temperature,
+        maxTokens: legacyAI.maxTokens,
+        behavior: legacyAI.behavior,
+      }
+    : undefined;
+  const sourceWithoutLegacyAI = source ? clone(source) : undefined;
+  if (sourceWithoutLegacyAI) delete sourceWithoutLegacyAI.aiConfig;
+  const aiProviderConfig = (source?.aiProviderConfig ?? legacyProviderConfig) as RoomAIProviderConfig | undefined;
   const sessionPlayers = room.session?.state.players ?? room.players ?? [];
   const assignedSetup = roleSetupFromPlayers(sessionPlayers);
   const maxPlayers =
@@ -202,7 +217,7 @@ const deriveConfig = (room: RoomRecord): RoomConfigRecord => {
   const aiCount = sessionPlayers.filter((player) => player.isAI).length;
 
   return {
-    ...(source ? clone(source) : {}),
+    ...(sourceWithoutLegacyAI ? clone(sourceWithoutLegacyAI) : {}),
     mode,
     visibility: source?.visibility ?? 'invite_only',
     maxPlayers,
@@ -226,6 +241,9 @@ const deriveConfig = (room: RoomRecord): RoomConfigRecord => {
     catalogVersion: source?.catalogVersion ?? DEFAULT_CATALOG_VERSION,
     readyPolicy: source?.readyPolicy ?? 'all_connected_humans',
     allowPublicSpectators: source?.allowPublicSpectators ?? false,
+    ...(aiProviderConfig && typeof aiProviderConfig === 'object'
+      ? { aiProviderConfig: clone(aiProviderConfig) }
+      : {}),
     // A migrated waiting record has no proof of the registry/version that
     // created it. Active records derive the display setup from the game that
     // already exists and must never be dealt again.
@@ -264,6 +282,11 @@ export const needsRoomMigration = (room: RoomRecord): boolean =>
  */
 export const migrateRoomRecord = (input: RoomRecord): RoomRecord => {
   const room = clone(input);
+  if (process.env.WW_ENV === 'production' && hasLegacyPlaintextCredentials(room)) {
+    const error = new Error('Room storage contains legacy plaintext AI credentials; run the offline secret migration.');
+    (error as Error & { code?: string }).code = 'LEGACY_SECRET_DATA';
+    throw error;
+  }
   const status = room.status as RoomStatus;
   const config = deriveConfig(room);
   const migrated: RoomRecord = {
@@ -297,6 +320,21 @@ export const migrateRoomRecord = (input: RoomRecord): RoomRecord => {
 
 export const migrateRoomRecords = (rooms: readonly RoomRecord[]): RoomRecord[] =>
   rooms.map(migrateRoomRecord);
+
+/** Production startup must reject this shape instead of silently losing a key. */
+export const hasLegacyPlaintextCredentials = (value: unknown): boolean => {
+  if (!value || typeof value !== 'object') return false;
+  if (Array.isArray(value)) return value.some(hasLegacyPlaintextCredentials);
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (key === 'aiConfig' && child && typeof child === 'object') {
+      const record = child as Record<string, unknown>;
+      if (typeof record.apiKey === 'string' || typeof record.token === 'string' ||
+        typeof record.accessToken === 'string' || typeof record.authorization === 'string') return true;
+    }
+    if (hasLegacyPlaintextCredentials(child)) return true;
+  }
+  return false;
+};
 
 export const roleSetupTotal = (setup: RoleSetup): number =>
   ROLE_NAMES.reduce((total, role) => total + (setup[role] ?? 0), 0);
