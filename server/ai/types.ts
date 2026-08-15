@@ -100,6 +100,10 @@ export interface AIRequestContext {
   promptContext?: AIPromptContext;
   allowedActions?: GameAction[];
   projectedContext?: AIContextProjection;
+  /** One cancellation signal for the whole provider attempt and its retries. */
+  signal?: AbortSignal;
+  /** Optional authoritative stage deadline; orchestrator uses the earlier limit. */
+  deadlineTs?: number | null;
 }
 
 export interface AISuggestion {
@@ -124,6 +128,8 @@ export class AIProviderError extends Error {
 export interface AIProvider {
   /** Providers that consume V3 prompt context opt into the projected event read. */
   readonly requiresPromptContext?: boolean;
+  /** real_ai is the only production provider mode; rules-degraded is explicit. */
+  readonly mode?: 'real_ai' | 'rules-degraded' | 'test-deterministic';
   suggest(context: AIRequestContext): Promise<AISuggestion>;
 }
 

@@ -35,6 +35,8 @@ export type ReadyPolicy = (typeof READY_POLICIES)[number];
 export type RoomAIProvider = 'siliconflow' | 'deepseek' | 'local' | 'custom';
 export type RoomAIBehavior = 'aggressive' | 'conservative' | 'random';
 export type RoomAIConfigStatus = 'ready' | 'not_configured' | 'invalid';
+/** Provenance of computer-player actions; templates are never presented as model output. */
+export type RoomAIProviderMode = 'real_ai' | 'rules-degraded' | 'test-deterministic';
 
 export const AI_PROVIDER_VALUES = ['siliconflow', 'deepseek', 'local', 'custom'] as const;
 export const AI_BEHAVIOR_VALUES = ['aggressive', 'conservative', 'random'] as const;
@@ -223,6 +225,7 @@ export interface RoomViewV31 {
   startCheck: StartCheck;
   /** Public readiness only; never reveals credential presence or references. */
   computerPlayerStatus?: RoomAIConfigStatus;
+  computerPlayerMode?: RoomAIProviderMode;
   viewer: RoomViewerViewV31;
   gameId?: string;
   createdAt: number;

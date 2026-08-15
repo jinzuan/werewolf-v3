@@ -3,6 +3,14 @@ import type { AIConfig, GameAction } from '../../shared/types';
 import { AI_TIMEOUT_MS } from '../../shared/config/aiDefaults';
 import { loadAIConfig } from '../config';
 import { EndpointPolicy, EndpointPolicyError } from '../security/endpointPolicy';
+import { defaultAITelemetry, type AITelemetry } from './aiTelemetry';
+import {
+  AIQueueError,
+  AICircuitBreaker,
+  defaultAICircuitBreaker,
+  defaultProviderQueue,
+  ProviderQueue,
+} from './providerQueue';
 import type {
   AIProvider,
   AIProviderError,
@@ -31,6 +39,10 @@ export interface HttpAIProviderOptions {
   endpointPolicy?: EndpointPolicy;
   /** Resolved by the room composition root; never silently replaced. */
   endpoint?: string;
+  queue?: ProviderQueue;
+  circuitBreaker?: AICircuitBreaker;
+  enqueueTimeoutMs?: number;
+  telemetry?: AITelemetry;
 }
 
 interface ResponseEnvelope {
@@ -38,51 +50,6 @@ interface ResponseEnvelope {
   headers: Headers;
   data?: unknown;
 }
-
-class ConcurrencyGate {
-  private active = 0;
-  private readonly queue: Array<{
-    task: () => Promise<unknown>;
-    resolve: (value: unknown) => void;
-    reject: (error: unknown) => void;
-  }> = [];
-
-  constructor(private readonly limit: number) {}
-
-  run<T>(task: () => Promise<T>): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      this.queue.push({
-        task,
-        resolve: resolve as (value: unknown) => void,
-        reject,
-      });
-      this.drain();
-    });
-  }
-
-  private drain(): void {
-    while (this.active < this.limit && this.queue.length > 0) {
-      const item = this.queue.shift()!;
-      this.active += 1;
-      void item.task()
-        .then(item.resolve, item.reject)
-        .finally(() => {
-          this.active -= 1;
-          this.drain();
-        });
-    }
-  }
-}
-
-const gates = new Map<string, ConcurrencyGate>();
-
-const gateFor = (key: string): ConcurrencyGate => {
-  const existing = gates.get(key);
-  if (existing) return existing;
-  const created = new ConcurrencyGate(2);
-  gates.set(key, created);
-  return created;
-};
 
 const endpointFor = (config: AIConfig): string => {
   if (config.apiType === 'siliconflow') {
@@ -257,7 +224,11 @@ const normalizeError = (
   retryCount: number,
 ): AIProviderError => {
   if (error instanceof ProviderError) {
-    return new ProviderError(error.errorClass, retryCount, error.status);
+    return new ProviderError(
+      error.errorClass,
+      Math.max(retryCount, error.retryCount),
+      error.status,
+    );
   }
   if (error instanceof Error && error.name === 'AbortError') {
     return new ProviderError('timeout', retryCount);
@@ -331,8 +302,12 @@ const promptFor = (
 };
 
 export class HttpAIProvider implements AIProvider {
+  readonly mode = 'real_ai' as const;
   private readonly settings: ProviderSettings;
-  private readonly gate: ConcurrencyGate;
+  private readonly queue: ProviderQueue;
+  private readonly circuitBreaker: AICircuitBreaker;
+  private readonly enqueueTimeoutMs: number;
+  private readonly telemetry: AITelemetry;
   private readonly fetchImpl: typeof fetch;
   private readonly sleep: (delayMs: number) => Promise<void>;
   private readonly now: () => number;
@@ -348,7 +323,11 @@ export class HttpAIProvider implements AIProvider {
   ) {
     this.settings = settingsFor(config, options.endpoint);
     this.behavior = config.defaultBehavior;
-    this.gate = gateFor(this.settings.key);
+    this.queue = options.queue ?? defaultProviderQueue;
+    this.circuitBreaker = options.circuitBreaker ?? defaultAICircuitBreaker;
+    this.enqueueTimeoutMs = options.enqueueTimeoutMs ?? 5_000;
+    this.telemetry = options.telemetry ?? defaultAITelemetry;
+    this.telemetry.observeQueue(this.queue);
     this.fetchImpl = options.fetch ?? globalThis.fetch;
     this.sleep = options.sleep ?? defaultSleep;
     this.now = options.now ?? Date.now;
@@ -360,11 +339,41 @@ export class HttpAIProvider implements AIProvider {
 
   async suggest(context: AIRequestContext): Promise<AISuggestion> {
     const prompt = promptFor(context, this.behavior);
-    return this.gate.run(async () => {
+    if (!this.circuitBreaker.allow(this.settings.key)) {
+      throw new ProviderError('circuit_open', 0);
+    }
+    try {
+      const suggestion = await this.queue.run(this.settings.key, (signal) =>
+        this.requestWithRetries(prompt, context, signal), {
+          signal: context.signal,
+          enqueueTimeoutMs: this.enqueueTimeoutMs,
+        });
+      this.circuitBreaker.recordSuccess(this.settings.key);
+      return suggestion;
+    } catch (error) {
+      if (error instanceof AIQueueError) {
+        this.circuitBreaker.release(this.settings.key);
+        throw error;
+      }
+      const normalized = normalizeError(error, 0);
+      if (this.isBreakerFailure(normalized)) {
+        this.circuitBreaker.recordFailure(this.settings.key);
+      }
+      if (normalized.errorClass === 'cancelled') this.telemetry.recordCancelled();
+      if (normalized.errorClass === 'timeout') this.telemetry.recordTimeout();
+      throw normalized;
+    }
+  }
+
+  private async requestWithRetries(
+    prompt: { system: string; user: string },
+    context: AIRequestContext,
+    signal: AbortSignal,
+  ): Promise<AISuggestion> {
       let retryCount = 0;
       for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
         try {
-          const response = await this.requestOnce(prompt);
+          const response = await this.requestOnce(prompt, signal);
           if (response.status === 429) {
             if (attempt < this.maxRetries) {
               const retryAfterMs = parseRetryAfter(
@@ -373,22 +382,32 @@ export class HttpAIProvider implements AIProvider {
               );
               const exponentialMs = this.baseDelayMs * 2 ** attempt;
               retryCount += 1;
-              await this.sleep(Math.max(retryAfterMs, exponentialMs));
+              this.telemetry.recordRetry();
+              await this.sleepWithSignal(Math.max(retryAfterMs, exponentialMs), signal);
               continue;
             }
             throw new ProviderError('rate_limited', retryCount, 429);
           }
           return parseSuggestion(response.data, context, retryCount);
         } catch (error) {
-          throw normalizeError(error, retryCount);
+          if (signal.aborted) throw new ProviderError('cancelled', retryCount);
+          const normalized = normalizeError(error, retryCount);
+          const retryableStatus = [500, 502, 503, 504].includes(normalized.status ?? 0);
+          if (retryableStatus && attempt < this.maxRetries) {
+            retryCount += 1;
+            this.telemetry.recordRetry();
+            await this.sleepWithSignal(this.baseDelayMs * 2 ** attempt, signal);
+            continue;
+          }
+          throw normalized;
         }
       }
       throw new ProviderError('rate_limited', retryCount, 429);
-    });
   }
 
   private async requestOnce(
     prompt: { system: string; user: string },
+    parentSignal: AbortSignal,
   ): Promise<ResponseEnvelope> {
     let endpoint: string;
     try {
@@ -403,6 +422,9 @@ export class HttpAIProvider implements AIProvider {
       throw error;
     }
     const controller = new AbortController();
+    const abortFromParent = () => controller.abort();
+    if (parentSignal.aborted) throw new ProviderError('cancelled', 0);
+    parentSignal.addEventListener('abort', abortFromParent, { once: true });
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
@@ -454,6 +476,23 @@ export class HttpAIProvider implements AIProvider {
       return { status: response.status, headers: response.headers, data };
     } finally {
       if (timer !== undefined) clearTimeout(timer);
+      parentSignal.removeEventListener('abort', abortFromParent);
     }
+  }
+
+  private async sleepWithSignal(delayMs: number, signal: AbortSignal): Promise<void> {
+    if (signal.aborted) throw new ProviderError('cancelled', 0);
+    await Promise.race([
+      this.sleep(delayMs),
+      new Promise<never>((_, reject) => {
+        signal.addEventListener('abort', () => reject(new ProviderError('cancelled', 0)), { once: true });
+      }),
+    ]);
+  }
+
+  private isBreakerFailure(error: AIProviderError): boolean {
+    return error.errorClass === 'timeout' ||
+      error.errorClass === 'rate_limited' ||
+      (error.errorClass === 'http_error' && [500, 502, 503, 504].includes(error.status ?? 0));
   }
 }

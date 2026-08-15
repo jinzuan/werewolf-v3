@@ -5,6 +5,9 @@ import { FileEventStore } from './events/fileStore';
 import { FileRoomRepository } from './rooms/fileRepository';
 import { RoomService } from './rooms/roomService';
 import { HttpAIProvider } from './ai/httpProvider';
+import type { HttpAIProviderOptions } from './ai/httpProvider';
+import { defaultAITelemetry } from './ai/aiTelemetry';
+import type { AIConfig } from '../shared/types';
 import { FileInsightStore } from './review/insightStore';
 import { FileReviewRepository } from './review/fileReviewRepository';
 import { ReviewPipeline } from './review/reviewPipeline';
@@ -88,6 +91,8 @@ const endpointPolicy = new EndpointPolicy({
   allowPrivateEndpoints: security.allowPrivateAIEndpoints,
   allowlist: security.aiEndpointAllowlist,
 });
+const aiProviderFactory = (config: AIConfig, options: HttpAIProviderOptions) =>
+  new HttpAIProvider(config, { ...options, telemetry: defaultAITelemetry });
 const roomService = new RoomService(new FileRoomRepository(runtime.roomsFile, {
   environment: runtime.environment,
   deploymentNamespace: runtime.deploymentNamespace,
@@ -103,7 +108,8 @@ const roomService = new RoomService(new FileRoomRepository(runtime.roomsFile, {
   credentialStore,
   credentialNamespace: runtime.deploymentNamespace,
   endpointPolicy,
-  aiProviderFactory: (config, options) => new HttpAIProvider(config, options),
+  aiProviderFactory,
+  aiTelemetry: defaultAITelemetry,
   reviewPipeline,
   insightStore,
 });

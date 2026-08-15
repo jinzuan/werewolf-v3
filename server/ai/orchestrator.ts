@@ -10,9 +10,17 @@ import type {
 } from './types';
 import { AIProviderError as ProviderError } from './types';
 import type { GameSession } from '../session/gameSession';
+import {
+  AIFallbackRegistry,
+  defaultAIFallbackRegistry,
+  defaultAITelemetry,
+  type AITelemetry,
+} from './aiTelemetry';
 
 export interface AIOrchestratorOptions {
   timeoutMs?: number;
+  telemetry?: AITelemetry;
+  fallbackRegistry?: AIFallbackRegistry;
 }
 
 const commandTypeForAction = (action: GameAction): GameCommand['type'] => {
@@ -56,6 +64,8 @@ const retryCountOf = (error: unknown): number =>
 export class AIOrchestrator {
   private readonly telemetryEntries: AITelemetryEntry[] = [];
   private readonly timeoutMs: number;
+  private readonly aggregateTelemetry: AITelemetry;
+  private readonly fallbackRegistry: AIFallbackRegistry;
 
   constructor(
     private readonly provider: AIProvider,
@@ -63,6 +73,8 @@ export class AIOrchestrator {
     options: AIOrchestratorOptions = {},
   ) {
     this.timeoutMs = options.timeoutMs ?? 5_000;
+    this.aggregateTelemetry = options.telemetry ?? defaultAITelemetry;
+    this.fallbackRegistry = options.fallbackRegistry ?? defaultAIFallbackRegistry;
   }
 
   async act(
@@ -71,6 +83,7 @@ export class AIOrchestrator {
   ): Promise<{ suggestion: AISuggestion; accepted: boolean }> {
     const callId = randomUUID();
     const startedAt = this.now();
+    this.aggregateTelemetry.start();
     this.telemetryEntries.push({
       roomId: context.roomId,
       gameId: context.gameId,
@@ -106,10 +119,25 @@ export class AIOrchestrator {
     let usedFallback = false;
     let retryCount = 0;
     let errorClass: string | undefined;
+    let timeoutOrCancellation = false;
+    const controller = new AbortController();
+    const parentSignal = context.signal;
+    const abortParent = () => controller.abort();
+    parentSignal?.addEventListener('abort', abortParent, { once: true });
+    const deadlineRemaining = context.deadlineTs == null
+      ? this.timeoutMs
+      : Math.min(this.timeoutMs, Math.max(0, context.deadlineTs - this.now()));
 
     try {
+      if (deadlineRemaining <= 0) throw new ProviderError('timeout', 0);
       suggestion = await this.withTimeout(
-        this.provider.suggest(providerContext),
+        Promise.resolve().then(() => this.provider.suggest({
+          ...providerContext,
+          signal: controller.signal,
+        })),
+        controller,
+        deadlineRemaining,
+        parentSignal,
       );
       retryCount = suggestion.providerMeta?.retryCount ?? 0;
       if (!allowedCommandTypes.includes(suggestion.command.type)) {
@@ -118,8 +146,20 @@ export class AIOrchestrator {
     } catch (error) {
       retryCount = Math.max(retryCount, retryCountOf(error));
       errorClass = errorClassOf(error);
-      suggestion = this.fallback(providerContext);
+      timeoutOrCancellation = errorClass === 'timeout' || errorClass === 'cancelled';
+      if (errorClass === 'timeout') this.aggregateTelemetry.recordTimeout();
+      if (errorClass === 'cancelled') this.aggregateTelemetry.recordCancelled();
+      const fallbackAllowed = this.fallbackRegistry.claim(
+        context.gameId,
+        context.stageRevision,
+        context.playerId,
+      );
+      suggestion = fallbackAllowed
+        ? this.fallback(providerContext, timeoutOrCancellation)
+        : this.unavailableSuggestion(providerContext);
       usedFallback = true;
+    } finally {
+      parentSignal?.removeEventListener('abort', abortParent);
     }
 
     if (!suggestion) {
@@ -132,6 +172,7 @@ export class AIOrchestrator {
         retryCount,
         errorClass ?? 'no_allowed_action',
       );
+      this.aggregateTelemetry.finish('failed', this.now() - startedAt);
       return { suggestion: unavailable, accepted: false };
     }
 
@@ -141,7 +182,14 @@ export class AIOrchestrator {
     );
     if (!result.ok && !usedFallback) {
       errorClass = result.code ?? 'command_rejected';
-      suggestion = this.fallback(providerContext);
+      const fallbackAllowed = this.fallbackRegistry.claim(
+        context.gameId,
+        context.stageRevision,
+        context.playerId,
+      );
+      suggestion = fallbackAllowed
+        ? this.fallback(providerContext, false)
+        : this.unavailableSuggestion(providerContext);
       usedFallback = true;
       if (suggestion) {
         result = await session.dispatch(
@@ -160,6 +208,10 @@ export class AIOrchestrator {
       startedAt,
       retryCount,
       result.ok ? errorClass : errorClass ?? result.code ?? 'command_rejected',
+    );
+    this.aggregateTelemetry.finish(
+      result.ok ? (usedFallback ? 'fallback' : 'completed') : 'failed',
+      this.now() - startedAt,
     );
     return { suggestion, accepted: result.ok };
   }
@@ -203,26 +255,43 @@ export class AIOrchestrator {
     };
   }
 
-  private async withTimeout<T>(promise: Promise<T>): Promise<T> {
+  private async withTimeout<T>(
+    promise: Promise<T>,
+    controller: AbortController,
+    timeoutMs: number,
+    parentSignal?: AbortSignal,
+  ): Promise<T> {
     let handle: ReturnType<typeof setTimeout> | undefined;
+    let parentAbort: (() => void) | undefined;
     try {
       return await Promise.race([
         promise,
         new Promise<never>((_, reject) => {
           handle = setTimeout(() => {
-            const error = new Error('AI_PROVIDER_TIMEOUT');
-            error.name = 'AIProviderTimeoutError';
-            reject(error);
-          }, this.timeoutMs);
+            controller.abort();
+            reject(new ProviderError('timeout', 0));
+          }, timeoutMs);
         }),
+        ...(parentSignal
+          ? [new Promise<never>((_, reject) => {
+              parentAbort = () => {
+                controller.abort();
+                reject(new ProviderError('cancelled', 0));
+              };
+              if (parentSignal.aborted) parentAbort();
+              else parentSignal.addEventListener('abort', parentAbort, { once: true });
+            })]
+          : []),
       ]);
     } finally {
       if (handle !== undefined) clearTimeout(handle);
+      if (parentSignal && parentAbort) parentSignal.removeEventListener('abort', parentAbort);
     }
   }
 
   private fallback(
     context: AIRequestContext,
+    timeoutOrCancellation = false,
   ): AISuggestion | null {
     const actor = context.players.find(
       (player) => player.id === context.playerId,
@@ -240,6 +309,22 @@ export class AIOrchestrator {
       alive.find(
         (player) => player.id !== actor.id && player.role !== 'wolf',
       ) ?? firstOther;
+
+    // A deadline is an explicit consent to skip, not a reason to invent a
+    // normal speech turn. Normal provider failures still use the contextual
+    // rules-degraded text below so an AI room does not go silent.
+    if (timeoutOrCancellation && allowed.has('skip_speech')) {
+      return {
+        command: {
+          type: 'game.skip_speech',
+          payload:
+            context.phase === 'lastWords' || context.stage === 'last_words'
+              ? { reason: '行动时间已结束' }
+              : {},
+        },
+        reason: 'stage deadline timeout',
+      };
+    }
 
     if (allowed.has('guard') && firstGuardTarget) {
       return {
@@ -316,7 +401,9 @@ export class AIOrchestrator {
       return {
         command: {
           type: 'game.wolf_speak',
-          payload: { content: 'pass' },
+          payload: {
+            content: `第${context.promptContext?.dayNumber ?? '?'}天仍有${alive.length}名玩家存活，先结合公开发言和投票变化继续判断。`,
+          },
         },
         reason: 'deterministic wolf speech fallback',
       };
@@ -325,7 +412,9 @@ export class AIOrchestrator {
       return {
         command: {
           type: 'game.speak',
-          payload: { content: 'pass' },
+          payload: {
+            content: `第${context.promptContext?.dayNumber ?? '?'}天当前有${alive.length}名玩家存活，我会结合已公开的信息继续观察并说明判断。`,
+          },
         },
         reason: 'deterministic speech fallback',
       };
@@ -416,6 +505,31 @@ export class AIOrchestrator {
     const actor = context.players.find(
       (player) => player.id === context.playerId,
     );
+    const allowed = new Set(context.allowedActions ?? []);
+    if (allowed.has('skip_speech')) {
+      return {
+        command: {
+          type: 'game.skip_speech',
+          payload:
+            context.phase === 'lastWords' || context.stage === 'last_words'
+              ? { reason: '行动时间已结束' }
+              : {},
+        },
+        reason: 'no allowed AI action',
+      };
+    }
+    if (allowed.has('skip_hunter_shot')) {
+      return {
+        command: { type: 'game.hunter_shoot', payload: { targetId: null } },
+        reason: 'no allowed AI action',
+      };
+    }
+    if (allowed.has('abstain')) {
+      return {
+        command: { type: 'game.vote', payload: { targetId: null } },
+        reason: 'no allowed AI action',
+      };
+    }
     return {
       command: {
         type: 'game.skip_night',
