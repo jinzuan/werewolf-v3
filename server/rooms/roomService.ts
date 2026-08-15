@@ -176,13 +176,15 @@ export class RoomService {
     const host: RoomMember = {
       id: request.actorId,
       name: creatorName,
-      kind: 'player',
+      // A quick computer room is observed by its creator.  The creator must
+      // not consume a human seat or receive a player projection.
+      kind: config.mode === 'quick_computer' ? 'spectator' : 'player',
       connected: true,
-      omniscient: false,
+      omniscient: config.mode === 'quick_computer',
       resumeToken,
-      seatIndex: 0,
+      seatIndex: config.mode === 'quick_computer' ? null : 0,
       isAI: false,
-      ready: false,
+      ready: config.mode === 'quick_computer' ? null : false,
       avatarId: options.creator.avatarId,
     };
     const room: RoomRecord = {
@@ -202,7 +204,9 @@ export class RoomService {
       configRevision: 1,
       schemaVersion: 1,
       members: [host],
-      players: [makePlayer(roomId, host, request.actorId)],
+      players: config.mode === 'quick_computer'
+        ? []
+        : [makePlayer(roomId, host, request.actorId)],
       recentRoomCommands: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -264,7 +268,10 @@ export class RoomService {
       if (room.status !== 'waiting' && room.status !== 'ready_check') {
         throw this.error('GAME_ALREADY_STARTED', 'room.error.game_already_started');
       }
-      if (roomCounts(room).playerSeats >= config.maxPlayers) {
+      // Fixed computer seats are reserved capacity, so they cannot be
+      // silently taken by human joins before the start transaction.
+      const humanCapacity = config.maxPlayers - config.computerSeats;
+      if (roomCounts(room).humanPlayers >= humanCapacity) {
         throw this.error('ROOM_FULL', 'room.error.room_full');
       }
     }
@@ -277,7 +284,8 @@ export class RoomService {
       }
       const currentConfig = draft.config;
       if (!currentConfig) throw this.error('INVALID_ROOM_CONFIG', 'room.error.config_missing');
-      if (!spectator && roomCounts(draft).playerSeats >= currentConfig.maxPlayers) {
+      const humanCapacity = currentConfig.maxPlayers - currentConfig.computerSeats;
+      if (!spectator && roomCounts(draft).humanPlayers >= humanCapacity) {
         throw this.error('ROOM_FULL', 'room.error.room_full');
       }
       const member: RoomMember = {
@@ -671,7 +679,11 @@ export class RoomService {
       const member = room.members.find((candidate) => candidate.id === actorId);
       if (!member) throw this.error('UNAUTHENTICATED', 'room.error.unauthenticated');
       const identity = await this.identity(roomCode, actorId, member.resumeToken);
-      this.policy.assertStartAllowed(room, actorId);
+      const quickComputerObserver =
+        room.config?.mode === 'quick_computer' &&
+        identity.kind === 'spectator' &&
+        identity.omniscient;
+      if (!quickComputerObserver) this.policy.assertStartAllowed(room, actorId);
       const result = await this.starter.start(roomCode, {
         commandId,
         actorId,
@@ -743,8 +755,15 @@ export class RoomService {
     session: GameSession,
     force = false,
   ): Promise<void> {
-    if (!force && this.fastAutoRooms.has(roomCode.toUpperCase())) return;
+    const normalizedRoomCode = roomCode.toUpperCase();
+    if (!force && this.fastAutoRooms.has(normalizedRoomCode)) {
+      // Fast legacy auto rooms intentionally batch disk writes, but their
+      // live monitor still needs every authoritative state transition.
+      await this.notifyRoomChange(roomCode, 'status_changed');
+      return;
+    }
     const snapshot = session.serialize();
+    let status: RoomRecord['status'] | undefined;
     await this.repository.mutate(roomCode, (room) => {
       // The coordinator owns the starting transaction. Do not let the initial
       // game.started event advance its CAS before the playing commit.
@@ -753,7 +772,13 @@ export class RoomService {
       room.players = session.players;
       room.gameId = snapshot.state.gameId;
       if (snapshot.state.gameState.phase === 'ended') room.status = 'ended';
+      status = room.status;
     });
+    if (status === 'playing' || status === 'ended') {
+      // This callback is also used by AI actions and deadline recovery.  The
+      // transport turns it into per-socket projections for the whole room.
+      await this.notifyRoomChange(roomCode, 'status_changed');
+    }
   }
 
   private async requireRoom(codeOrId: string): Promise<RoomRecord> {

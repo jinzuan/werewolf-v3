@@ -115,13 +115,40 @@ const mutationRevision = (
 };
 
 export function bindSocketTransport(io: Server, rooms: RoomService): void {
-  rooms.subscribeRoomChanges(async (roomCode, reason) => {
+  const pushCurrent = async (target: Socket): Promise<void> => {
+    const targetState = state(target);
+    const identity = targetState.identity;
+    if (!identity) return;
+    const room = await rooms.get(identity.roomCode, identity.actorId);
+    if (room.status !== 'playing' && room.status !== 'ended') return;
+    const afterSequence = targetState.lastSequence ?? 0;
+    const events = await rooms.events(identity, afterSequence);
+    const snapshot = await rooms.snapshot(identity);
+    targetState.lastSequence = snapshot.lastSequence;
+    target.emit('v3:events', {
+      type: 'game.events',
+      roomId: snapshot.roomId,
+      gameId: snapshot.gameId,
+      afterSequence,
+      events,
+    });
+    target.emit('v3:snapshot', {
+      type: 'game.snapshot',
+      snapshot,
+    });
+  };
+
+  const pushRoom = async (
+    roomCode: string,
+    reason: RoomSnapshotReason,
+  ): Promise<void> => {
     for (const target of io.sockets.sockets.values()) {
-      const identity = state(target).identity;
-      if (!identity || identity.roomCode !== roomCode) continue;
+      const targetIdentity = state(target).identity;
+      if (targetIdentity?.roomCode !== roomCode) continue;
       try {
-        const room = await rooms.get(roomCode, identity.actorId);
+        const room = await rooms.get(roomCode, targetIdentity.actorId);
         target.emit('v3:room', { type: 'room.snapshot', room, reason });
+        await pushCurrent(target);
       } catch {
         target.emit('v3:error', {
           ok: false,
@@ -130,7 +157,14 @@ export function bindSocketTransport(io: Server, rooms: RoomService): void {
         } satisfies ProtocolAckError);
       }
     }
-  });
+  };
+
+  // Session changes (including AI turns, deadline transitions, and the end
+  // of a game) arrive here without a socket command to use as the sender.
+  // Push each connection's own projection so players, public spectators,
+  // and omniscient monitors never share an authority snapshot.
+  rooms.subscribeRoomChanges(pushRoom);
+
   io.on('connection', (socket) => {
     const bind = async (
       access: RoomAccess,
@@ -145,49 +179,6 @@ export function bindSocketTransport(io: Server, rooms: RoomService): void {
       state(socket).lastSequence = 0;
       socket.join(`room:${identity.roomCode}`);
       return identity;
-    };
-
-    const pushCurrent = async (target: Socket): Promise<void> => {
-      const targetState = state(target);
-      const identity = targetState.identity;
-      if (!identity) return;
-      const room = await rooms.get(identity.roomCode, identity.actorId);
-      if (room.status !== 'playing' && room.status !== 'ended') return;
-      const events = await rooms.events(identity, targetState.lastSequence ?? 0);
-      const snapshot = await rooms.snapshot(identity);
-      targetState.lastSequence = snapshot.lastSequence;
-      target.emit('v3:events', {
-        type: 'game.events',
-        roomId: snapshot.roomId,
-        gameId: snapshot.gameId,
-        afterSequence: targetState.lastSequence,
-        events,
-      });
-      target.emit('v3:snapshot', {
-        type: 'game.snapshot',
-        snapshot,
-      });
-    };
-
-    const pushRoom = async (
-      roomCode: string,
-      reason: RoomSnapshotReason,
-    ): Promise<void> => {
-      for (const target of io.sockets.sockets.values()) {
-        const targetIdentity = state(target).identity;
-        if (targetIdentity?.roomCode !== roomCode) continue;
-        try {
-          const room = await rooms.get(roomCode, targetIdentity.actorId);
-          target.emit('v3:room', { type: 'room.snapshot', room, reason });
-          await pushCurrent(target);
-        } catch {
-          target.emit('v3:error', {
-            ok: false,
-            code: 'PUSH_FAILED',
-            messageKey: 'room.error.push_failed',
-          } satisfies ProtocolAckError);
-        }
-      }
     };
 
     const requireMutation = (request: V3Command): { expectedRoomRevision: number; commandId: string } => {
@@ -295,7 +286,10 @@ export function bindSocketTransport(io: Server, rooms: RoomService): void {
             const result = await rooms.dispatchGame(identity, meta, command);
             if (result.ok) {
               ack?.(result);
-              await pushCurrent(socket);
+              // GameSession persistence notifies the room-change subscriber.
+              // That subscriber calls pushRoom, so every authorized socket
+              // receives its own player/spectator/monitor projection.  Do not
+              // push only the command author's projection here.
             } else {
               ack?.(errorResponse({
                 code: result.code,

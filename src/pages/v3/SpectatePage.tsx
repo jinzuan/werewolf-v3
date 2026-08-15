@@ -41,7 +41,14 @@ export function SpectatePage() {
   const playerName = (id: string | null) =>
     players.find((player) => player.id === id)?.name ?? '未知目标';
 
-  if (!session || session.mode !== 'spectator' || !snapshot) {
+  const isPublicSpectator =
+    session?.mode === 'spectator' &&
+    room?.viewer.kind === 'spectator' &&
+    room.viewer.omniscient === false &&
+    snapshot?.viewer.kind === 'spectator' &&
+    snapshot.viewer.omniscient === false;
+
+  if (!isPublicSpectator || !snapshot) {
     return (
       <AppShell title="公开观战" connected={connected}>
         <Card className="v3-empty-state">
@@ -78,7 +85,7 @@ export function SpectatePage() {
       <div className="v3-playback-bar">
         <Badge tone="info"><Radio size={13} />实时事件流</Badge>
         <span className="v3-inline-note">
-          当前视角固定为公开投影；客户端会丢弃所有非 public_timeline 事件。
+          你只能看到所有玩家都能得知的公开信息。
         </span>
       </div>
 
@@ -106,8 +113,8 @@ export function SpectatePage() {
         center={
           <Card>
             <div className="v3-panel-heading">
-              <div><span>按 sequence 排序</span><h2>公开事件时间线</h2></div>
-              <span className="v3-numeric">#{snapshot.lastSequence}</span>
+              <div><span>按时间顺序</span><h2>公开事件时间线</h2></div>
+              <span className="v3-numeric">共 {publicEvents.length} 条</span>
             </div>
             <div className="v3-timeline">
               {publicEvents.length === 0 ? (
@@ -118,7 +125,7 @@ export function SpectatePage() {
                   <span className="v3-timeline__dot v3-timeline__dot--gold" />
                   <div>
                     <strong>{describeEvent(event, playerName)}</strong>
-                    <span>{VISIBILITY_LABELS[event.visibility]} · #{event.sequence}</span>
+                    <span>{VISIBILITY_LABELS[event.visibility]}</span>
                   </div>
                 </div>
               ))}
@@ -131,11 +138,11 @@ export function SpectatePage() {
               <div><span>投影状态</span><h2>观战权限</h2></div>
             </div>
             <div className="v3-setting-row">
-              <div><strong>观看模式</strong><span>由服务端 ViewerContext 决定。</span></div>
+              <div><strong>观看模式</strong><span>当前身份只能查看公开信息。</span></div>
               <Badge tone="success">公开</Badge>
             </div>
             <div className="v3-setting-row">
-              <div><strong>全知授权</strong><span>公开观战入口不使用全知令牌。</span></div>
+              <div><strong>私密信息</strong><span>身份、狼人讨论和特殊行动不会显示。</span></div>
               <Badge tone="danger">未授权</Badge>
             </div>
             <div className="v3-setting-row">

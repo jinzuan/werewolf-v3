@@ -11,6 +11,7 @@ import {
   formatEventTime,
   phaseLabel,
   ROLE_LABELS,
+  roomStatusLabel,
   VISIBILITY_LABELS,
 } from '../../v3/presentation';
 import {
@@ -23,6 +24,7 @@ import { formatCountdown } from '../../utils/countdown';
 
 export function MonitorPage() {
   const connected = useV3Store((state) => state.connected);
+  const session = useV3Store((state) => state.session);
   const room = useV3Store((state) => state.room);
   const snapshot = useV3Store((state) => state.snapshot);
   const events = useV3Store((state) => state.events);
@@ -39,7 +41,11 @@ export function MonitorPage() {
   const [visibility, setVisibility] = useState('all');
   const [query, setQuery] = useState('');
   const omniscient =
-    snapshot?.viewer.kind === 'spectator' && snapshot.viewer.omniscient;
+    session?.mode === 'spectator' &&
+    room?.viewer.kind === 'spectator' &&
+    room.viewer.omniscient === true &&
+    snapshot?.viewer.kind === 'spectator' &&
+    snapshot.viewer.omniscient === true;
   const players = snapshot?.players ?? [];
   const playerName = (id: string | null) =>
     players.find((player) => player.id === id)?.name ?? '未知目标';
@@ -51,13 +57,25 @@ export function MonitorPage() {
       describeEvent(event, playerName).toLowerCase().includes(query.trim().toLowerCase()),
     ), [events, visibility, query, players]);
 
-  if (!snapshot || !omniscient) {
+  if (!omniscient) {
     return (
-      <AppShell title="AI 监控" connected={connected}>
+      <AppShell title="对局监控" connected={connected}>
         <Card className="v3-empty-state">
           <EyeOff size={24} />
           <strong>当前会话没有全知观战授权</strong>
-          <span>监控页不会回退到公开快照猜测身份，也不会展示私密事件。</span>
+          <span>监控页不会根据公开信息猜测身份，也不会展示未授权内容。</span>
+        </Card>
+      </AppShell>
+    );
+  }
+
+  if (!snapshot) {
+    return (
+      <AppShell title="对局监控" connected={connected}>
+        <Card className="v3-empty-state">
+          <Radio size={24} />
+          <strong>正在恢复监控信息</strong>
+          <span>请稍候，完整对局记录会从服务端恢复。</span>
         </Card>
       </AppShell>
     );
@@ -65,8 +83,8 @@ export function MonitorPage() {
 
   return (
     <AppShell
-      title={room?.name ?? 'AI 快速局'}
-      eyebrow="Match Console"
+      title={room?.name ?? '快速电脑局'}
+      eyebrow="对局监控"
       phase={phaseLabel(snapshot.gameState)}
       countdown={(() => {
         const value = formatCountdown(remainingServerMs(
@@ -86,21 +104,21 @@ export function MonitorPage() {
       connected={connected}
     >
       <div className="v3-playback-bar">
-        <Badge tone="purple"><Radio size={13} />spectator_omniscient</Badge>
-        <span className="v3-numeric">序列 #{snapshot.lastSequence}</span>
+        <Badge tone="purple"><Radio size={13} />全知监控</Badge>
+        <span className="v3-inline-note">已授权查看完整对局信息</span>
       </div>
 
       <MatchShell
         className="v3-monitor-layout"
         left={
           <Card>
-            <div className="v3-panel-heading"><div><span>{players.length} 席全身份</span><h2>身份摘要</h2></div></div>
+            <div className="v3-panel-heading"><div><span>{players.length} 席完整身份</span><h2>身份摘要</h2></div></div>
             <div className="v3-identity-list">
               {players.map((player) => (
                 <div key={player.id} className={!player.isAlive ? 'is-dead' : undefined}>
                   <span className="v3-numeric">{player.order.toString().padStart(2, '0')}</span>
                   <strong>{player.role ? ROLE_LABELS[player.role] : '未分配'}</strong>
-                  <Badge tone={!player.isAlive ? 'danger' : 'success'}>{player.isAlive ? 'alive' : 'dead'}</Badge>
+                  <Badge tone={!player.isAlive ? 'danger' : 'success'}>{player.isAlive ? '存活' : '已出局'}</Badge>
                 </div>
               ))}
             </div>
@@ -108,7 +126,7 @@ export function MonitorPage() {
         }
         center={
           <Card>
-            <div className="v3-panel-heading"><div><span>授权事件投影</span><h2>事件时间线</h2></div></div>
+            <div className="v3-panel-heading"><div><span>完整对局记录</span><h2>事件时间线</h2></div></div>
             <div className="v3-console-events">
               {filteredEvents.length === 0 ? (
                 <div className="v3-inline-note">当前筛选条件下没有事件。</div>
@@ -130,38 +148,48 @@ export function MonitorPage() {
         }
         right={
           <Card>
-            <div className="v3-panel-heading"><div><span>契约状态</span><h2>运行摘要</h2></div><Bot size={18} /></div>
+            <div className="v3-panel-heading"><div><span>对局信息</span><h2>运行摘要</h2></div><Bot size={18} /></div>
             <div className="v3-setting-row">
               <div><strong>房间</strong><span>{room?.code ?? snapshot.roomId}</span></div>
-              <Badge tone="success">{room?.status ?? 'playing'}</Badge>
+              <Badge tone="success">{room ? roomStatusLabel(room.status) : '对局中'}</Badge>
             </div>
             <div className="v3-setting-row">
-              <div><strong>阶段修订</strong><span>命令并发控制版本。</span></div>
-              <strong>{snapshot.gameState.stageRevision ?? 0}</strong>
-            </div>
-            <div className="v3-setting-row">
-              <div><strong>当前事件</strong><span>已通过服务端授权和客户端过滤。</span></div>
+              <div><strong>记录数量</strong><span>完整事件记录已按时间顺序显示。</span></div>
               <strong>{events.length}</strong>
             </div>
+            <details className="v3-advanced-info">
+              <summary>高级信息</summary>
+              <div className="v3-setting-row">
+                <div><strong>阶段版本</strong><span>仅用于行动并发校验，不代表进度。</span></div>
+                <strong>{snapshot.gameState.stageRevision ?? 0}</strong>
+              </div>
+              <div className="v3-setting-row">
+                <div><strong>最后事件序号</strong><span>服务端记录游标。</span></div>
+                <strong>{snapshot.lastSequence}</strong>
+              </div>
+            </details>
           </Card>
         }
         footer={
-          <div className="v3-monitor-filters">
-            <label>
-              可见性
-              <select value={visibility} onChange={(event) => setVisibility(event.target.value)}>
-                <option value="all">全部</option>
-                <option value="public_timeline">公开时间线</option>
-                <option value="role_private">角色私密</option>
-                <option value="wolf_private">狼人私密</option>
-                <option value="spectator_omniscient">全知观战</option>
-              </select>
-            </label>
-            <label className="v3-monitor-search">
-              事件搜索
-              <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索事件摘要" />
-            </label>
-          </div>
+          <details className="v3-advanced-info v3-advanced-info--filters">
+            <summary>高级筛选</summary>
+            <div className="v3-monitor-filters">
+              <label>
+                可见范围
+                <select value={visibility} onChange={(event) => setVisibility(event.target.value)}>
+                  <option value="all">全部记录</option>
+                  <option value="public_timeline">公开信息</option>
+                  <option value="role_private">角色私密</option>
+                  <option value="wolf_private">狼人私密</option>
+                  <option value="spectator_omniscient">监控记录</option>
+                </select>
+              </label>
+              <label className="v3-monitor-search">
+                事件搜索
+                <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索事件摘要" />
+              </label>
+            </div>
+          </details>
         }
       />
     </AppShell>

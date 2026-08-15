@@ -709,7 +709,11 @@ export class GameStartCoordinator {
     if (room.hostId !== actorId) {
       throw new GameStartError('HOST_REQUIRED', 'Only the host can start the game.');
     }
-    if (member.kind !== 'player' || member.isAI === true) {
+    const quickComputerObserver =
+      room.config?.mode === 'quick_computer' &&
+      member.kind === 'spectator' &&
+      member.omniscient === true;
+    if ((member.kind !== 'player' || member.isAI === true) && !quickComputerObserver) {
       throw new GameStartError(
         'SPECTATOR_READ_ONLY',
         'Spectators cannot start the game.',

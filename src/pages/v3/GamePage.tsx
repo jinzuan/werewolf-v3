@@ -65,7 +65,6 @@ export function GamePage() {
   const snapshot = useV3Store((state) => state.snapshot);
   const events = useV3Store((state) => state.events);
   const dispatch = useV3Store((state) => state.dispatch);
-  const startGame = useV3Store((state) => state.startGame);
   const [actionDraft, setActionDraft] = useState<{
     activeAction: GameAction | null;
     selectedTarget: string | null;
@@ -139,9 +138,6 @@ export function GamePage() {
     });
   }, [draftScopeKey]);
 
-  const waiting =
-    ['waiting', 'ready_check', 'starting'].includes(room?.status ?? '') &&
-    !snapshot;
   const definition = activeAction
     ? ACTION_DEFINITIONS[activeAction]
     : null;
@@ -192,11 +188,40 @@ export function GamePage() {
 
   if (!room || !session) return null;
 
+  // A URL is only a view intent. Never render player controls for a
+  // spectator identity, even if a stale deep link reaches this component.
+  if (room.viewer.kind !== 'player' || session.mode !== 'player') {
+    return (
+      <AppShell title="玩家对局" connected={connected}>
+        <Card className="v3-empty-state">
+          <Shield size={24} />
+          <strong>当前身份不是玩家席</strong>
+          <span>请从房间授权的观看入口进入本局。</span>
+        </Card>
+      </AppShell>
+    );
+  }
+  if (
+    snapshot &&
+    (snapshot.viewer.kind !== 'player' ||
+      snapshot.viewer.playerId !== session.actorId)
+  ) {
+    return (
+      <AppShell title="玩家对局" connected={connected}>
+        <Card className="v3-empty-state">
+          <Shield size={24} />
+          <strong>玩家投影暂不可用</strong>
+          <span>正在等待服务端恢复与你匹配的对局信息。</span>
+        </Card>
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell
       title={room.code}
       eyebrow="房间码"
-      phase={waiting ? '等待开局' : phaseLabel(state)}
+      phase={phaseLabel(state)}
       countdown={countdown === '—' ? undefined : countdown}
       progress={progress ?? undefined}
       connected={connected}
@@ -205,62 +230,7 @@ export function GamePage() {
         <div className="v3-alert v3-alert--error">{error}</div>
       ) : null}
 
-      {waiting ? (
-        <Card>
-          <div className="v3-panel-heading">
-            <div>
-              <span>{room.name}</span>
-              <h2>等待房间</h2>
-            </div>
-            <Badge tone="gold">
-              {room.members.filter((member) => member.kind === 'player').length}
-              {' / '}
-              {room.config?.maxPlayers ?? room.members.filter((member) => member.kind === 'player').length}
-            </Badge>
-          </div>
-          <div className="v3-summary-list">
-            {room.members.map((member, index) => (
-              <div key={member.id}>
-                {member.kind === 'spectator' ? (
-                  <Circle size={12} />
-                ) : (
-                  <UserRound size={16} />
-                )}
-                <span>
-                  {(index + 1).toString().padStart(2, '0')} {member.name}
-                  {member.isHost ? ' · 房主' : ''}
-                  {member.kind === 'spectator' ? ' · 观战' : ''}
-                  {!member.connected ? ' · 离线' : ''}
-                </span>
-              </div>
-            ))}
-          </div>
-          <div className="v3-action-panel__footer">
-            <span>
-              {session.credentials.joinToken ? (
-                <>
-                  邀请令牌：
-                  <strong className="v3-token">
-                    {session.credentials.joinToken}
-                  </strong>
-                </>
-              ) : (
-                '等待房主开始对局'
-              )}
-            </span>
-            {room.viewer.allowedRoomActions.includes('start_game') ? (
-              <Button
-                disabled={loading}
-                onClick={() => void startGame()}
-              >
-                开始对局
-              </Button>
-            ) : (
-              <Badge tone="info">等待房主</Badge>
-            )}
-          </div>
-        </Card>
-      ) : !snapshot ? (
+      {!snapshot ? (
         <Card className="v3-empty-state">
           <Shield size={24} />
           <strong>正在恢复个性化对局快照</strong>
@@ -316,7 +286,7 @@ export function GamePage() {
                           : targetable
                             ? '可选择'
                             : player.isAI
-                              ? 'AI 在线'
+                              ? '电脑玩家在线'
                               : '存活'}
                       </span>
                     </button>
@@ -329,11 +299,11 @@ export function GamePage() {
             <Card className="v3-action-panel">
               <div className="v3-panel-heading">
                 <div>
-                  <span>服务端允许命令</span>
+                  <span>当前阶段</span>
                   <h2>行动面板</h2>
                 </div>
                 <Badge tone={allowedActions.length ? 'warning' : 'info'}>
-                  修订 {state?.stageRevision ?? 0}
+                  {allowedActions.length ? '轮到你' : '等待队友'}
                 </Badge>
               </div>
 
