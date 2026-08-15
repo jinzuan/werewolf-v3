@@ -4,6 +4,9 @@ import { Server } from 'socket.io';
 import { FileEventStore } from './events/fileStore';
 import { FileRoomRepository } from './rooms/fileRepository';
 import { RoomService } from './rooms/roomService';
+import { FileInsightStore } from './review/insightStore';
+import { FileReviewRepository } from './review/fileReviewRepository';
+import { ReviewPipeline } from './review/reviewPipeline';
 import { bindSocketTransport } from './transport/socketTransport';
 import { resolveRuntimeConfig } from './runtimeConfig';
 import {
@@ -71,6 +74,9 @@ const credentialStore = security.secretStore === 'memory'
           console.warn('[server:security] memory SecretStore selected; AI credentials expire on restart');
           return new InMemoryCredentialStore();
         })();
+const reviewRepository = new FileReviewRepository(runtime.reviewsFile);
+const insightStore = new FileInsightStore(path.join(runtime.dataDir, 'insights.json'));
+const reviewPipeline = new ReviewPipeline(eventStore, reviewRepository, { insightStore });
 const roomService = new RoomService(new FileRoomRepository(runtime.roomsFile, {
   environment: runtime.environment,
   deploymentNamespace: runtime.deploymentNamespace,
@@ -85,6 +91,8 @@ const roomService = new RoomService(new FileRoomRepository(runtime.roomsFile, {
   roomSweepIntervalMs: runtime.roomSweepIntervalMs,
   credentialStore,
   credentialNamespace: runtime.deploymentNamespace,
+  reviewPipeline,
+  insightStore,
 });
 
 await roomService.restore();

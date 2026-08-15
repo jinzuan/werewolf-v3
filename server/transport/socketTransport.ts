@@ -350,6 +350,14 @@ export function bindSocketTransport(
             return;
           }
 
+          if (command.type === 'review.get') {
+            if (command.payload.roomCode !== identity.roomCode) {
+              throw new RoomServiceError({ code: 'ROOM_MISMATCH', messageKey: 'room.error.room_mismatch' });
+            }
+            ack?.({ ok: true, review: await rooms.review(identity) });
+            return;
+          }
+
           if (isGameCommand(command)) {
             if (!('gameId' in meta) || !('expectedStageRevision' in meta)) {
               throw new RoomServiceError({ code: 'INVALID_GAME_META', messageKey: 'room.error.invalid_game_meta' });

@@ -18,9 +18,12 @@ import { AIOrchestrator } from '../ai/orchestrator';
 import { DeterministicAIProvider } from '../ai/deterministicProvider';
 import { HttpAIProvider } from '../ai/httpProvider';
 import { buildAIRuntimeContext } from '../ai/runtimeContext';
+import { experienceLibrary } from '../ai/experienceLibrary';
 import type { AIProvider } from '../ai/types';
+import type { InsightStore } from '../review/insightStore';
 import { GameSession } from '../session/gameSession';
 import type { SessionOptions } from '../session/types';
+import type { ReviewPipeline } from '../review/reviewPipeline';
 import { RoomCatalogService, defaultRoomCatalogService } from './roomCatalogService';
 import { RoomConfigValidationError } from './roomConfigValidator';
 import { GameStartCoordinator, GameStartError } from './gameStartCoordinator';
@@ -143,6 +146,8 @@ export interface RoomServiceOptions {
   credentialStore?: RoomCredentialStore;
   credentialNamespace?: string;
   endpointPolicy?: EndpointPolicy;
+  reviewPipeline?: ReviewPipeline;
+  insightStore?: InsightStore;
 }
 
 export class RoomService {
@@ -165,6 +170,8 @@ export class RoomService {
   private readonly credentialStore: RoomCredentialStore;
   private readonly credentialNamespace: string;
   private readonly endpointPolicy: EndpointPolicy;
+  private readonly reviewPipeline?: ReviewPipeline;
+  private readonly insightStore?: InsightStore;
   private readonly legacyRoomCodes = new Set<string>();
   private legacyCompatibility = false;
   private legacyCreatePending = false;
@@ -200,6 +207,8 @@ export class RoomService {
     this.roomSweepIntervalMs = options.roomSweepIntervalMs ?? 60 * 1000;
     this.now = options.clock ?? Date.now;
     this.sweepLogger = options.sweepLogger;
+    this.reviewPipeline = options.reviewPipeline;
+    this.insightStore = options.insightStore;
     this.catalog = options.catalog ?? defaultRoomCatalogService;
     this.policy = options.policy ?? new RoomPolicy({ registry: this.catalog.registry });
     this.projector =
@@ -230,7 +239,23 @@ export class RoomService {
     this.closed = false;
     await this.sweepExpiredRooms();
     this.startSweepTimer();
+    await this.reviewPipeline?.restore();
     const rooms = await this.repository.list();
+    if (this.reviewPipeline) {
+      // Backfill a missing end job during server recovery. Result-page reads
+      // are projections only and must never be the trigger for production
+      // review work.
+      for (const room of rooms) {
+        if (room.status !== 'ended') continue;
+        const gameId = room.gameId ?? room.session?.state.gameId;
+        if (!gameId || await this.reviewPipeline.get(gameId)) continue;
+        await this.reviewPipeline.enqueue({
+          gameId,
+          roomId: room.id,
+          reviewEnabled: Boolean(room.config?.reviewEnabled),
+        });
+      }
+    }
     for (const room of rooms) {
       if (!room.config?.credentialRef) continue;
       try {
@@ -937,6 +962,36 @@ export class RoomService {
     return session.eventsFor(await this.viewerForIdentity(identity), afterSequence);
   }
 
+  async review(identity: SocketIdentity) {
+    const room = await this.requireRoom(identity.roomCode);
+    assertIdentityRoom(identity, room);
+    const gameId = room.gameId ?? room.session?.state.gameId;
+    if (!gameId) throw this.error('GAME_NOT_STARTED', 'room.error.game_not_started');
+    if (!this.reviewPipeline) {
+      return {
+        gameId,
+        roomId: room.id,
+        status: 'disabled' as const,
+        enabled: false,
+        timeline: [],
+        messages: [],
+        insights: [],
+        updatedAt: Date.now(),
+      };
+    }
+    const review = await this.reviewPipeline.view(gameId, await this.viewerForIdentity(identity));
+    return review ?? {
+      gameId,
+      roomId: room.id,
+      status: 'pending' as const,
+      enabled: Boolean(room.config?.reviewEnabled),
+      timeline: [],
+      messages: [],
+      insights: [],
+      updatedAt: Date.now(),
+    };
+  }
+
   async getRecord(roomCode: string): Promise<RoomRecord | undefined> {
     const room = await this.repository.get(roomCode);
     // Compatibility for the pre-C in-process diagnostic API. It is
@@ -1347,6 +1402,8 @@ export class RoomService {
     }
     const snapshot = session.serialize();
     let status: RoomRecord['status'] | undefined;
+    let endedGameId: string | undefined;
+    let endedReviewEnabled = false;
     await this.repository.mutate(roomCode, (room) => {
       // The coordinator owns the starting transaction. Do not let the initial
       // game.started event advance its CAS before the playing commit.
@@ -1357,11 +1414,24 @@ export class RoomService {
       if (snapshot.state.gameState.phase === 'ended') room.status = 'ended';
       this.touchActivity(room);
       status = room.status;
+      if (status === 'ended') {
+        endedGameId = snapshot.state.gameId;
+        endedReviewEnabled = Boolean(room.config?.reviewEnabled);
+      }
     });
     if (status === 'playing' || status === 'ended') {
       // This callback is also used by AI actions and deadline recovery.  The
       // transport turns it into per-socket projections for the whole room.
       await this.notifyRoomChange(roomCode, 'status_changed');
+    }
+    if (status === 'ended' && endedGameId && this.reviewPipeline) {
+      // The session has already appended game.ended and its final state event.
+      // The durable gameId makes repeated onChanged callbacks harmless.
+      void this.reviewPipeline.enqueue({
+        gameId: endedGameId,
+        roomId: snapshot.state.roomId,
+        reviewEnabled: endedReviewEnabled,
+      }).catch(() => undefined);
     }
   }
 
@@ -1421,6 +1491,13 @@ export class RoomService {
         role: actor.role,
       });
       const provider = await this.providerForRoom(room);
+      const historicalExperience = this.insightStore
+        ? await this.insightStore.getPromptReference(actor.role)
+        : '';
+      const experience = [
+        experienceLibrary.getReference(actor.role, session.stageRevision),
+        historicalExperience,
+      ].filter(Boolean).join('\n\n');
       const promptContext = provider.requiresPromptContext
         ? buildAIRuntimeContext({
             actorId: actor.id,
@@ -1451,6 +1528,7 @@ export class RoomService {
               state.gameState.phase === 'lastWords'
                 ? state.dayFlow.lastWordsRemaining
                 : undefined,
+            experience,
           })
         : undefined;
       const orchestrator = new AIOrchestrator(provider, this.options.session?.now, {

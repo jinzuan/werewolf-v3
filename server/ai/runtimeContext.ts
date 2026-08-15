@@ -21,6 +21,7 @@ export interface AIRuntimeContextInput {
   lastWordsRound?: number;
   lastWordsRoundsRemaining?: number;
   firstLastWords?: string;
+  experience?: string;
 }
 
 const playerName = (players: readonly Player[], id: unknown): string =>
@@ -395,6 +396,7 @@ export const buildAIRuntimeContext = (
         })
         .map((event) => String(payload(event).content ?? ''))
         .find(Boolean),
+    experience: input.experience,
     lastWordsVisibleDeathHistory: visibleDeathHistory(input),
     lastWordsVisibleActionHistory: visibleActionHistory(input),
     legalActions: [...input.allowedActions],
