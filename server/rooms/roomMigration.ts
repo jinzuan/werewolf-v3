@@ -296,6 +296,7 @@ export const migrateRoomRecord = (input: RoomRecord): RoomRecord => {
     members: normalizeMembers(room),
     schemaVersion: CURRENT_ROOM_SCHEMA_VERSION,
     roomRevision: normalizeRevision(room.roomRevision),
+    rosterRevision: normalizeRevision(room.rosterRevision),
     configRevision: normalizeRevision(room.configRevision),
     configLocked:
       room.configLocked ??

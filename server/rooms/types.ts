@@ -116,6 +116,8 @@ export interface RoomRecord {
 
   schemaVersion?: number;
   roomRevision?: number;
+  /** Repository-owned revision of members/seats, independent of leases. */
+  rosterRevision?: number;
   configRevision?: number;
   configLocked?: boolean;
   config?: RoomConfigRecord;
@@ -130,6 +132,8 @@ export interface RoomRecord {
   startLeaseUntil?: number;
   startedAt?: number;
   startAddedAIIds?: string[];
+  /** Frozen roster revision used by the start/session commit. */
+  startRosterRevision?: number;
   lastStartFailure?: RoomStartFailure;
   closedAt?: number;
   closeReason?: 'dissolved';

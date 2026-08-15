@@ -10,7 +10,7 @@ import type {
 import type { RoomAccess, SocketIdentity } from '../rooms/types';
 import { RoomService, RoomServiceError } from '../rooms/roomService';
 import {
-  effectiveRequestProtocol,
+  isSecureRequest,
   isAllowedOrigin,
   type RuntimeSecurityConfig,
 } from '../security/runtimeSecurityConfig';
@@ -207,10 +207,9 @@ export function bindSocketTransport(
   io.on('connection', (socket) => {
     if (options.security) {
       const origin = socket.handshake.headers.origin;
-      const protocol = effectiveRequestProtocol(socket.handshake.headers, options.security.trustProxy);
       if (
         (origin && !isAllowedOrigin(origin, options.security)) ||
-        (options.security.environment === 'production' && protocol !== 'https')
+        (options.security.environment === 'production' && !isSecureRequest(socket.request, options.security))
       ) {
         socket.disconnect(true);
         return;

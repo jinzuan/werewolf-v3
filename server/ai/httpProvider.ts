@@ -29,6 +29,8 @@ export interface HttpAIProviderOptions {
   maxRetries?: number;
   baseDelayMs?: number;
   endpointPolicy?: EndpointPolicy;
+  /** Resolved by the room composition root; never silently replaced. */
+  endpoint?: string;
 }
 
 interface ResponseEnvelope {
@@ -92,8 +94,8 @@ const endpointFor = (config: AIConfig): string => {
   return config.local.apiUrl;
 };
 
-const settingsFor = (config: AIConfig): ProviderSettings => {
-  const endpoint = endpointFor(config);
+const settingsFor = (config: AIConfig, endpointOverride?: string): ProviderSettings => {
+  const endpoint = endpointOverride ?? endpointFor(config);
   const selected =
     config.apiType === 'siliconflow'
       ? config.siliconflow
@@ -344,7 +346,7 @@ export class HttpAIProvider implements AIProvider {
     config: AIConfig = loadAIConfig(),
     options: HttpAIProviderOptions = {},
   ) {
-    this.settings = settingsFor(config);
+    this.settings = settingsFor(config, options.endpoint);
     this.behavior = config.defaultBehavior;
     this.gate = gateFor(this.settings.key);
     this.fetchImpl = options.fetch ?? globalThis.fetch;

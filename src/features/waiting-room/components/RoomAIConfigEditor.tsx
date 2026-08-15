@@ -7,6 +7,7 @@ import type {
   RoomViewV31,
 } from '../../../../shared/roomContract';
 import { AI_DEFAULTS } from '../../../../shared/config/aiDefaults';
+import { getAIProviderCapability } from '../../../../shared/aiProviderCapabilities';
 import { Button } from '../../../ui/Button';
 import { Input } from '../../../ui/Input';
 import { Modal } from '../../../ui/Modal';
@@ -24,11 +25,8 @@ const BEHAVIORS: Array<{ value: RoomAIBehavior; label: string }> = [
   { value: 'random', label: '随机' },
 ];
 
-const endpointFor = (provider: RoomAIProvider): string => {
-  if (provider === 'siliconflow') return 'https://api.siliconflow.cn/v1/chat/completions';
-  if (provider === 'deepseek') return 'https://api.deepseek.com/v1/chat/completions';
-  return provider === 'local' ? 'http://127.0.0.1:1234/v1/chat/completions' : '';
-};
+const endpointFor = (provider: RoomAIProvider): string =>
+  getAIProviderCapability(provider).defaultEndpoint;
 
 interface RoomAIConfigEditorProps {
   room: RoomViewV31;
@@ -86,13 +84,17 @@ export function RoomAIConfigEditor({
   }, [open, summary]);
 
   const submit = () => {
+    const capability = (summary?.provider === provider ? summary.capability : undefined) ??
+      getAIProviderCapability(provider);
     const patch: RoomAIConfigPatch = {
       provider,
       model: model.trim(),
       temperature,
       maxTokens,
       behavior,
-      ...(endpoint.trim() ? { endpoint: endpoint.trim() } : {}),
+      ...(capability.endpointMode === 'configurable' && endpoint.trim()
+        ? { endpoint: endpoint.trim() }
+        : {}),
       ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
       ...(token.trim() ? { token: token.trim() } : {}),
       ...(clearApiKey ? { clearApiKey: true } : {}),
@@ -107,8 +109,12 @@ export function RoomAIConfigEditor({
 
   const changeProvider = (next: RoomAIProvider) => {
     setProvider(next);
-    setEndpoint(summary && next === summary.provider ? '' : endpointFor(next));
+    const capability = getAIProviderCapability(next);
+    setEndpoint(summary && next === summary.provider ? '' : capability.defaultEndpoint);
   };
+
+  const capability = (summary?.provider === provider ? summary.capability : undefined) ??
+    getAIProviderCapability(provider);
 
   return (
     <Modal
@@ -140,16 +146,23 @@ export function RoomAIConfigEditor({
             <span>模型名称</span>
             <Input value={model} onChange={(event) => setModel(event.target.value)} autoComplete="off" />
           </label>
-          <label className="waiting-room__editor-field">
-            <span>接口地址</span>
-            <Input
-              value={endpoint}
-              placeholder={summary ? '已保存；留空保持不变' : '请输入安全接口地址'}
-              onChange={(event) => setEndpoint(event.target.value)}
-              autoComplete="off"
-            />
-            {summary ? <small>当前接口来源：{summary.endpointOrigin}</small> : null}
-          </label>
+          {capability.endpointMode === 'configurable' ? (
+            <label className="waiting-room__editor-field">
+              <span>接口地址</span>
+              <Input
+                value={endpoint}
+                placeholder={summary ? '已保存；留空保持不变' : '请输入安全接口地址'}
+                onChange={(event) => setEndpoint(event.target.value)}
+                autoComplete="off"
+              />
+              {summary ? <small>当前接口来源：{summary.endpointOrigin}</small> : null}
+            </label>
+          ) : (
+            <div className="waiting-room__editor-field">
+              <span>接口地址</span>
+              <p className="waiting-room__empty-copy">固定官方安全接口：{capability.defaultEndpoint}</p>
+            </div>
+          )}
           <label className="waiting-room__editor-field">
             <span>温度（0–2）</span>
             <Input type="number" min={0} max={2} step={0.1} value={temperature} onChange={(event) => setTemperature(Number(event.target.value))} />

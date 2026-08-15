@@ -93,10 +93,20 @@ const factsOf = (room: RoomRecord): RoomRecord => {
   const facts = clone(room);
   delete facts.schemaVersion;
   delete facts.roomRevision;
+  delete facts.rosterRevision;
   delete facts.configRevision;
   delete facts.updatedAt;
   return facts;
 };
+
+const rosterOf = (room: RoomRecord): RoomMemberFacts => room.members;
+
+type RoomMemberFacts = RoomRecord['members'];
+
+const rosterRevisionOf = (room: RoomRecord): number =>
+  Number.isInteger(room.rosterRevision) && room.rosterRevision! > 0
+    ? room.rosterRevision!
+    : 1;
 
 const configOf = (room: RoomRecord): unknown => clone(room.config);
 
@@ -179,7 +189,11 @@ const applyMutation = async <T>(
   }
 
   const configChanged = !isDeepStrictEqual(configOf(current), configOf(next));
+  const rosterChanged = !isDeepStrictEqual(rosterOf(current), rosterOf(next));
   next.roomRevision = actualRevision + 1;
+  next.rosterRevision = rosterChanged
+    ? rosterRevisionOf(current) + 1
+    : rosterRevisionOf(current);
   next.configRevision = configChanged
     ? configRevisionOf(current) + 1
     : configRevisionOf(current);

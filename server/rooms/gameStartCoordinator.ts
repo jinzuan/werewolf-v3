@@ -144,6 +144,11 @@ const revisionOf = (room: RoomRecord): number =>
     ? room.roomRevision!
     : 1;
 
+const rosterRevisionOf = (room: RoomRecord): number =>
+  Number.isInteger(room.rosterRevision) && room.rosterRevision! > 0
+    ? room.rosterRevision!
+    : 1;
+
 const isPlayer = (member: RoomMember): boolean => member.kind === 'player';
 const isComputer = (member: RoomMember): boolean =>
   isPlayer(member) && member.isAI === true;
@@ -583,6 +588,7 @@ export class GameStartCoordinator {
           room.startedAt = this.now();
           room.startLeaseUntil = this.now() + (this.options.startLeaseMs ?? 15_000);
           room.startAddedAIIds = [...addedAIIds];
+          room.startRosterRevision = rosterRevisionOf(room) + (addedAIIds.length > 0 ? 1 : 0);
           delete room.lastStartFailure;
           return { kind: 'claimed', addedAIIds };
         },
@@ -590,10 +596,16 @@ export class GameStartCoordinator {
     } catch (error) {
       if (error instanceof RoomRevisionConflictError) {
         const latest = await this.repository.get(roomCode);
-        if (latest?.status === 'starting' || latest?.status === 'playing') {
+        if (latest?.status === 'starting') {
           throw new GameStartError(
             'GAME_START_IN_PROGRESS',
             'Another start command already owns this room.',
+          );
+        }
+        if (latest?.status === 'playing' || latest?.status === 'ended') {
+          throw new GameStartError(
+            'GAME_ALREADY_STARTED',
+            'The game has already started.',
           );
         }
       }
@@ -613,6 +625,7 @@ export class GameStartCoordinator {
     await this.options.onRoomChange?.(clone(startingRoom), 'status_changed');
 
     let session: StartableGameSession | undefined;
+    const frozenRosterRevision = startingRoom.startRosterRevision ?? rosterRevisionOf(startingRoom);
     try {
       const players = playersFromMembers(startingRoom);
       if (players.length !== startingRoom.config?.maxPlayers) {
@@ -658,14 +671,23 @@ export class GameStartCoordinator {
       };
       await this.repository.mutate(
         roomCode,
-        revisionOf(startingRoom),
         (room) => {
           if (room.status !== 'starting') {
             throw new GameStartError(
-              room.status === 'playing'
-                ? 'GAME_START_IN_PROGRESS'
+              room.status === 'playing' || room.status === 'ended'
+                ? 'GAME_ALREADY_STARTED'
                 : 'ACTION_NOT_ALLOWED',
               'The room changed before the game was committed.',
+            );
+          }
+          if (rosterRevisionOf(room) !== frozenRosterRevision) {
+            throw new GameStartError(
+              'ROOM_REVISION_CONFLICT',
+              'The room roster changed while the game was starting.',
+              {
+                expectedRosterRevision: frozenRosterRevision,
+                actualRosterRevision: rosterRevisionOf(room),
+              },
             );
           }
           room.status = 'playing';
@@ -677,6 +699,7 @@ export class GameStartCoordinator {
           delete room.startLeaseUntil;
           delete room.startedAt;
           delete room.startAddedAIIds;
+          delete room.startRosterRevision;
           room.recentRoomCommands = [
             ...(room.recentRoomCommands ?? []).filter(
               (entry) => entry.commandId !== command.commandId,
@@ -705,7 +728,7 @@ export class GameStartCoordinator {
       const failure = asGameStartError(error);
       await this.rollback(
         roomCode,
-        revisionOf(startingRoom),
+        frozenRosterRevision,
         claim.addedAIIds,
         failure,
       );
@@ -733,16 +756,21 @@ export class GameStartCoordinator {
 
   private async rollback(
     roomCode: string,
-    startingRevision: number,
+    startingRosterRevision: number,
     addedAIIds: readonly string[],
     failure: GameStartError,
   ): Promise<void> {
     try {
       const rolledBack = await this.repository.mutate(
         roomCode,
-        startingRevision,
         (room) => {
           if (room.status !== 'starting') return;
+          if (rosterRevisionOf(room) !== startingRosterRevision) {
+            throw new GameStartError(
+              'ROOM_REVISION_CONFLICT',
+              'The room roster changed while the failed game was rolling back.',
+            );
+          }
           const added = new Set(addedAIIds);
           room.members = room.members.filter((member) => !added.has(member.id));
           room.players = (room.players ?? []).filter((player) => !added.has(player.id));
@@ -754,6 +782,7 @@ export class GameStartCoordinator {
           delete room.startLeaseUntil;
           delete room.startedAt;
           delete room.startAddedAIIds;
+          delete room.startRosterRevision;
           room.lastStartFailure = {
             code: failure.code,
             occurredAt: this.now(),

@@ -4,15 +4,17 @@ import { Server } from 'socket.io';
 import { FileEventStore } from './events/fileStore';
 import { FileRoomRepository } from './rooms/fileRepository';
 import { RoomService } from './rooms/roomService';
+import { HttpAIProvider } from './ai/httpProvider';
 import { FileInsightStore } from './review/insightStore';
 import { FileReviewRepository } from './review/fileReviewRepository';
 import { ReviewPipeline } from './review/reviewPipeline';
 import { bindSocketTransport } from './transport/socketTransport';
 import { resolveRuntimeConfig } from './runtimeConfig';
 import {
-  effectiveRequestProtocol,
   EncryptedFileCredentialStore,
+  EndpointPolicy,
   InMemoryCredentialStore,
+  isSecureRequest,
   isAllowedOrigin,
   parseRuntimeSecurityConfig,
 } from './security';
@@ -25,6 +27,11 @@ const responseHeaders = (): Record<string, string> => security.environment === '
 const port = Number(process.env.PORT ?? 3001);
 const runtime = resolveRuntimeConfig();
 const httpServer = createServer((request, response) => {
+  if (security.environment === 'production' && !isSecureRequest(request, security)) {
+    response.writeHead(426, { 'content-type': 'application/json', ...responseHeaders() });
+    response.end(JSON.stringify({ ok: false, code: 'INSECURE_TRANSPORT' }));
+    return;
+  }
   if (request.url === '/health') {
     response.writeHead(200, { 'content-type': 'application/json', ...responseHeaders() });
     response.end(JSON.stringify({ ok: true, service: 'werewolf-v3' }));
@@ -46,8 +53,7 @@ io.use((socket, next) => {
     next(new Error('CORS_ORIGIN_NOT_ALLOWED'));
     return;
   }
-  const protocol = effectiveRequestProtocol(socket.handshake.headers, security.trustProxy);
-  if (security.environment === 'production' && protocol !== 'https') {
+  if (security.environment === 'production' && !isSecureRequest(socket.request, security)) {
     next(new Error('INSECURE_TRANSPORT'));
     return;
   }
@@ -77,6 +83,11 @@ const credentialStore = security.secretStore === 'memory'
 const reviewRepository = new FileReviewRepository(runtime.reviewsFile);
 const insightStore = new FileInsightStore(path.join(runtime.dataDir, 'insights.json'));
 const reviewPipeline = new ReviewPipeline(eventStore, reviewRepository, { insightStore });
+const endpointPolicy = new EndpointPolicy({
+  environment: security.environment,
+  allowPrivateEndpoints: security.allowPrivateAIEndpoints,
+  allowlist: security.aiEndpointAllowlist,
+});
 const roomService = new RoomService(new FileRoomRepository(runtime.roomsFile, {
   environment: runtime.environment,
   deploymentNamespace: runtime.deploymentNamespace,
@@ -91,6 +102,8 @@ const roomService = new RoomService(new FileRoomRepository(runtime.roomsFile, {
   roomSweepIntervalMs: runtime.roomSweepIntervalMs,
   credentialStore,
   credentialNamespace: runtime.deploymentNamespace,
+  endpointPolicy,
+  aiProviderFactory: (config, options) => new HttpAIProvider(config, options),
   reviewPipeline,
   insightStore,
 });
@@ -98,10 +111,10 @@ const roomService = new RoomService(new FileRoomRepository(runtime.roomsFile, {
 await roomService.restore();
 bindSocketTransport(io, roomService, { security });
 
-httpServer.listen(port, () => {
+httpServer.listen(port, runtime.bindHost, () => {
   const scheme = security.environment === 'production' ? 'https' : 'http';
   console.log(
-    `[server:v3] listening on ${scheme}://127.0.0.1:${port} ` +
+    `[server:v3] listening on ${scheme}://${runtime.bindHost}:${port} ` +
       `env=${runtime.environment} namespace=${runtime.deploymentNamespace}`,
   );
   if (security.environment !== 'production') {

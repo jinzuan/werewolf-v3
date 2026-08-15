@@ -21,3 +21,4 @@ export * from './gameLogArchive';
 export * from './ringBuffer';
 export * from './config/aiDefaults';
 export * from './config/mergeDefaults';
+export * from './aiProviderCapabilities';

@@ -52,10 +52,16 @@ const factsOf = (room: RoomRecord): RoomRecord => {
   const facts = clone(room);
   delete facts.schemaVersion;
   delete facts.roomRevision;
+  delete facts.rosterRevision;
   delete facts.configRevision;
   delete facts.updatedAt;
   return facts;
 };
+
+const rosterRevisionOf = (room: RoomRecord): number =>
+  Number.isInteger(room.rosterRevision) && room.rosterRevision! > 0
+    ? room.rosterRevision!
+    : 1;
 
 const configOf = (room: RoomRecord): unknown => clone(room.config);
 
@@ -81,6 +87,9 @@ const prepareSave = (
     configOf(incoming),
   );
   incoming.roomRevision = Math.max(currentRevision + 1, incomingRevision);
+  incoming.rosterRevision = !isDeepStrictEqual(current.members, incoming.members)
+    ? rosterRevisionOf(current) + 1
+    : rosterRevisionOf(current);
   incoming.configRevision = configChanged
     ? Math.max(configRevisionOf(current) + 1, incoming.configRevision ?? 1)
     : configRevisionOf(current);
@@ -308,6 +317,9 @@ export class FileRoomRepository implements RoomRepository {
           configOf(next),
         );
         next.roomRevision = actualRevision + 1;
+        next.rosterRevision = !isDeepStrictEqual(current.members, next.members)
+          ? rosterRevisionOf(current) + 1
+          : rosterRevisionOf(current);
         next.configRevision = configChanged
           ? configRevisionOf(current) + 1
           : configRevisionOf(current);

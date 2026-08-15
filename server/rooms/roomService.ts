@@ -18,6 +18,10 @@ import type {
   RoomAIConfigSummary,
   RoomAIProviderConfig,
 } from '../../shared/roomContract';
+import {
+  endpointMatchesCapability,
+  getAIProviderCapability,
+} from '../../shared/aiProviderCapabilities';
 import type { AIConfig, GameAction, Player, Role } from '../../shared/types';
 import { AIOrchestrator } from '../ai/orchestrator';
 import { DeterministicAIProvider } from '../ai/deterministicProvider';
@@ -25,6 +29,7 @@ import { HttpAIProvider } from '../ai/httpProvider';
 import { buildAIRuntimeContext } from '../ai/runtimeContext';
 import { experienceLibrary } from '../ai/experienceLibrary';
 import type { AIProvider } from '../ai/types';
+import type { HttpAIProviderOptions } from '../ai/httpProvider';
 import type { InsightStore } from '../review/insightStore';
 import { GameSession } from '../session/gameSession';
 import type { SessionOptions } from '../session/types';
@@ -62,13 +67,6 @@ const code = () =>
   Array.from({ length: 6 }, () => CODE_CHARS[randomInt(CODE_CHARS.length)]).join('');
 
 const clone = <T>(value: T): T => structuredClone(value);
-
-const DEFAULT_ROOM_AI_ENDPOINTS: Record<RoomAIConfig['provider'], string> = {
-  siliconflow: 'https://api.siliconflow.cn/v1/chat/completions',
-  deepseek: 'https://api.deepseek.com/v1/chat/completions',
-  local: 'http://127.0.0.1:1234/v1/chat/completions',
-  custom: '',
-};
 
 interface RoomAIConfigCommandOutcome {
   summary: RoomAIConfigSummary | null;
@@ -169,6 +167,11 @@ export interface RoomServiceOptions {
   credentialStore?: RoomCredentialStore;
   credentialNamespace?: string;
   endpointPolicy?: EndpointPolicy;
+  /** Production composition root supplies the provider implementation. */
+  aiProviderFactory?: (
+    config: AIConfig,
+    options: HttpAIProviderOptions,
+  ) => AIProvider;
   reviewPipeline?: ReviewPipeline;
   insightStore?: InsightStore;
 }
@@ -193,6 +196,7 @@ export class RoomService {
   private readonly credentialStore: RoomCredentialStore;
   private readonly credentialNamespace: string;
   private readonly endpointPolicy: EndpointPolicy;
+  private readonly aiProviderFactory: NonNullable<RoomServiceOptions['aiProviderFactory']>;
   private readonly reviewPipeline?: ReviewPipeline;
   private readonly insightStore?: InsightStore;
   private readonly legacyRoomCodes = new Set<string>();
@@ -242,7 +246,9 @@ export class RoomService {
       });
     this.credentialStore = options.credentialStore ?? new InMemoryCredentialStore();
     this.credentialNamespace = options.credentialNamespace ?? process.env.WW_DEPLOYMENT_NAMESPACE ?? 'development';
-    this.endpointPolicy = options.endpointPolicy ?? new EndpointPolicy();
+    this.endpointPolicy = options.endpointPolicy ?? new EndpointPolicy({ environment: this.environment });
+    this.aiProviderFactory = options.aiProviderFactory ?? ((config, providerOptions) =>
+      new HttpAIProvider(config, providerOptions));
     this.starter =
       options.startCoordinator ??
       new GameStartCoordinator(repository, {
@@ -334,6 +340,9 @@ export class RoomService {
     if (options.aiConfig) {
       const aiConfig = this.normalizeRoomAIConfig(options.aiConfig);
       if (!aiConfig) throw this.error('INVALID_ROOM_CONFIG', 'room.error.invalid_ai_config');
+      if (!endpointMatchesCapability(aiConfig.provider, aiConfig.endpoint)) {
+        throw this.error('AI_ENDPOINT_NOT_ALLOWED', 'room.error.ai_endpoint_not_allowed');
+      }
       try {
         await this.endpointPolicy.validate(aiConfig.endpoint, {
           provider: aiConfig.provider,
@@ -442,74 +451,65 @@ export class RoomService {
 
   async join(request: JoinRoomRequest): Promise<RoomAccess> {
     const room = await this.requireRoom(request.roomCode);
-    const config = room.config;
-    if (!config) throw this.error('INVALID_ROOM_CONFIG', 'room.error.config_missing');
-    if (room.members.some((member) => member.id === request.actorId)) {
-      throw this.error('IDENTITY_ALREADY_EXISTS', 'room.error.identity_exists');
-    }
-
     const spectator = request.spectator === true;
-    const publicSpectator = spectator && config.allowPublicSpectators === true;
-    if (!publicSpectator && room.joinToken !== request.joinToken) {
+    if (room.joinToken !== request.joinToken &&
+      !(spectator && room.config?.allowPublicSpectators === true)) {
       throw this.error('ROOM_TOKEN_INVALID', 'room.error.invalid_join_token');
     }
-    if (spectator) {
-      if (
-        roomCounts(room).spectators >= this.catalog.getCatalog().limits.maxSpectators
-      ) {
-        throw this.error('ROOM_FULL', 'room.error.spectator_limit');
-      }
-      if (!config.allowPublicSpectators && room.joinToken !== request.joinToken) {
-        throw this.error('ROOM_TOKEN_INVALID', 'room.error.invalid_join_token');
-      }
-      if (room.status === 'waiting' || room.status === 'ready_check') {
-        // Spectators may watch a lobby only when explicitly allowed; this is
-        // still a member fact and is committed through the same CAS path.
-      }
-    } else {
-      if (room.status !== 'waiting' && room.status !== 'ready_check') {
-        throw this.error('GAME_ALREADY_STARTED', 'room.error.game_already_started');
-      }
-      // Fixed computer seats are reserved capacity, so they cannot be
-      // silently taken by human joins before the start transaction.
-      const humanCapacity = config.maxPlayers - config.computerSeats;
-      if (roomCounts(room).humanPlayers >= humanCapacity) {
-        throw this.error('ROOM_FULL', 'room.error.room_full');
-      }
-    }
-
     const resumeToken = token();
-    const seatIndex = spectator ? null : nextSeatIndex(room.members, config.maxPlayers);
-    await this.repository.mutate(room.code, (draft) => {
-      if (draft.members.some((member) => member.id === request.actorId)) {
-        throw this.error('IDENTITY_ALREADY_EXISTS', 'room.error.identity_exists');
+    try {
+      // The revision is part of the join claim. Every status, membership and
+      // capacity decision below is made against the same RoomRecord that is
+      // persisted, so a start claim cannot race a stale outer pre-check.
+      await this.repository.mutate(room.code, room.roomRevision!, (draft) => {
+        if (draft.status !== 'waiting' && draft.status !== 'ready_check') {
+          throw this.error('GAME_ALREADY_STARTED', 'room.error.game_already_started');
+        }
+        const config = draft.config;
+        if (!config) throw this.error('INVALID_ROOM_CONFIG', 'room.error.config_missing');
+        if (draft.members.some((member) => member.id === request.actorId)) {
+          throw this.error('IDENTITY_ALREADY_EXISTS', 'room.error.identity_exists');
+        }
+        if (spectator) {
+          if (roomCounts(draft).spectators >= this.catalog.getCatalog().limits.maxSpectators) {
+            throw this.error('ROOM_FULL', 'room.error.spectator_limit');
+          }
+          if (config.allowPublicSpectators !== true && draft.joinToken !== request.joinToken) {
+            throw this.error('ROOM_TOKEN_INVALID', 'room.error.invalid_join_token');
+          }
+        } else {
+          const humanCapacity = config.maxPlayers - config.computerSeats;
+          if (roomCounts(draft).humanPlayers >= humanCapacity) {
+            throw this.error('ROOM_FULL', 'room.error.room_full');
+          }
+        }
+        const member: RoomMember = {
+          id: request.actorId,
+          name: request.name.trim().slice(0, 32) || '玩家',
+          kind: spectator ? 'spectator' : 'player',
+          connected: true,
+          omniscient:
+            spectator && request.omniscientToken !== undefined &&
+            request.omniscientToken === draft.omniscientToken,
+          resumeToken,
+          seatIndex: spectator ? null : nextSeatIndex(draft.members, config.maxPlayers),
+          isAI: false,
+          ready: spectator ? null : false,
+          avatarId: request.avatarId ?? '',
+        };
+        draft.members.push(member);
+        if (!spectator) draft.players.push(makePlayer(draft.id, member, draft.hostId));
+        this.touchActivity(draft);
+      });
+    } catch (error) {
+      if (error instanceof RoomRevisionConflictError) {
+        const latest = await this.repository.get(room.code);
+        if (latest && latest.status !== 'waiting' && latest.status !== 'ready_check') {
+          throw this.error('GAME_ALREADY_STARTED', 'room.error.game_already_started');
+        }
       }
-      const currentConfig = draft.config;
-      if (!currentConfig) throw this.error('INVALID_ROOM_CONFIG', 'room.error.config_missing');
-      const humanCapacity = currentConfig.maxPlayers - currentConfig.computerSeats;
-      if (!spectator && roomCounts(draft).humanPlayers >= humanCapacity) {
-        throw this.error('ROOM_FULL', 'room.error.room_full');
-      }
-      const member: RoomMember = {
-        id: request.actorId,
-        name: request.name.trim().slice(0, 32) || '玩家',
-        kind: spectator ? 'spectator' : 'player',
-        connected: true,
-        omniscient:
-          spectator && request.omniscientToken !== undefined &&
-          request.omniscientToken === draft.omniscientToken,
-        resumeToken,
-        seatIndex,
-        isAI: false,
-        ready: spectator ? null : false,
-        avatarId: request.avatarId ?? '',
-      };
-      draft.members.push(member);
-      if (!spectator) {
-        draft.players.push(makePlayer(draft.id, member, draft.hostId));
-      }
-      this.touchActivity(draft);
-    });
+      throw this.mapError(error);
+    }
     const current = await this.requireRoom(room.code);
     return { room: this.projectRoom(current, request.actorId), credentials: { resumeToken } };
   }
@@ -855,6 +855,9 @@ export class RoomService {
     }
     let candidate: RoomAIConfig & { endpointOrigin: string };
     try {
+      if (!endpointMatchesCapability(candidateBase.provider, candidateBase.endpoint)) {
+        throw this.error('AI_ENDPOINT_NOT_ALLOWED', 'room.error.ai_endpoint_not_allowed');
+      }
       const validatedEndpoint = await this.endpointPolicy.validate(candidateBase.endpoint, {
         provider: candidateBase.provider,
       });
@@ -998,6 +1001,7 @@ export class RoomService {
           temperature: candidate.temperature,
           maxTokens: candidate.maxTokens,
           behavior: candidate.behavior,
+          capability: getAIProviderCapability(candidate.provider),
           hasApiKey: Boolean(nextValues.apiKey),
           hasToken: Boolean(nextValues.token),
           configRevision,
@@ -1421,6 +1425,7 @@ export class RoomService {
         delete room.startLeaseUntil;
         delete room.startedAt;
         delete room.startAddedAIIds;
+        delete room.startRosterRevision;
         return room;
       },
     );
@@ -1555,7 +1560,10 @@ export class RoomService {
         ? AI_DEFAULTS.deepseek
         : AI_DEFAULTS.local;
     const model = patch.model ?? existing?.model ?? defaults.model;
-    const endpoint = patch.endpoint ?? existing?.endpoint ?? DEFAULT_ROOM_AI_ENDPOINTS[provider];
+    const capability = getAIProviderCapability(provider);
+    const providerChanged = patch.provider !== undefined && patch.provider !== existing?.provider;
+    const endpoint = patch.endpoint ??
+      (providerChanged ? capability.defaultEndpoint : existing?.endpoint ?? capability.defaultEndpoint);
     if (!model || !endpoint) return undefined;
     return {
       provider,
@@ -1619,6 +1627,7 @@ export class RoomService {
       temperature: config.temperature,
       maxTokens: config.maxTokens,
       behavior: config.behavior,
+      capability: getAIProviderCapability(config.provider),
       hasApiKey: Boolean(values?.apiKey),
       hasToken: Boolean(values?.token),
       configRevision: room.configRevision ?? 1,
@@ -1655,9 +1664,10 @@ export class RoomService {
     selected.temperature = roomConfig.temperature;
     selected.maxTokens = roomConfig.maxTokens;
     if (providerConfig.apiType === 'local') providerConfig.local.apiUrl = roomConfig.endpoint;
-    const provider = new HttpAIProvider(providerConfig, {
+    const provider = this.aiProviderFactory(providerConfig, {
       timeoutMs: this.options.aiTimeoutMs,
       endpointPolicy: this.endpointPolicy,
+      endpoint: roomConfig.endpoint,
     });
     this.roomAIProviders.set(roomKey, provider);
     return provider;

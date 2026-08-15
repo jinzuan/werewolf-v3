@@ -10,6 +10,7 @@ export type RuntimeEnvironment = (typeof RUNTIME_ENVIRONMENTS)[number];
 
 export interface RuntimeConfig {
   environment: RuntimeEnvironment;
+  bindHost: string;
   dataDir: string;
   deploymentNamespace: string;
   roomsFile: string;
@@ -28,6 +29,7 @@ export interface RuntimeConfigEnv {
   WW_WAITING_ROOM_TTL_MS?: string;
   WW_ENDED_ROOM_TTL_MS?: string;
   WW_ROOM_SWEEP_INTERVAL_MS?: string;
+  WW_BIND_HOST?: string;
 }
 
 const DEFAULT_WAITING_ROOM_TTL_MS = 30 * 60 * 1000;
@@ -112,6 +114,7 @@ export const resolveRuntimeConfig = (
 
   return {
     environment,
+    bindHost: env.WW_BIND_HOST?.trim() || '127.0.0.1',
     dataDir,
     deploymentNamespace: namespace,
     roomsFile: path.join(dataDir, 'rooms.json'),

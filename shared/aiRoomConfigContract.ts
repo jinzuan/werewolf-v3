@@ -2,6 +2,7 @@ import type {
   RoomAIBehavior,
   RoomAIProvider,
 } from './roomContract';
+import type { AIProviderCapability } from './aiProviderCapabilities';
 
 /** The only AI settings projection that may cross the room boundary. */
 export interface RoomAIConfigSummary {
@@ -12,6 +13,8 @@ export interface RoomAIConfigSummary {
   temperature: number;
   maxTokens: number;
   behavior: RoomAIBehavior;
+  /** Capability is server-resolved; older summaries may omit it. */
+  capability?: AIProviderCapability;
   hasApiKey: boolean;
   hasToken: boolean;
   configRevision: number;

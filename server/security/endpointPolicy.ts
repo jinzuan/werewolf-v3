@@ -209,11 +209,13 @@ export class EndpointPolicy {
 
   constructor(options: EndpointPolicyOptions = {}) {
     this.environment = options.environment ?? (
-      process.env.WW_ENV === 'test' || process.env.NODE_ENV === 'test' ? 'test' :
-        process.env.WW_ENV === 'production' ? 'production' : 'development'
+      'development'
     );
     this.allowPrivateEndpoints = options.allowPrivateEndpoints === true;
-    this.allowlist = normalizeAllowlist(options.allowlist ?? process.env.WW_AI_ENDPOINT_ALLOWLIST);
+    // Runtime security is resolved by the composition root. This policy is
+    // intentionally blind to process.env so a room cannot observe a second
+    // security configuration after construction.
+    this.allowlist = normalizeAllowlist(options.allowlist);
     this.officialHosts = {
       siliconflow: options.officialHosts?.siliconflow ?? DEFAULT_OFFICIAL_HOSTS.siliconflow,
       deepseek: options.officialHosts?.deepseek ?? DEFAULT_OFFICIAL_HOSTS.deepseek,
