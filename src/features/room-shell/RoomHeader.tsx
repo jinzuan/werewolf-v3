@@ -39,7 +39,7 @@ export function RoomHeader({ children, ...status }: RoomHeaderProps) {
   const requestedTitle = status.title === room.code ? undefined : status.title;
   const segment: RoomViewSegment = status.title === '公开观战'
     ? 'watch'
-    : status.title === 'AI 监控' || status.eyebrow === 'Match Console'
+    : status.title === '对局监控'
       ? 'monitor'
       : room.status === 'ended'
         ? 'result'

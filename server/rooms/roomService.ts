@@ -11,9 +11,12 @@ import type {
   RoomSummary,
   RoomView,
 } from '../../shared/protocol';
-import type { GameAction, Player, Role } from '../../shared/types';
+import { AI_DEFAULTS } from '../../shared/config/aiDefaults';
+import type { RoomAIConfig } from '../../shared/roomContract';
+import type { AIConfig, GameAction, Player, Role } from '../../shared/types';
 import { AIOrchestrator } from '../ai/orchestrator';
 import { DeterministicAIProvider } from '../ai/deterministicProvider';
+import { HttpAIProvider } from '../ai/httpProvider';
 import { buildAIRuntimeContext } from '../ai/runtimeContext';
 import type { AIProvider } from '../ai/types';
 import { GameSession } from '../session/gameSession';
@@ -97,6 +100,7 @@ export interface RoomServiceOptions {
 export class RoomService {
   private readonly sessions = new Map<string, GameSession>();
   private readonly aiRuns = new Map<string, Promise<void>>();
+  private readonly roomAIProviders = new Map<string, AIProvider>();
   private readonly fastAutoRooms = new Set<string>();
   private readonly roomChangeListeners = new Set<
     (roomCode: string, reason: RoomSnapshotReason) => void | Promise<void>
@@ -400,7 +404,12 @@ export class RoomService {
     if (result.ok === false) throw this.validationError(result);
     await this.mutateRoom(identity, expectedRoomRevision, 'update_config', (room) => {
       const next = result.config as RoomConfigRecord;
-      room.config = clone(next);
+      room.config = {
+        ...clone(next),
+        ...(next.mode !== 'human' && room.config?.aiConfig
+          ? { aiConfig: clone(room.config.aiConfig) }
+          : {}),
+      };
       room.maxPlayers = next.maxPlayers;
       room.configLocked = false;
       room.auto = next.mode === 'quick_computer';
@@ -539,6 +548,8 @@ export class RoomService {
       { ...meta, actorId: identity.actorId, roomId: room.id },
       command,
     );
+    const current = await this.requireRoom(room.code);
+    this.startAI(room.code, current.config?.mode === 'quick_computer');
     const viewer = await this.viewerForIdentity(identity);
     return { ...result, events: await session.projectEvents(result.events, viewer) };
   }
@@ -583,6 +594,7 @@ export class RoomService {
     for (const session of this.sessions.values()) session.dispose();
     await new Promise((resolve) => setImmediate(resolve));
     this.aiRuns.clear();
+    this.roomAIProviders.clear();
     this.fastAutoRooms.clear();
     this.legacyRoomCodes.clear();
     this.roomChangeListeners.clear();
@@ -591,7 +603,63 @@ export class RoomService {
   private normalizeCreateConfig(options: CreateRoomOptionsV31): RoomConfigRecord {
     const result = this.catalog.validator.validate(options);
     if (result.ok === false) throw this.validationError(result);
-    return clone(result.config as RoomConfigRecord);
+    const config = clone(result.config as RoomConfigRecord);
+    const aiConfig = this.normalizeRoomAIConfig(options.aiConfig);
+    if (aiConfig) config.aiConfig = aiConfig;
+    return config;
+  }
+
+  private normalizeRoomAIConfig(value: unknown): RoomAIConfig | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const raw = value as Partial<RoomAIConfig>;
+    const providers: RoomAIConfig['provider'][] = ['siliconflow', 'deepseek', 'local', 'custom'];
+    const behaviors: RoomAIConfig['behavior'][] = ['aggressive', 'conservative', 'random'];
+    if (!providers.includes(raw.provider as RoomAIConfig['provider'])) return undefined;
+    if (!behaviors.includes(raw.behavior as RoomAIConfig['behavior'])) return undefined;
+    const model = typeof raw.model === 'string' ? raw.model.trim().slice(0, 160) : '';
+    const endpoint = typeof raw.endpoint === 'string' ? raw.endpoint.trim().slice(0, 500) : '';
+    if (!model || !endpoint) return undefined;
+    return {
+      provider: raw.provider as RoomAIConfig['provider'],
+      model,
+      apiKey: typeof raw.apiKey === 'string' ? raw.apiKey.trim().slice(0, 512) : '',
+      token: typeof raw.token === 'string' ? raw.token.trim().slice(0, 512) : '',
+      endpoint,
+      temperature: typeof raw.temperature === 'number' && Number.isFinite(raw.temperature)
+        ? Math.min(2, Math.max(0, raw.temperature))
+        : .7,
+      maxTokens: typeof raw.maxTokens === 'number' && Number.isSafeInteger(raw.maxTokens)
+        ? Math.min(4096, Math.max(128, raw.maxTokens))
+        : 512,
+      behavior: raw.behavior as RoomAIConfig['behavior'],
+    };
+  }
+
+  private providerForRoom(room: RoomRecord): AIProvider {
+    const roomConfig = room.config?.aiConfig;
+    if (!roomConfig) return this.aiProvider;
+    const roomKey = room.code.toUpperCase();
+    const existing = this.roomAIProviders.get(roomKey);
+    if (existing) return existing;
+
+    const providerConfig = structuredClone(AI_DEFAULTS) as AIConfig;
+    providerConfig.apiType = roomConfig.provider === 'custom' ? 'local' : roomConfig.provider;
+    providerConfig.defaultBehavior = roomConfig.behavior;
+    const selected = providerConfig.apiType === 'siliconflow'
+      ? providerConfig.siliconflow
+      : providerConfig.apiType === 'deepseek'
+        ? providerConfig.deepseek
+        : providerConfig.local;
+    selected.model = roomConfig.model;
+    selected.apiKey = roomConfig.token || roomConfig.apiKey;
+    selected.temperature = roomConfig.temperature;
+    selected.maxTokens = roomConfig.maxTokens;
+    if (providerConfig.apiType === 'local') providerConfig.local.apiUrl = roomConfig.endpoint;
+    const provider = new HttpAIProvider(providerConfig, {
+      timeoutMs: this.options.aiTimeoutMs,
+    });
+    this.roomAIProviders.set(roomKey, provider);
+    return provider;
   }
 
   private projectRoom(room: RoomRecord, actor: string | SocketIdentity): RoomView {
@@ -836,7 +904,8 @@ export class RoomService {
         playerId: actor.id,
         role: actor.role,
       });
-      const promptContext = this.aiProvider.requiresPromptContext
+      const provider = this.providerForRoom(room);
+      const promptContext = provider.requiresPromptContext
         ? buildAIRuntimeContext({
             actorId: actor.id,
             role: actor.role,
@@ -868,7 +937,7 @@ export class RoomService {
                 : undefined,
           })
         : undefined;
-      const orchestrator = new AIOrchestrator(this.aiProvider, this.options.session?.now, {
+      const orchestrator = new AIOrchestrator(provider, this.options.session?.now, {
         timeoutMs: this.options.aiTimeoutMs,
       });
       await orchestrator.act(session, {

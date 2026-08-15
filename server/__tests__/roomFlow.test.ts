@@ -120,3 +120,49 @@ test('multiple rooms remain isolated', async () => {
   assert.notEqual(first.room.id, second.room.id);
   assert.notEqual(first.credentials.joinToken, second.credentials.joinToken);
 });
+
+test('host computer-player settings stay private while the room keeps them for its AI runner', async () => {
+  const rooms = new RoomService(
+    new InMemoryRoomRepository(),
+    new InMemoryEventStore(),
+  );
+  const catalog = rooms.getCatalog();
+  const preset = catalog.rolePresets.find((item) => item.enabled);
+  assert.ok(preset);
+  const created = await rooms.create({
+    actorId: 'ai-host',
+    options: {
+      catalogVersion: catalog.catalogVersion,
+      roomName: '电脑玩家配置房',
+      creator: { name: '房主', avatarId: 'avatar-player' },
+      mode: 'mixed',
+      visibility: 'invite_only',
+      maxPlayers: preset.playerCount,
+      minHumanPlayers: 1,
+      computerSeats: preset.playerCount - 1,
+      aiFillPolicy: 'fixed',
+      roleSetup: { ...preset.roleSetup },
+      rolePresetId: preset.id,
+      rulesetId: preset.rulesetId,
+      rulesetVersion: preset.rulesetVersion,
+      readyPolicy: 'all_connected_humans',
+      allowPublicSpectators: false,
+      reviewEnabled: true,
+      aiConfig: {
+        provider: 'custom',
+        model: 'local-test-model',
+        apiKey: 'secret-key',
+        token: 'secret-token',
+        endpoint: 'http://127.0.0.1:1234/v1/chat/completions',
+        temperature: .7,
+        maxTokens: 512,
+        behavior: 'random',
+      },
+    },
+  });
+
+  const record = await rooms.getRecord(created.room.code);
+  assert.equal(record?.config?.aiConfig?.model, 'local-test-model');
+  assert.doesNotMatch(serialized(created.room), /aiConfig|secret-key|secret-token/);
+  await rooms.close();
+});

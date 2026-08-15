@@ -23,7 +23,11 @@ const io = new Server(httpServer, {
   },
 });
 const eventStore = new FileEventStore();
-const roomService = new RoomService(new FileRoomRepository(), eventStore);
+const roomService = new RoomService(new FileRoomRepository(), eventStore, {
+  // Mixed rooms hand computer turns back to the room service after each
+  // human command. Quick computer rooms already opt into this path directly.
+  autoDrive: true,
+});
 
 await roomService.restore();
 bindSocketTransport(io, roomService);

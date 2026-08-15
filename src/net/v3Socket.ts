@@ -54,6 +54,15 @@ const snapshotListeners = new Set<(message: GameSnapshotMessage) => void>();
 const messageListeners = new Set<(message: V3ServerMessage) => void>();
 const errorListeners = new Set<(error: ProtocolAckError) => void>();
 
+/**
+ * Socket.IO queues emits while it is connecting, but an ACK callback is never
+ * called if the connection was replaced in that small window.  That turned a
+ * perfectly healthy lobby connection into an infinite "连接中" wizard. Keep
+ * the transport responsible for waiting for the active socket and make every
+ * request finite.
+ */
+const ACK_TIMEOUT_MS = 15_000;
+
 const keyFor = (auth: SocketAuth): string =>
   JSON.stringify({
     joinToken: auth.joinToken ?? '',
@@ -169,13 +178,53 @@ const commandMeta = (actorId: string, roomId?: string) => ({
   ...(roomId ? { roomId } : {}),
 });
 
+const unavailableAck = <TAck extends { ok: boolean }>(): TAck => ({
+  ok: false,
+  code: 'UNKNOWN_ERROR',
+} as unknown as TAck);
+
 const emitAck = <TAck extends { ok: boolean }>(
   active: Socket,
   event: string,
   payload: unknown,
 ): Promise<TAck> =>
   new Promise((resolve) => {
-    active.emit(event, payload, (response: TAck) => resolve(response));
+    let settled = false;
+    let requestSent = false;
+    let requestTimer: ReturnType<typeof setTimeout> | undefined;
+    let connectTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const finish = (response: TAck): void => {
+      if (settled) return;
+      settled = true;
+      if (requestTimer) clearTimeout(requestTimer);
+      if (connectTimer) clearTimeout(connectTimer);
+      active.off('connect', onConnect);
+      resolve(response);
+    };
+
+    const send = (): void => {
+      if (settled || requestSent) return;
+      requestSent = true;
+      requestTimer = setTimeout(() => finish(unavailableAck<TAck>()), ACK_TIMEOUT_MS);
+      active.emit(event, payload, (response: TAck) => finish(response));
+    };
+
+    function onConnect(): void {
+      active.off('connect', onConnect);
+      send();
+    }
+
+    if (active.connected) {
+      send();
+      return;
+    }
+
+    active.once('connect', onConnect);
+    connectTimer = setTimeout(() => finish(unavailableAck<TAck>()), ACK_TIMEOUT_MS);
+    // A socket that was just created auto-connects. Calling connect here also
+    // covers a socket that was left disconnected by a previous auth switch.
+    if (!active.active) active.connect();
   });
 
 const roomReadRequest = (
@@ -269,7 +318,7 @@ export const createV3Room = (
   options: CreateRoomOptionsV31,
 ): Promise<CreateRoomAck> =>
   emitAck<CreateRoomAck>(
-    openConnection({}, true),
+    openConnection(),
     'v3:command',
     roomReadRequest(
       actorId,
@@ -285,7 +334,7 @@ export const joinV3Room = (
   joinToken: string,
 ): Promise<JoinRoomAck> =>
   emitAck<JoinRoomAck>(
-    openConnection({}, true),
+    openConnection(),
     'v3:command',
     roomReadRequest(
       actorId,

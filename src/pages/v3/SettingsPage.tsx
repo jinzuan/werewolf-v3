@@ -1,5 +1,6 @@
-import { Accessibility, Bell, Monitor, Save, Volume2 } from 'lucide-react';
-import { useState } from 'react';
+import { ArrowRight, Monitor, Save, Volume2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { AppShell } from '../../components/shell/AppShell';
 import { getServerUrl, setServerUrl } from '../../net/socket';
 import { useV3Store } from '../../stores/v3Store';
@@ -21,17 +22,29 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: () =
   );
 }
 
+type MotionPreference = 'system' | 'reduced' | 'full';
+
+const readMotionPreference = (): MotionPreference => {
+  if (typeof localStorage === 'undefined') return 'system';
+  const value = localStorage.getItem('werewolf-v3-motion-mode');
+  return value === 'reduced' || value === 'full' ? value : 'system';
+};
+
 export function SettingsPage() {
   const connected = useV3Store((state) => state.connected);
-  const [motion, setMotion] = useState(true);
+  const [motionPreference, setMotionPreference] = useState<MotionPreference>(readMotionPreference);
   const [captions, setCaptions] = useState(true);
   const [notifications, setNotifications] = useState(false);
   const [serverUrl, updateServerUrl] = useState(getServerUrl());
   const [saved, setSaved] = useState(false);
 
+  useEffect(() => {
+    document.documentElement.dataset.motion = motionPreference;
+  }, [motionPreference]);
+
   const save = () => {
     setServerUrl(serverUrl.trim());
-    localStorage.setItem('werewolf-v3-motion', String(motion));
+    localStorage.setItem('werewolf-v3-motion-mode', motionPreference);
     localStorage.setItem('werewolf-v3-captions', String(captions));
     localStorage.setItem('werewolf-v3-notifications', String(notifications));
     setSaved(true);
@@ -43,34 +56,27 @@ export function SettingsPage() {
         <div><span>本地显示与辅助功能</span><h1>设置</h1></div>
         <Button onClick={save}><Save size={17} />{saved ? '已保存' : '保存设置'}</Button>
       </div>
-      <div className="v3-settings-tabs">
-        <button className="is-active"><Monitor size={17} />显示</button>
-        <button><Volume2 size={17} />声音</button>
-        <button><Accessibility size={17} />辅助功能</button>
-      </div>
 
       <div className="v3-settings-layout">
         <Card>
-          <div className="v3-panel-heading"><div><span>V3 socket.io</span><h2>服务连接</h2></div></div>
+          <div className="v3-panel-heading"><div><span>实时服务连接</span><h2>服务连接</h2></div></div>
           <label className="v3-setting-row">
             <div><strong>服务端地址</strong><span>保存后刷新页面以建立新连接。</span></div>
             <Input value={serverUrl} onChange={(event) => updateServerUrl(event.target.value)} />
           </label>
         </Card>
         <Card>
-          <div className="v3-panel-heading"><div><span>主题与动态</span><h2>显示</h2></div></div>
+          <div className="v3-panel-heading"><div><span>月光森林视觉</span><h2>显示</h2></div><Monitor size={18} aria-hidden="true" /></div>
           <div className="v3-setting-row">
-            <div><strong>主题</strong><span>正式产品使用固定深紫金暗色主题。</span></div>
-            <span className="v3-static-value">深紫金</span>
+            <div><strong>场景</strong><span>日暮村庄、月下森林与篝火广场会跟随对局阶段切换。</span></div>
+            <span className="v3-static-value">月光森林</span>
           </div>
           <div className="v3-setting-row">
-            <div><strong>界面动效</strong><span>阶段切换与新事件使用短时过渡。</span></div>
-            <Toggle checked={motion} onChange={() => setMotion((value) => !value)} label="界面动效" />
-          </div>
-          <div className="v3-setting-row">
-            <div><strong>减少动态</strong><span>覆盖系统偏好时立即移除位移和脉冲。</span></div>
-            <div className="v3-segmented">
-              <button className="is-active">跟随系统</button><button>开</button><button>关</button>
+            <div><strong>动态偏好</strong><span>“减少动态”会移除位移、脉冲和场景滑动，只保留必要状态变化。</span></div>
+            <div className="v3-segmented" role="group" aria-label="动态偏好">
+              {([['system', '跟随系统'], ['reduced', '减少动态'], ['full', '完整动态']] as const).map(([value, label]) => (
+                <button key={value} type="button" className={motionPreference === value ? 'is-active' : undefined} aria-pressed={motionPreference === value} onClick={() => setMotionPreference(value)}>{label}</button>
+              ))}
             </div>
           </div>
         </Card>
@@ -92,8 +98,9 @@ export function SettingsPage() {
         </Card>
 
         <Card className="v3-settings-note">
-          <Bell size={19} />
-          <div><strong>服务端 AI 参数不在玩家端展示</strong><span>API Key、模型、温度和超时由服务端配置管理。</span></div>
+          <Volume2 size={19} />
+          <div><strong>电脑玩家参数由房主掌握</strong><span>创建混合房或电脑局时，可以在开房向导填写模型、密钥、令牌和接口地址。</span></div>
+          <Link className="v3-button v3-button--quiet" to="/rooms/new/players">打开开房向导<ArrowRight size={16} /></Link>
         </Card>
       </div>
     </AppShell>

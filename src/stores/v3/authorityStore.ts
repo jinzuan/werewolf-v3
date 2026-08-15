@@ -605,8 +605,8 @@ export const useV3Store = create<V3Store>()((set, get) => {
     },
 
     createRoom: async (name, roomName, auto) => {
-      ensureTransportSubscriptions();
       clearAuthority();
+      ensureTransportSubscriptions();
       set({ loading: true, authorityStatus: 'resolving' });
       const catalogResponse = await getV3Catalog();
       if (catalogResponse.ok === false) {
@@ -647,8 +647,8 @@ export const useV3Store = create<V3Store>()((set, get) => {
     },
 
     createRoomWithOptions: async (options) => {
-      ensureTransportSubscriptions();
       clearAuthority();
+      ensureTransportSubscriptions();
       set({ loading: true, authorityStatus: 'resolving' });
       const actorName = options.creator.name.trim() || '玩家';
       const response = await createV3Room(
@@ -672,8 +672,8 @@ export const useV3Store = create<V3Store>()((set, get) => {
     },
 
     joinRoom: async (name, roomCode, joinToken) => {
-      ensureTransportSubscriptions();
       clearAuthority();
+      ensureTransportSubscriptions();
       set({ loading: true, authorityStatus: 'resolving' });
       const actorName = name.trim() || '玩家';
       const response = await joinV3Room(
@@ -690,8 +690,8 @@ export const useV3Store = create<V3Store>()((set, get) => {
     },
 
     spectateRoom: async (name, roomCode, joinToken, omniscientToken) => {
-      ensureTransportSubscriptions();
       clearAuthority();
+      ensureTransportSubscriptions();
       set({ loading: true, authorityStatus: 'resolving' });
       const actorName = name.trim() || '观战者';
       const response = await spectateV3Room(

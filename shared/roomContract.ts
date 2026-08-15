@@ -29,6 +29,22 @@ export const READY_POLICIES = ['all_connected_humans'] as const;
 
 export type ReadyPolicy = (typeof READY_POLICIES)[number];
 
+/** Host-supplied provider settings for computer players. Secrets are never
+ * included in RoomConfigView or any RoomView projection. */
+export type RoomAIProvider = 'siliconflow' | 'deepseek' | 'local' | 'custom';
+export type RoomAIBehavior = 'aggressive' | 'conservative' | 'random';
+
+export interface RoomAIConfig {
+  provider: RoomAIProvider;
+  model: string;
+  apiKey: string;
+  token: string;
+  endpoint: string;
+  temperature: number;
+  maxTokens: number;
+  behavior: RoomAIBehavior;
+}
+
 export interface RoomRolePreset {
   id: string;
   name: string;
@@ -70,6 +86,7 @@ export interface CreateRoomOptionsV31 {
   readyPolicy: ReadyPolicy;
   allowPublicSpectators: boolean;
   reviewEnabled: boolean;
+  aiConfig?: RoomAIConfig;
 }
 
 /** Normalized room configuration echoed by create, waiting, and game views. */

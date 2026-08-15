@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { RoomHeader } from '../../features/room-shell/RoomHeader';
 import { useRoomShell } from '../../features/room-shell/RoomShellContext';
 import { SideNav } from './SideNav';
@@ -17,12 +17,21 @@ interface AppShellProps {
 
 export function AppShell({ children, ...status }: AppShellProps) {
   const inRoom = useRoomShell();
+  const [navigationOpen, setNavigationOpen] = useState(false);
+
+  useEffect(() => {
+    setNavigationOpen(false);
+  }, [inRoom, status.title]);
 
   return (
     <div className="v3-app-shell">
-      {inRoom ? <RoomHeader {...status} /> : <TopStatusBar {...status} />}
+      {inRoom ? (
+        <RoomHeader {...status} onMenu={() => setNavigationOpen(true)} />
+      ) : (
+        <TopStatusBar {...status} onMenu={() => setNavigationOpen(true)} />
+      )}
       <div className="v3-app-shell__body">
-        <SideNav />
+        <SideNav open={navigationOpen} onClose={() => setNavigationOpen(false)} />
         <main className="v3-page">{children}</main>
       </div>
     </div>

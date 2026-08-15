@@ -4,6 +4,7 @@ import type {
   RoomAccess,
   RoomView,
 } from '../../shared/protocol';
+import type { RoomAIConfig } from '../../shared/roomContract';
 import type { Player, Role } from '../../shared/types';
 import type { SessionSnapshot } from '../session/types';
 
@@ -45,6 +46,8 @@ export interface RoomConfigRecord {
   /** Useful to policy/diagnostic code without exposing storage provenance. */
   migratedFrom?: number;
   reviewEnabled?: boolean;
+  /** Private room-scoped provider settings; never project this field. */
+  aiConfig?: RoomAIConfig;
   [key: string]: unknown;
 }
 

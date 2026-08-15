@@ -9,11 +9,11 @@ import { Card } from '../../ui/Card';
 import { Input } from '../../ui/Input';
 import type { RoomStatus } from '../../../shared/roomContract';
 
-const roomState: Record<RoomStatus, { label: string; tone: 'gold' | 'purple' | 'neutral' | 'warning' }> = {
-  waiting: { label: '等待中', tone: 'gold' as const },
+const roomState: Record<RoomStatus, { label: string; tone: 'gold' | 'purple' | 'neutral' | 'warning' | 'success' | 'info' }> = {
+  waiting: { label: '等待入座', tone: 'gold' as const },
   ready_check: { label: '等待准备', tone: 'warning' as const },
-  starting: { label: '正在开局', tone: 'purple' as const },
-  playing: { label: '进行中', tone: 'purple' as const },
+  starting: { label: '正在开局', tone: 'info' as const },
+  playing: { label: '对局中', tone: 'info' as const },
   ended: { label: '已结束', tone: 'neutral' as const },
 };
 
@@ -50,6 +50,15 @@ export function LobbyPage() {
 
   return (
     <AppShell title="竞技大厅" eyebrow="狼人杀 V3" connected={connected}>
+      <section className="v3-lobby-hero" aria-labelledby="lobby-hero-title">
+        <div className="v3-lobby-hero__copy">
+          <span className="v3-lobby-hero__eyebrow">月影村 · 今夜开席</span>
+          <h1 id="lobby-hero-title">邀请朋友，点亮一局狼人杀</h1>
+          <p>先选人数和角色，再把房间码发给同伴。所有配置都会在开局前由服务端确认。</p>
+          <Button size="action" onClick={() => navigate('/rooms/new/players')}><Plus size={17} />创建房间<ArrowRight size={17} /></Button>
+        </div>
+        <div className="v3-lobby-hero__moon" aria-hidden="true">月</div>
+      </section>
       <div className="v3-page-heading">
         <div>
           <span>房间与快速入口</span>
@@ -76,7 +85,7 @@ export function LobbyPage() {
               <Card className="v3-empty-state">
                 <Users size={22} />
                 <strong>当前没有可见房间</strong>
-                <span>创建普通房或快速 AI 房开始一局。</span>
+                <span>创建朋友房、混合房或快速电脑局开始一局。</span>
               </Card>
             ) : rooms.map((room) => {
               const state = roomState[room.status];
@@ -113,7 +122,7 @@ export function LobbyPage() {
               <DoorOpen size={20} />
               <div>
                 <h2>加入房间</h2>
-                <p>房间码与进入令牌均由服务端校验。</p>
+                <p>房间码与邀请口令均由服务端校验。</p>
               </div>
             </div>
             <label className="v3-field">
@@ -143,7 +152,7 @@ export function LobbyPage() {
               <Plus size={20} />
               <div>
                 <h2>创建房间</h2>
-                <p>普通房等待房主开局，AI 房创建后自动运行。</p>
+                <p>朋友房进入等待房，电脑局创建后自动运行。</p>
               </div>
             </div>
             <div className="v3-action-stack">

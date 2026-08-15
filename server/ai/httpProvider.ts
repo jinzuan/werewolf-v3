@@ -259,7 +259,16 @@ const normalizeError = (
   return new ProviderError('network', retryCount);
 };
 
-const promptFor = (context: AIRequestContext) => {
+const behaviorInstruction: Record<AIConfig['defaultBehavior'], string> = {
+  aggressive: 'Prefer proactive pressure, clear commitments, and decisive legal actions.',
+  conservative: 'Prefer information gathering, low-risk legal actions, and preserve optionality.',
+  random: 'Keep decisions varied while remaining consistent with the supplied facts and legal actions.',
+};
+
+const promptFor = (
+  context: AIRequestContext,
+  behavior: AIConfig['defaultBehavior'],
+) => {
   const projection = context.projectedContext;
   const snapshot = projection?.snapshot;
   const players =
@@ -287,6 +296,7 @@ const promptFor = (context: AIRequestContext) => {
     system: [
       'You are a server-side werewolf game action planner.',
       `Role: ${context.role}.`,
+      `Play style: ${behaviorInstruction[behavior]}`,
       'Use only the supplied role-visible context. Do not infer hidden roles.',
       `Ruleset ${rules.id} ${rules.version}: ${JSON.stringify(rules.values)}`,
       experience ? `Behavior reference:\n${experience}` : '',
@@ -323,12 +333,14 @@ export class HttpAIProvider implements AIProvider {
   private readonly timeoutMs: number;
   private readonly maxRetries: number;
   private readonly baseDelayMs: number;
+  private readonly behavior: AIConfig['defaultBehavior'];
 
   constructor(
     config: AIConfig = loadAIConfig(),
     options: HttpAIProviderOptions = {},
   ) {
     this.settings = settingsFor(config);
+    this.behavior = config.defaultBehavior;
     this.gate = gateFor(this.settings.key);
     this.fetchImpl = options.fetch ?? globalThis.fetch;
     this.sleep = options.sleep ?? defaultSleep;
@@ -339,7 +351,7 @@ export class HttpAIProvider implements AIProvider {
   }
 
   async suggest(context: AIRequestContext): Promise<AISuggestion> {
-    const prompt = promptFor(context);
+    const prompt = promptFor(context, this.behavior);
     return this.gate.run(async () => {
       let retryCount = 0;
       for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
