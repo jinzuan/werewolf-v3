@@ -13,6 +13,8 @@ import type {
   RoomSummary,
   RoomView,
   RoomAccess,
+  RoomAIConfigPatch,
+  RoomAIConfigSummary,
 } from '../../../shared/protocol';
 import type { PostGameReviewView } from '../../../shared/reviewContract';
 import {
@@ -25,6 +27,8 @@ import {
   joinV3Room,
   listV3Rooms,
   resetV3Connection,
+  getV3AIConfig,
+  updateV3AIConfig,
   resumeV3Room,
   sendGameCommand,
   sendV3RoomCommand,
@@ -166,6 +170,10 @@ export interface V3Store {
   snapshot: ProjectedSnapshot | null;
   events: DomainEvent[];
   review: PostGameReviewView | null;
+  /** Host-only, memory-resident AI settings projection. */
+  aiConfigSummary: RoomAIConfigSummary | null;
+  aiConfigStatus: 'idle' | 'loading' | 'ready' | 'updating' | 'error';
+  aiConfigError: string | null;
   initialize: () => () => void;
   refreshCatalog: (options?: { force?: boolean }) => Promise<boolean>;
   refreshRooms: () => Promise<void>;
@@ -191,6 +199,9 @@ export interface V3Store {
   resumeSession: () => Promise<boolean>;
   refreshSnapshot: () => Promise<boolean>;
   refreshReview: () => Promise<boolean>;
+  loadAIConfig: () => Promise<boolean>;
+  updateAIConfig: (patch: RoomAIConfigPatch) => Promise<boolean>;
+  clearAIConfig: () => Promise<boolean>;
   beginReadyCheck: () => Promise<boolean>;
   cancelReadyCheck: () => Promise<boolean>;
   setReady: (ready: boolean) => Promise<boolean>;
@@ -237,6 +248,9 @@ export const useV3Store = create<V3Store>()((set, get) => {
       rooms: [],
       catalog: get().catalog,
       review: null,
+      aiConfigSummary: null,
+      aiConfigStatus: 'idle',
+      aiConfigError: null,
     });
   };
 
@@ -299,6 +313,9 @@ export const useV3Store = create<V3Store>()((set, get) => {
       snapshot: null,
       events: [],
       review: null,
+      aiConfigSummary: null,
+      aiConfigStatus: 'idle',
+      aiConfigError: null,
       loading: false,
       recovering: false,
       authorityStatus: 'authorized',
@@ -645,6 +662,9 @@ export const useV3Store = create<V3Store>()((set, get) => {
     snapshot: null,
     events: [],
     review: null,
+    aiConfigSummary: null,
+    aiConfigStatus: 'idle',
+    aiConfigError: null,
 
     initialize: () => {
       ensureTransportSubscriptions();
@@ -797,6 +817,63 @@ export const useV3Store = create<V3Store>()((set, get) => {
 
     refreshSnapshot: async () => recoverGameProjection(),
     refreshReview,
+
+    loadAIConfig: async () => {
+      const current = get();
+      if (
+        !current.session ||
+        !current.room ||
+        !roomActions(current.room).includes('update_ai_config')
+      ) return false;
+      set({ aiConfigStatus: 'loading', aiConfigError: null });
+      const response = await getV3AIConfig(
+        current.session.actorId,
+        current.session.roomId,
+      );
+      if (response.ok === false) {
+        set({ aiConfigStatus: 'error', aiConfigError: responseMessage(response) });
+        return false;
+      }
+      set({
+        aiConfigSummary: response.summary,
+        aiConfigStatus: 'ready',
+        aiConfigError: null,
+      });
+      return true;
+    },
+
+    updateAIConfig: async (patch) => {
+      const current = get();
+      if (
+        !current.session ||
+        !current.room ||
+        !roomActions(current.room).includes('update_ai_config')
+      ) return false;
+      set({ aiConfigStatus: 'updating', aiConfigError: null });
+      const response = await updateV3AIConfig(
+        current.session.actorId,
+        current.session.roomId,
+        current.room.roomRevision,
+        patch,
+      );
+      if (response.ok === false) {
+        set({ aiConfigStatus: 'error', aiConfigError: responseMessage(response) });
+        await get().refreshRoom();
+        return false;
+      }
+      set({
+        aiConfigSummary: response.summary,
+        aiConfigStatus: 'ready',
+        aiConfigError: null,
+      });
+      await get().refreshRoom();
+      return true;
+    },
+
+    clearAIConfig: () => get().updateAIConfig({
+      clearApiKey: true,
+      clearToken: true,
+    }),
 
     beginReadyCheck: () =>
       runRoomMutation({

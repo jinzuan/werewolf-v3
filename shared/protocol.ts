@@ -23,6 +23,7 @@ import type {
   RoomMutationCommand,
   RoomReadCommand,
 } from './roomContract';
+import type { RoomAIConfigSummary } from './aiRoomConfigContract';
 import type { PostGameReviewView } from './reviewContract';
 export type {
   PostGameReviewView,
@@ -342,6 +343,15 @@ export type GameCommandAck = ProtocolAck<{ events: DomainEvent[] }>;
 export type RoomListAck = ProtocolAck<{ rooms: RoomSummary[] }>;
 export type SnapshotAck = ProtocolAck<{ snapshot: ProjectedSnapshot }>;
 export type ReviewViewAck = ProtocolAck<{ review: PostGameReviewView }>;
+export type RoomAIConfigAck = ProtocolAck<{
+  summary: RoomAIConfigSummary | null;
+}>;
+export type RoomAIConfigUpdateAck = ProtocolAck<{
+  summary: RoomAIConfigSummary | null;
+  roomRevision: number;
+}>;
+
+export type { RoomAIConfigPatch, RoomAIConfigSummary } from './aiRoomConfigContract';
 
 /** Compatibility import path; the old aiCount/auto/spectator DTO is gone. */
 export type RoomCreateOptions = CreateRoomOptionsV31;

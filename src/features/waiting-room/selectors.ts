@@ -30,7 +30,7 @@ export interface StartCheckCopy {
   label: string;
   reason: string;
   remedy: string;
-  remedyAction?: Extract<AllowedRoomAction, 'invite' | 'update_config'>;
+  remedyAction?: Extract<AllowedRoomAction, 'invite' | 'update_config' | 'update_ai_config'>;
 }
 
 const numberParam = (
@@ -99,6 +99,8 @@ export const checkLabel = (item: StartCheckItem): string => {
       return '真人玩家全部准备';
     case 'ai_fill':
       return '电脑席位可以补齐';
+    case 'ai_provider_config':
+      return '电脑玩家配置可用';
     case 'ruleset_available':
       return '规则集仍然可用';
   }
@@ -176,6 +178,13 @@ export const startCheckCopy = (item: StartCheckItem): StartCheckCopy => {
         reason: '电脑席位无法按当前房间设置补齐。',
         remedy: '查看房间设置',
         remedyAction: 'update_config',
+      };
+    case 'ai_provider_config':
+      return {
+        label: checkLabel(item),
+        reason: '电脑玩家配置或凭据不可用。',
+        remedy: '修改电脑玩家设置',
+        remedyAction: 'update_ai_config',
       };
     case 'ruleset_available':
       return {

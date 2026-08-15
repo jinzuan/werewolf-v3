@@ -350,6 +350,11 @@ export function bindSocketTransport(
             return;
           }
 
+          if (command.type === 'room.ai_config.get') {
+            ack?.({ ok: true, summary: await rooms.getAIConfig(identity) });
+            return;
+          }
+
           if (command.type === 'review.get') {
             if (command.payload.roomCode !== identity.roomCode) {
               throw new RoomServiceError({ code: 'ROOM_MISMATCH', messageKey: 'room.error.room_mismatch' });
@@ -386,6 +391,17 @@ export function bindSocketTransport(
               room = await rooms.updateConfig(identity, command.payload.config, revision.expectedRoomRevision);
               reason = 'config_changed';
               break;
+            case 'room.update_ai_config': {
+              const result = await rooms.updateAIConfig(
+                identity,
+                command.payload.patch,
+                revision.expectedRoomRevision,
+                revision.commandId,
+              );
+              ack?.({ ok: true, ...result });
+              await pushRoom(identity.roomCode, 'config_changed');
+              return;
+            }
             case 'room.begin_ready_check':
               room = await rooms.beginReadyCheck(identity, revision.expectedRoomRevision);
               reason = 'status_changed';

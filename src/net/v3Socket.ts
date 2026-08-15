@@ -16,6 +16,9 @@ import type {
   ProtocolAckError,
   ResumeRoomAck,
   ReviewViewAck,
+  RoomAIConfigAck,
+  RoomAIConfigPatch,
+  RoomAIConfigUpdateAck,
   RoomCommand,
   RoomListAck,
   RoomMutationCommand,
@@ -549,6 +552,19 @@ export const getV3Room = (
     } satisfies ClientCommand,
   );
 
+export const getV3AIConfig = (
+  actorId: string,
+  roomId?: string,
+): Promise<ClientAck<RoomAIConfigAck extends ProtocolAck<infer P> ? P : never>> =>
+  emitAck(
+    openRoomConnection(),
+    'v3:command',
+    {
+      meta: commandMeta(actorId, roomId),
+      command: { type: 'room.ai_config.get', payload: {} },
+    } satisfies ClientCommand,
+  );
+
 export const getV3Review = (
   actorId: string,
   roomCode: string,
@@ -577,6 +593,23 @@ export const sendV3RoomCommand = (
       roomId,
       expectedRoomRevision,
       command,
+    ),
+  );
+
+export const updateV3AIConfig = (
+  actorId: string,
+  roomId: string,
+  expectedRoomRevision: number,
+  patch: RoomAIConfigPatch,
+): Promise<ClientAck<RoomAIConfigUpdateAck extends ProtocolAck<infer P> ? P : never>> =>
+  emitAck(
+    openRoomConnection(),
+    'v3:command',
+    roomMutationRequest(
+      actorId,
+      roomId,
+      expectedRoomRevision,
+      { type: 'room.update_ai_config', payload: { patch } },
     ),
   );
 

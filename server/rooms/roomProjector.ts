@@ -2,6 +2,7 @@ import {
   ROOM_STATUSES,
   type RoomConfigView,
   type RoomMemberViewV31,
+  type RoomAIConfigStatus,
   type RoomViewV31,
   type RoomViewerViewV31,
 } from '../../shared/roomContract';
@@ -145,6 +146,23 @@ const projectMember = (room: RoomRecord, member: RoomMember): RoomMemberViewV31 
 
 };
 
+const projectAIConfigStatus = (room: RoomRecord): RoomAIConfigStatus => {
+  const config = room.config?.aiProviderConfig;
+  if (!config) return 'not_configured';
+  const validShape =
+    ['siliconflow', 'deepseek', 'local', 'custom'].includes(config.provider) &&
+    typeof config.model === 'string' && config.model.trim().length > 0 &&
+    typeof config.endpoint === 'string' && config.endpoint.trim().length > 0 &&
+    Number.isFinite(config.temperature) &&
+    Number.isSafeInteger(config.maxTokens) &&
+    ['aggressive', 'conservative', 'random'].includes(config.behavior);
+  if (!validShape) return 'invalid';
+  if ((config.provider === 'siliconflow' || config.provider === 'deepseek') && !room.config?.credentialRef) {
+    return 'invalid';
+  }
+  return 'ready';
+};
+
 export interface RoomProjectorOptions extends RoomPolicyOptions {
   policy?: RoomPolicy;
 }
@@ -179,6 +197,7 @@ export class RoomProjector {
       configLocked: Boolean(normalized.configLocked),
       members: normalized.members.map((candidate) => projectMember(normalized, candidate)),
       counts: roomCounts(normalized),
+      computerPlayerStatus: projectAIConfigStatus(normalized),
       startCheck: this.policy.evaluateStartCheck(normalized),
       viewer: {
         actorId: member.id,

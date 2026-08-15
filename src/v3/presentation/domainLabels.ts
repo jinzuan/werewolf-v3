@@ -62,6 +62,7 @@ export const ROOM_MODE_LABELS = {
 
 export const ROOM_ACTION_LABELS = {
   update_config: '修改房间设置',
+  update_ai_config: '修改电脑玩家设置',
   begin_ready_check: '开始准备',
   cancel_ready_check: '返回设置',
   set_ready: '准备开局',

@@ -12,7 +12,12 @@ import type {
   RoomView,
 } from '../../shared/protocol';
 import { AI_DEFAULTS } from '../../shared/config/aiDefaults';
-import type { RoomAIConfig, RoomAIProviderConfig } from '../../shared/roomContract';
+import type {
+  RoomAIConfig,
+  RoomAIConfigPatch,
+  RoomAIConfigSummary,
+  RoomAIProviderConfig,
+} from '../../shared/roomContract';
 import type { AIConfig, GameAction, Player, Role } from '../../shared/types';
 import { AIOrchestrator } from '../ai/orchestrator';
 import { DeterministicAIProvider } from '../ai/deterministicProvider';
@@ -57,6 +62,24 @@ const code = () =>
   Array.from({ length: 6 }, () => CODE_CHARS[randomInt(CODE_CHARS.length)]).join('');
 
 const clone = <T>(value: T): T => structuredClone(value);
+
+const DEFAULT_ROOM_AI_ENDPOINTS: Record<RoomAIConfig['provider'], string> = {
+  siliconflow: 'https://api.siliconflow.cn/v1/chat/completions',
+  deepseek: 'https://api.deepseek.com/v1/chat/completions',
+  local: 'http://127.0.0.1:1234/v1/chat/completions',
+  custom: '',
+};
+
+interface RoomAIConfigCommandOutcome {
+  summary: RoomAIConfigSummary | null;
+  roomRevision: number;
+}
+
+interface RoomAISecretMutation {
+  kind: 'created' | 'rotated' | 'emptied';
+  credentialRef: string;
+  previous: { apiKey?: string; token?: string };
+}
 
 const stableValue = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(stableValue);
@@ -626,6 +649,7 @@ export class RoomService {
     for (const room of expired) {
       const reason = this.expiryReason(room);
       await this.repository.remove(room.code);
+      this.roomAIProviders.delete(room.code.toUpperCase());
       this.connectionLeases.forEach((_leases, key) => {
         if (key.startsWith(`${room.code}:`)) this.connectionLeases.delete(key);
       });
@@ -780,8 +804,254 @@ export class RoomService {
     const updated = await this.requireRoom(identity.roomCode);
     if (existing.config?.credentialRef && !updated.config?.credentialRef) {
       await this.deleteRoomCredential(existing);
+      this.roomAIProviders.delete(identity.roomCode.toUpperCase());
     }
     return this.get(identity.roomCode, identity.actorId);
+  }
+
+  /** Return the host-only, secret-free AI projection for a waiting room. */
+  async getAIConfig(identity: SocketIdentity): Promise<RoomAIConfigSummary | null> {
+    const room = await this.requireRoom(identity.roomCode);
+    assertIdentityRoom(identity, room);
+    this.policy.assertAllowed(room, identity.actorId, 'update_ai_config');
+    return this.aiConfigSummary(room);
+  }
+
+  /** Explicit alias for callers that name the read operation by its DTO. */
+  async getAIConfigSummary(identity: SocketIdentity): Promise<RoomAIConfigSummary | null> {
+    return this.getAIConfig(identity);
+  }
+
+  /**
+   * Update AI tuning and credentials through a separate CAS command. Secret
+   * store changes happen inside the repository transaction and are restored if
+   * persistence fails; the room record only receives non-secret tuning/ref.
+   */
+  async updateAIConfig(
+    identity: SocketIdentity,
+    patch: RoomAIConfigPatch,
+    expectedRoomRevision: number,
+    commandId: string,
+  ): Promise<RoomAIConfigCommandOutcome> {
+    if (!commandId.trim() || !Number.isSafeInteger(expectedRoomRevision) || expectedRoomRevision < 1) {
+      throw this.error('INVALID_COMMAND', 'room.error.invalid_command');
+    }
+
+    const current = await this.requireRoom(identity.roomCode);
+    assertIdentityRoom(identity, current);
+    this.policy.assertAllowed(current, identity.actorId, 'update_ai_config');
+
+    const cached = this.cachedAIConfigOutcome(current, commandId);
+    if (cached) return cached;
+
+    const normalizedPatch = this.validateAIConfigPatch(patch);
+    const candidateBase = this.mergeRoomAIConfig(current.config?.aiProviderConfig, normalizedPatch);
+    if (!candidateBase) {
+      throw this.error('INVALID_ROOM_CONFIG', 'room.error.invalid_ai_config', undefined, [{
+        path: 'patch',
+        messageKey: 'room.error.invalid_ai_config',
+        errorCode: 'INVALID_ROOM_CONFIG',
+      }]);
+    }
+    let candidate: RoomAIConfig & { endpointOrigin: string };
+    try {
+      const validatedEndpoint = await this.endpointPolicy.validate(candidateBase.endpoint, {
+        provider: candidateBase.provider,
+      });
+      candidate = {
+        ...candidateBase,
+        endpoint: validatedEndpoint.url,
+        endpointOrigin: validatedEndpoint.origin,
+      };
+    } catch (error) {
+      if (error instanceof EndpointPolicyError) {
+        throw this.error('AI_ENDPOINT_NOT_ALLOWED', 'room.error.ai_endpoint_not_allowed', undefined, [{
+          path: 'patch.endpoint',
+          messageKey: 'room.error.ai_endpoint_not_allowed',
+          errorCode: error.code,
+        }]);
+      }
+      throw this.error('SECRET_STORE_UNAVAILABLE', 'room.error.secret_store_unavailable');
+    }
+
+    let secretMutation: RoomAISecretMutation | undefined;
+    let cleanupRef: string | undefined;
+    let outcome: RoomAIConfigCommandOutcome | undefined;
+    try {
+      const result = await this.repository.mutate<
+        { kind: 'cached'; outcome: RoomAIConfigCommandOutcome } |
+        { kind: 'applied'; outcome: RoomAIConfigCommandOutcome; cleanupRef?: string }
+      >(identity.roomCode, expectedRoomRevision, async (draft) => {
+        assertIdentityRoom(identity, draft);
+        this.policy.assertAllowed(draft, identity.actorId, 'update_ai_config');
+        const repeated = this.cachedAIConfigOutcome(draft, commandId);
+        if (repeated) return { kind: 'cached', outcome: repeated };
+
+        const previousConfig = draft.config?.aiProviderConfig;
+        const previousRef = draft.config?.credentialRef;
+        const previousValues = previousRef
+          ? await this.credentialStore.get(
+            { namespace: this.credentialNamespace, roomCode: draft.code },
+            previousRef,
+          )
+          : undefined;
+        if (previousRef && previousValues === undefined) {
+          throw this.error('SECRET_STORE_UNAVAILABLE', 'room.error.secret_store_unavailable');
+        }
+
+        const nextValues = { ...(previousValues ?? {}) };
+        const setApiKey = normalizedPatch.apiKey;
+        const setToken = normalizedPatch.token;
+        if (normalizedPatch.clearApiKey) delete nextValues.apiKey;
+        else if (setApiKey) nextValues.apiKey = setApiKey;
+        if (normalizedPatch.clearToken) delete nextValues.token;
+        else if (setToken) nextValues.token = setToken;
+
+        const secretsChanged =
+          nextValues.apiKey !== previousValues?.apiKey ||
+          nextValues.token !== previousValues?.token;
+        let nextRef = previousRef;
+        if (secretsChanged) {
+          if (nextValues.apiKey || nextValues.token) {
+            if (previousRef) {
+              await this.credentialStore.rotate(
+                { namespace: this.credentialNamespace, roomCode: draft.code },
+                previousRef,
+                nextValues,
+              );
+              secretMutation = {
+                kind: 'rotated',
+                credentialRef: previousRef,
+                previous: previousValues ?? {},
+              };
+            } else {
+              nextRef = await this.credentialStore.put(
+                { namespace: this.credentialNamespace, roomCode: draft.code },
+                nextValues,
+              );
+              secretMutation = {
+                kind: 'created',
+                credentialRef: nextRef,
+                previous: {},
+              };
+            }
+          } else if (previousRef) {
+            // Keep an empty encrypted record until the room commit succeeds;
+            // deleting it after commit makes rollback possible without ever
+            // putting the old secret in a room record.
+            await this.credentialStore.rotate(
+              { namespace: this.credentialNamespace, roomCode: draft.code },
+              previousRef,
+              {},
+            );
+            secretMutation = {
+              kind: 'emptied',
+              credentialRef: previousRef,
+              previous: previousValues ?? {},
+            };
+            cleanupRef = previousRef;
+            nextRef = undefined;
+          } else {
+            nextRef = undefined;
+          }
+        }
+
+        const nextProviderConfig: RoomAIProviderConfig = {
+          provider: candidate.provider,
+          model: candidate.model,
+          endpoint: candidate.endpoint,
+          temperature: candidate.temperature,
+          maxTokens: candidate.maxTokens,
+          behavior: candidate.behavior,
+        };
+        const configChanged =
+          JSON.stringify(stableValue(previousConfig)) !== JSON.stringify(stableValue(nextProviderConfig)) ||
+          previousRef !== nextRef;
+        const draftConfig = draft.config;
+        if (!draftConfig) {
+          throw this.error('INVALID_ROOM_CONFIG', 'room.error.config_missing');
+        }
+        draft.config = {
+          ...draftConfig,
+          aiProviderConfig: nextProviderConfig,
+          ...(nextRef ? { credentialRef: nextRef } : {}),
+        };
+        if (!nextRef) delete draft.config.credentialRef;
+        delete draft.config.aiConfig;
+        if (configChanged) {
+          draft.members.forEach((member) => {
+            if (member.kind === 'player' && !member.isAI) member.ready = false;
+          });
+        }
+        const previousActivity = draft.lastActivityAt ?? 0;
+        this.touchActivity(draft);
+        if ((draft.lastActivityAt ?? 0) <= previousActivity) {
+          draft.lastActivityAt = previousActivity + 1;
+        }
+
+        const configRevision = (draft.configRevision ?? 1) + (configChanged ? 1 : 0);
+        const nextRoomRevision = (draft.roomRevision ?? 1) + 1;
+        const summary = {
+          provider: candidate.provider,
+          model: candidate.model,
+          endpointOrigin: candidate.endpointOrigin,
+          temperature: candidate.temperature,
+          maxTokens: candidate.maxTokens,
+          behavior: candidate.behavior,
+          hasApiKey: Boolean(nextValues.apiKey),
+          hasToken: Boolean(nextValues.token),
+          configRevision,
+          updatedAt: this.now(),
+        } satisfies RoomAIConfigSummary;
+        outcome = { summary, roomRevision: nextRoomRevision };
+        draft.recentRoomCommands = [
+          ...(draft.recentRoomCommands ?? []).filter((entry) => entry.commandId !== commandId),
+          {
+            commandId,
+            roomRevision: nextRoomRevision,
+            createdAt: this.now(),
+            response: clone(outcome),
+          },
+        ].slice(-64);
+        return { kind: 'applied', outcome, ...(cleanupRef ? { cleanupRef } : {}) };
+      });
+
+      outcome = result.outcome;
+      if (result.kind === 'applied' && result.cleanupRef) {
+        await this.credentialStore.delete(
+          { namespace: this.credentialNamespace, roomCode: identity.roomCode },
+          result.cleanupRef,
+        ).catch(() => undefined);
+      }
+      this.roomAIProviders.delete(identity.roomCode.toUpperCase());
+      return outcome;
+    } catch (error) {
+      if (secretMutation) {
+        const scope = { namespace: this.credentialNamespace, roomCode: identity.roomCode };
+        if (secretMutation.kind === 'created') {
+          await this.credentialStore.delete(scope, secretMutation.credentialRef).catch(() => undefined);
+        } else {
+          await this.credentialStore.rotate(
+            scope,
+            secretMutation.credentialRef,
+            secretMutation.previous,
+          ).catch(() => undefined);
+        }
+      }
+      if (error instanceof EndpointPolicyError) {
+        throw this.error('AI_ENDPOINT_NOT_ALLOWED', 'room.error.ai_endpoint_not_allowed', undefined, [{
+          path: 'patch.endpoint',
+          messageKey: 'room.error.ai_endpoint_not_allowed',
+          errorCode: error.code,
+        }]);
+      }
+      if (error instanceof RoomRevisionConflictError) throw this.mapError(error);
+      if (error instanceof RoomServiceError) throw error;
+      if (error && typeof error === 'object' && String((error as { code?: unknown }).code ?? '').startsWith('CREDENTIAL_')) {
+        throw this.error('SECRET_STORE_UNAVAILABLE', 'room.error.secret_store_unavailable');
+      }
+      throw this.mapError(error);
+    }
   }
 
   async beginReadyCheck(identity: SocketIdentity, expectedRoomRevision: number): Promise<RoomView> {
@@ -868,6 +1138,7 @@ export class RoomService {
       if (current?.config?.credentialRef) {
         await this.deleteRoomCredential(current);
       }
+      this.roomAIProviders.delete(identity.roomCode.toUpperCase());
       await this.repository.remove(identity.roomCode);
       return undefined;
     }
@@ -911,6 +1182,7 @@ export class RoomService {
       if (key.startsWith(`${tombstone.code}:`)) this.connectionLeases.delete(key);
     }
     await this.deleteRoomCredential(tombstone);
+    this.roomAIProviders.delete(identity.roomCode.toUpperCase());
     await this.repository.remove(identity.roomCode);
   }
 
@@ -1188,6 +1460,169 @@ export class RoomService {
         ? Math.min(4096, Math.max(128, raw.maxTokens))
         : 512,
       behavior: raw.behavior as RoomAIConfig['behavior'],
+    };
+  }
+
+  private validateAIConfigPatch(value: RoomAIConfigPatch): RoomAIConfigPatch {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw this.error('INVALID_ROOM_CONFIG', 'room.error.invalid_ai_config');
+    }
+    const patch = value as Record<string, unknown>;
+    const issues: RoomConfigIssue[] = [];
+    const normalized: RoomAIConfigPatch = {};
+    const providers: RoomAIConfig['provider'][] = ['siliconflow', 'deepseek', 'local', 'custom'];
+    const behaviors: RoomAIConfig['behavior'][] = ['aggressive', 'conservative', 'random'];
+
+    if (patch.provider !== undefined) {
+      if (!providers.includes(patch.provider as RoomAIConfig['provider'])) {
+        issues.push({ path: 'provider', messageKey: 'room.error.invalid_ai_provider', errorCode: 'INVALID_ROOM_CONFIG' });
+      } else normalized.provider = patch.provider as RoomAIConfig['provider'];
+    }
+    if (patch.behavior !== undefined) {
+      if (!behaviors.includes(patch.behavior as RoomAIConfig['behavior'])) {
+        issues.push({ path: 'behavior', messageKey: 'room.error.invalid_ai_behavior', errorCode: 'INVALID_ROOM_CONFIG' });
+      } else normalized.behavior = patch.behavior as RoomAIConfig['behavior'];
+    }
+    if (patch.model !== undefined) {
+      if (typeof patch.model !== 'string' || !patch.model.trim() || patch.model.trim().length > 160) {
+        issues.push({ path: 'model', messageKey: 'room.error.invalid_ai_model', errorCode: 'INVALID_ROOM_CONFIG' });
+      } else normalized.model = patch.model.trim();
+    }
+    if (patch.endpoint !== undefined) {
+      if (typeof patch.endpoint !== 'string' || !patch.endpoint.trim() || patch.endpoint.trim().length > 500) {
+        issues.push({ path: 'endpoint', messageKey: 'room.error.invalid_ai_endpoint', errorCode: 'INVALID_ROOM_CONFIG' });
+      } else normalized.endpoint = patch.endpoint.trim();
+    }
+    if (patch.temperature !== undefined) {
+      if (typeof patch.temperature !== 'number' || !Number.isFinite(patch.temperature) || patch.temperature < 0 || patch.temperature > 2) {
+        issues.push({ path: 'temperature', messageKey: 'room.error.invalid_ai_temperature', errorCode: 'INVALID_ROOM_CONFIG' });
+      } else normalized.temperature = patch.temperature;
+    }
+    if (patch.maxTokens !== undefined) {
+      if (typeof patch.maxTokens !== 'number' || !Number.isSafeInteger(patch.maxTokens) || patch.maxTokens < 128 || patch.maxTokens > 4096) {
+        issues.push({ path: 'maxTokens', messageKey: 'room.error.invalid_ai_max_tokens', errorCode: 'INVALID_ROOM_CONFIG' });
+      } else normalized.maxTokens = patch.maxTokens;
+    }
+
+    const secretField = (
+      key: 'apiKey' | 'token',
+      clearKey: 'clearApiKey' | 'clearToken',
+    ): void => {
+      const raw = patch[key];
+      const clear = patch[clearKey];
+      if (clear !== undefined && typeof clear !== 'boolean') {
+        issues.push({ path: clearKey, messageKey: 'room.error.invalid_ai_credential', errorCode: 'INVALID_ROOM_CONFIG' });
+      }
+      const text = typeof raw === 'string' ? raw.trim() : undefined;
+      if (text && (text === '******' || text.length > 4_096)) {
+        issues.push({ path: key, messageKey: 'room.error.invalid_ai_credential', errorCode: 'INVALID_ROOM_CONFIG' });
+      }
+      if (text && clear === true) {
+        issues.push({ path: key, messageKey: 'room.error.ai_credential_set_and_clear', errorCode: 'INVALID_ROOM_CONFIG' });
+      } else if (text) {
+        normalized[key] = text;
+      }
+      if (clear === true) normalized[clearKey] = true;
+    };
+    secretField('apiKey', 'clearApiKey');
+    secretField('token', 'clearToken');
+
+    if (issues.length > 0) {
+      throw this.error('INVALID_ROOM_CONFIG', 'room.error.invalid_ai_config', undefined, issues);
+    }
+    return normalized;
+  }
+
+  private mergeRoomAIConfig(
+    existing: RoomAIProviderConfig | undefined,
+    patch: RoomAIConfigPatch,
+  ): RoomAIConfig | undefined {
+    const hasMeaningfulCreateField = [
+      patch.provider,
+      patch.model,
+      patch.endpoint,
+      patch.temperature,
+      patch.maxTokens,
+      patch.behavior,
+      patch.apiKey,
+      patch.token,
+    ].some((value) => value !== undefined);
+    if (!existing && !hasMeaningfulCreateField) return undefined;
+    const provider = patch.provider ?? existing?.provider ?? 'local';
+    const defaults = provider === 'siliconflow'
+      ? AI_DEFAULTS.siliconflow
+      : provider === 'deepseek'
+        ? AI_DEFAULTS.deepseek
+        : AI_DEFAULTS.local;
+    const model = patch.model ?? existing?.model ?? defaults.model;
+    const endpoint = patch.endpoint ?? existing?.endpoint ?? DEFAULT_ROOM_AI_ENDPOINTS[provider];
+    if (!model || !endpoint) return undefined;
+    return {
+      provider,
+      model,
+      endpoint,
+      temperature: patch.temperature ?? existing?.temperature ?? defaults.temperature,
+      maxTokens: patch.maxTokens ?? existing?.maxTokens ?? defaults.maxTokens,
+      behavior: patch.behavior ?? existing?.behavior ?? AI_DEFAULTS.defaultBehavior,
+      ...(patch.apiKey ? { apiKey: patch.apiKey } : {}),
+      ...(patch.token ? { token: patch.token } : {}),
+    };
+  }
+
+  private cachedAIConfigOutcome(
+    room: RoomRecord,
+    commandId: string,
+  ): RoomAIConfigCommandOutcome | undefined {
+    const entry = (room.recentRoomCommands ?? []).find((item) => item.commandId === commandId);
+    const value = entry?.response ?? entry?.result;
+    if (!value || typeof value !== 'object') return undefined;
+    const candidate = value as Partial<RoomAIConfigCommandOutcome>;
+    if (!Number.isSafeInteger(candidate.roomRevision)) return undefined;
+    if (candidate.summary !== null && (!candidate.summary || typeof candidate.summary !== 'object')) return undefined;
+    return clone(candidate as RoomAIConfigCommandOutcome);
+  }
+
+  private async aiConfigSummary(room: RoomRecord): Promise<RoomAIConfigSummary | null> {
+    const config = room.config?.aiProviderConfig;
+    if (!config) return null;
+    let endpoint;
+    try {
+      endpoint = await this.endpointPolicy.validate(config.endpoint, { provider: config.provider });
+    } catch (error) {
+      if (error instanceof EndpointPolicyError) {
+        throw this.error('AI_ENDPOINT_NOT_ALLOWED', 'room.error.ai_endpoint_not_allowed', undefined, [{
+          path: 'endpoint',
+          messageKey: 'room.error.ai_endpoint_not_allowed',
+          errorCode: error.code,
+        }]);
+      }
+      throw error;
+    }
+    let values: { apiKey?: string; token?: string } | undefined;
+    try {
+      values = room.config?.credentialRef
+        ? await this.credentialStore.get(
+          { namespace: this.credentialNamespace, roomCode: room.code },
+          room.config.credentialRef,
+        )
+        : undefined;
+    } catch {
+      throw this.error('SECRET_STORE_UNAVAILABLE', 'room.error.secret_store_unavailable');
+    }
+    if (room.config?.credentialRef && values === undefined) {
+      throw this.error('SECRET_STORE_UNAVAILABLE', 'room.error.secret_store_unavailable');
+    }
+    return {
+      provider: config.provider,
+      model: config.model,
+      endpointOrigin: endpoint.origin,
+      temperature: config.temperature,
+      maxTokens: config.maxTokens,
+      behavior: config.behavior,
+      hasApiKey: Boolean(values?.apiKey),
+      hasToken: Boolean(values?.token),
+      configRevision: room.configRevision ?? 1,
+      updatedAt: room.updatedAt ?? room.createdAt,
     };
   }
 

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import type {
   AllowedRoomAction,
   RoomConfigView,
+  RoomAIConfigPatch,
   RoomMutationCommand,
   StartCheckItem,
 } from '../../../shared/protocol';
@@ -14,6 +15,7 @@ import { Card } from '../../ui/Card';
 import { RoomActions } from './components/RoomActions';
 import { RoomConfigEditor } from './components/RoomConfigEditor';
 import { RoomConfigSummary } from './components/RoomConfigSummary';
+import { RoomAIConfigEditor } from './components/RoomAIConfigEditor';
 import { SelfReadyCard } from './components/SelfReadyCard';
 import { PlayerSeatGrid } from './components/PlayerSeatGrid';
 import { SpectatorList } from './components/SpectatorList';
@@ -74,10 +76,16 @@ export function WaitingRoomPage() {
   const setReady = useV3Store((state) => state.setReady);
   const startGame = useV3Store((state) => state.startGame);
   const refreshRoom = useV3Store((state) => state.refreshRoom);
+  const aiSummary = useV3Store((state) => state.aiConfigSummary);
+  const aiConfigStatus = useV3Store((state) => state.aiConfigStatus);
+  const aiConfigError = useV3Store((state) => state.aiConfigError);
+  const loadAIConfig = useV3Store((state) => state.loadAIConfig);
+  const updateAIConfig = useV3Store((state) => state.updateAIConfig);
   const clearAuthority = useV3Store((state) => state.clearAuthority);
   const [directPending, setDirectPending] = useState<DirectRoomAction | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [configEditorOpen, setConfigEditorOpen] = useState(false);
+  const [aiEditorOpen, setAIEditorOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const copyTimer = useRef<number | null>(null);
 
@@ -181,6 +189,15 @@ export function WaitingRoomPage() {
       if (success) setConfigEditorOpen(false);
     });
   };
+  const openAIConfigEditor = () => {
+    setAIEditorOpen(true);
+    void loadAIConfig();
+  };
+  const updateAI = (patch: RoomAIConfigPatch) => {
+    void updateAIConfig(patch).then((success) => {
+      if (success) setAIEditorOpen(false);
+    });
+  };
   const transferHost = (memberId: string) => {
     void runDirectMutation('transfer_host', {
       type: 'room.transfer_host',
@@ -199,8 +216,9 @@ export function WaitingRoomPage() {
       payload: {},
     });
   };
-  const resolveCheckAction = (action: Extract<AllowedRoomAction, 'invite' | 'update_config'>) => {
+  const resolveCheckAction = (action: Extract<AllowedRoomAction, 'invite' | 'update_config' | 'update_ai_config'>) => {
     if (action === 'invite') void onCopyInvite();
+    else if (action === 'update_ai_config') openAIConfigEditor();
     else setConfigEditorOpen(true);
   };
 
@@ -249,6 +267,8 @@ export function WaitingRoomPage() {
         <RoomConfigSummary
           room={room}
           onUpdateConfig={() => setConfigEditorOpen(true)}
+          aiSummary={aiSummary}
+          onUpdateAIConfig={openAIConfigEditor}
         />
         <RoomActions
           room={room}
@@ -270,6 +290,17 @@ export function WaitingRoomPage() {
           pending={directPending === 'update_config'}
           onClose={() => setConfigEditorOpen(false)}
           onSubmit={updateConfig}
+        />
+
+        <RoomAIConfigEditor
+          room={room}
+          open={aiEditorOpen && isHost && isActionAllowed(room, 'update_ai_config')}
+          pending={aiConfigStatus === 'updating'}
+          summary={aiSummary}
+          status={aiConfigStatus}
+          error={aiConfigError}
+          onClose={() => setAIEditorOpen(false)}
+          onSubmit={updateAI}
         />
 
         <Card className="waiting-room__footer-note">

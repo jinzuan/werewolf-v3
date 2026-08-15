@@ -201,6 +201,25 @@ const checkAiFill = (room: RoomRecord): {
   };
 };
 
+/** Validate the persisted non-secret AI tuning without reading SecretStore. */
+const checkAIProviderConfig = (room: RoomRecord): boolean | undefined => {
+  const config = configFor(room);
+  if (!config?.aiProviderConfig) return undefined;
+  const provider = config.aiProviderConfig;
+  const shapeValid =
+    ['siliconflow', 'deepseek', 'local', 'custom'].includes(provider.provider) &&
+    typeof provider.model === 'string' && provider.model.trim().length > 0 &&
+    typeof provider.endpoint === 'string' && provider.endpoint.trim().length > 0 &&
+    Number.isFinite(provider.temperature) &&
+    Number.isSafeInteger(provider.maxTokens) &&
+    ['aggressive', 'conservative', 'random'].includes(provider.behavior);
+  if (!shapeValid) return false;
+  if (provider.provider === 'siliconflow' || provider.provider === 'deepseek') {
+    return typeof config.credentialRef === 'string' && config.credentialRef.length > 0;
+  }
+  return true;
+};
+
 const checkRuleset = (
   room: RoomRecord,
   registry: RulesetRegistryLike,
@@ -259,6 +278,7 @@ export const evaluateStartCheck = (
     .filter((member) => member.ready !== true)
     .map((member) => member.id);
   const ai = checkAiFill(room);
+  const aiProviderConfig = checkAIProviderConfig(room);
   const rulesetAvailable = checkRuleset(room, registry);
   const seatLayout = inspectSeatLayout(room.members, maxPlayers);
   const seatLayoutPassed = seatLayout.valid && counts.playerSeats <= maxPlayers;
@@ -312,6 +332,13 @@ export const evaluateStartCheck = (
       ai.params,
       ai.affectedMemberIds,
     ),
+    ...(aiProviderConfig === undefined
+      ? []
+      : [checkItem(
+        'ai_provider_config',
+        aiProviderConfig,
+        'room.start.ai_provider_config',
+      )]),
     checkItem(
       'ruleset_available',
       rulesetAvailable,
@@ -384,6 +411,7 @@ export class RoomPolicy {
     }
     if (isHost && status === 'waiting' && !room.configLocked) {
       actions.add('update_config');
+      actions.add('update_ai_config');
       if (baseReadyCheckCanStart(check)) actions.add('begin_ready_check');
     }
     if (isHost && status === 'ready_check') {
@@ -443,7 +471,7 @@ export class RoomPolicy {
     if (!this.isAllowed(room, actor, action)) {
       throw new RoomPolicyError({
         code: member.id !== room.hostId &&
-          ['update_config', 'begin_ready_check', 'cancel_ready_check', 'start_game', 'transfer_host', 'dissolve'].includes(action)
+          ['update_config', 'update_ai_config', 'begin_ready_check', 'cancel_ready_check', 'start_game', 'transfer_host', 'dissolve'].includes(action)
           ? 'HOST_REQUIRED'
           : 'ACTION_NOT_ALLOWED',
         messageKey: `room.error.${action}_not_allowed`,
@@ -491,6 +519,7 @@ export class RoomPolicy {
       all_humans_online: 'MEMBER_OFFLINE',
       all_humans_ready: 'HUMAN_PLAYERS_NOT_READY',
       ai_fill: 'INVALID_ROOM_CONFIG',
+      ai_provider_config: 'INVALID_ROOM_CONFIG',
       ruleset_available: 'RULESET_UNAVAILABLE',
     };
     throw new RoomPolicyError({
@@ -536,6 +565,7 @@ export class RoomPolicy {
       role_count: 'ROLE_COUNT_MISMATCH',
       minimum_humans: 'MIN_PLAYERS_NOT_MET',
       ai_fill: 'INVALID_ROOM_CONFIG',
+      ai_provider_config: 'INVALID_ROOM_CONFIG',
       ruleset_available: 'RULESET_UNAVAILABLE',
     };
     throw new RoomPolicyError({

@@ -12,7 +12,7 @@ interface StartCheckPanelProps {
   items: StartCheckItem[];
   members: RoomMemberViewV31[];
   allowedActions: readonly AllowedRoomAction[];
-  onAction: (action: Extract<AllowedRoomAction, 'invite' | 'update_config'>) => void;
+  onAction: (action: Extract<AllowedRoomAction, 'invite' | 'update_config' | 'update_ai_config'>) => void;
   onLocate: (item: StartCheckItem) => void;
 }
 

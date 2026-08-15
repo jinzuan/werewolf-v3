@@ -1,5 +1,6 @@
 import { Settings2 } from 'lucide-react';
 import type { RoomConfigView, RoomViewV31 } from '../../../../shared/roomContract';
+import type { RoomAIConfigSummary } from '../../../../shared/aiRoomConfigContract';
 import type { Role } from '../../../../shared/types';
 import { roomModeLabel } from '../../../v3/presentation';
 import { Badge } from '../../../ui/Badge';
@@ -28,9 +29,11 @@ const visibilityLabel = (visibility: RoomConfigView['visibility']): string =>
 interface RoomConfigSummaryProps {
   room: RoomViewV31;
   onUpdateConfig: () => void;
+  aiSummary: RoomAIConfigSummary | null;
+  onUpdateAIConfig: () => void;
 }
 
-export function RoomConfigSummary({ room, onUpdateConfig }: RoomConfigSummaryProps) {
+export function RoomConfigSummary({ room, onUpdateConfig, aiSummary, onUpdateAIConfig }: RoomConfigSummaryProps) {
   const { config } = room;
   const roleEntries = (Object.keys(ROLE_LABELS) as Role[])
     .map((role) => ({ role, count: config.roleSetup[role] ?? 0 }))
@@ -38,6 +41,8 @@ export function RoomConfigSummary({ room, onUpdateConfig }: RoomConfigSummaryPro
   const isHost = room.members.some(
     (member) => member.id === room.viewer.actorId && member.isHost,
   );
+  const aiCheck = room.startCheck.items.find((item) => item.key === 'ai_provider_config');
+  const aiReady = aiCheck?.passed ?? room.computerPlayerStatus !== 'invalid';
 
   return (
     <Card className="waiting-room__config" aria-labelledby="room-config-title">
@@ -71,6 +76,31 @@ export function RoomConfigSummary({ room, onUpdateConfig }: RoomConfigSummaryPro
           ))}
         </div>
       </div>
+
+      {config.mode !== 'human' ? (
+        <div className="waiting-room__ai-summary" data-ai-config-status={aiReady ? 'ready' : 'invalid'}>
+          <div>
+            <span className="waiting-room__eyebrow">电脑玩家设置</span>
+            <strong>{aiSummary ? `${aiSummary.provider} · ${aiSummary.model}` : aiReady ? '使用安全演示策略' : '需要重新配置'}</strong>
+            <span className="waiting-room__ai-summary-status">
+              {aiReady ? '电脑玩家配置就绪' : '电脑玩家配置未就绪'}
+              {aiSummary ? ` · ${aiSummary.endpointOrigin}` : ''}
+            </span>
+          </div>
+          {isHost && isActionAllowed(room, 'update_ai_config') ? (
+            <Button
+              variant="secondary"
+              disabled={room.configLocked || room.status === 'starting'}
+              onClick={onUpdateAIConfig}
+            >
+              <Settings2 size={16} aria-hidden="true" />
+              修改电脑玩家设置
+            </Button>
+          ) : null}
+        </div>
+      ) : (
+        <p className="waiting-room__empty-copy">当前为纯真人房，没有电脑玩家设置。</p>
+      )}
 
       {isHost && isActionAllowed(room, 'update_config') ? (
         <Button

@@ -1,5 +1,7 @@
 import type { Role } from './types';
 
+export * from './aiRoomConfigContract';
+
 /** The role counts selected by the catalog and persisted with a room. */
 export type RoleSetup = Record<Role, number>;
 
@@ -32,6 +34,10 @@ export type ReadyPolicy = (typeof READY_POLICIES)[number];
 /** Non-sensitive provider settings safe to persist with a room. */
 export type RoomAIProvider = 'siliconflow' | 'deepseek' | 'local' | 'custom';
 export type RoomAIBehavior = 'aggressive' | 'conservative' | 'random';
+export type RoomAIConfigStatus = 'ready' | 'not_configured' | 'invalid';
+
+export const AI_PROVIDER_VALUES = ['siliconflow', 'deepseek', 'local', 'custom'] as const;
+export const AI_BEHAVIOR_VALUES = ['aggressive', 'conservative', 'random'] as const;
 
 export interface RoomAIProviderConfig {
   provider: RoomAIProvider;
@@ -161,6 +167,7 @@ export const START_CHECK_KEYS = [
   'all_humans_online',
   'all_humans_ready',
   'ai_fill',
+  'ai_provider_config',
   'ruleset_available',
 ] as const;
 
@@ -181,6 +188,7 @@ export interface StartCheck {
 
 export const ALLOWED_ROOM_ACTIONS = [
   'update_config',
+  'update_ai_config',
   'begin_ready_check',
   'cancel_ready_check',
   'set_ready',
@@ -213,6 +221,8 @@ export interface RoomViewV31 {
   members: RoomMemberViewV31[];
   counts: RoomCounts;
   startCheck: StartCheck;
+  /** Public readiness only; never reveals credential presence or references. */
+  computerPlayerStatus?: RoomAIConfigStatus;
   viewer: RoomViewerViewV31;
   gameId?: string;
   createdAt: number;
@@ -255,12 +265,17 @@ export type RoomReadCommand =
   | { type: 'room.join'; payload: { roomCode: string; joinToken?: string } }
   | { type: 'room.resume'; payload: { roomCode: string } }
   | { type: 'room.get'; payload: { roomCode: string } }
+  | { type: 'room.ai_config.get'; payload: EmptyRoomCommandPayload }
   | { type: 'review.get'; payload: { roomCode: string } };
 
 export type RoomMutationCommand =
   | {
       type: 'room.update_config';
       payload: { config: RoomConfigView };
+    }
+  | {
+      type: 'room.update_ai_config';
+      payload: { patch: import('./aiRoomConfigContract').RoomAIConfigPatch };
     }
   | { type: 'room.begin_ready_check'; payload: EmptyRoomCommandPayload }
   | { type: 'room.cancel_ready_check'; payload: EmptyRoomCommandPayload }
