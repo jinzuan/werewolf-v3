@@ -1,7 +1,11 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import { chmod, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { atomicWriteFile, type AsyncAtomicWriteOptions } from '../filePersistence';
+import {
+  atomicWriteFile,
+  assertSecurePath,
+  readSecureFile,
+  type AsyncAtomicWriteOptions,
+} from '../filePersistence';
 import {
   CredentialStoreError,
   type CredentialScope,
@@ -35,6 +39,8 @@ export interface EncryptedFileCredentialStoreOptions {
   keyId?: string;
   previousKeys?: Record<string, Uint8Array | string>;
   persistence?: AsyncAtomicWriteOptions;
+  dataRoot?: string;
+  maxBytes?: number;
   environment?: 'production' | 'development' | 'test';
 }
 
@@ -94,6 +100,7 @@ export class EncryptedFileCredentialStore implements RoomCredentialStore {
   private readonly keyring: Map<string, Buffer>;
   private currentKeyId: string;
   private readonly persistence: AsyncAtomicWriteOptions;
+  private readonly dataRoot: string;
   private queue: Promise<unknown> = Promise.resolve();
 
   constructor(
@@ -101,9 +108,20 @@ export class EncryptedFileCredentialStore implements RoomCredentialStore {
     options: EncryptedFileCredentialStoreOptions = {},
   ) {
     if (!path.isAbsolute(filePath)) throw new EncryptedCredentialStoreError('credential store path must be absolute');
+    this.dataRoot = options.dataRoot ?? options.persistence?.dataRoot ?? path.dirname(filePath);
+    try {
+      assertSecurePath(filePath, this.dataRoot);
+    } catch (error) {
+      if (error instanceof EncryptedCredentialStoreError) throw error;
+      throw new EncryptedCredentialStoreError('credential store path is outside its data root');
+    }
     this.keyring = keyringFrom(options);
     this.currentKeyId = options.keyId?.trim() || 'default';
-    this.persistence = options.persistence ?? {};
+    this.persistence = {
+      ...(options.persistence ?? {}),
+      dataRoot: this.dataRoot,
+      maxBytes: options.maxBytes ?? options.persistence?.maxBytes,
+    };
     if (options.environment === 'production' && !this.keyring.get(this.currentKeyId)) {
       throw new EncryptedCredentialStoreError('production credential store has no active key');
     }
@@ -222,7 +240,10 @@ export class EncryptedFileCredentialStore implements RoomCredentialStore {
 
   private async load(): Promise<PersistedCredentialStore> {
     try {
-      const parsed = JSON.parse(await readFile(this.filePath, 'utf8')) as PersistedCredentialStore;
+      const parsed = JSON.parse(await readSecureFile(this.filePath, {
+        dataRoot: this.dataRoot,
+        maxBytes: this.persistence.maxBytes,
+      })) as PersistedCredentialStore;
       if (parsed.schemaVersion !== STORE_SCHEMA_VERSION || !parsed.records || typeof parsed.records !== 'object') {
         throw new EncryptedCredentialStoreError('credential store schema is unsupported');
       }
@@ -239,11 +260,6 @@ export class EncryptedFileCredentialStore implements RoomCredentialStore {
   private async save(store: PersistedCredentialStore): Promise<void> {
     const saved = await atomicWriteFile(this.filePath, () => JSON.stringify(store, null, 2), this.persistence);
     if (!saved) throw new EncryptedCredentialStoreError('credential store write failed');
-    try {
-      await chmod(this.filePath, 0o600);
-    } catch {
-      throw new EncryptedCredentialStoreError('credential store permissions could not be restricted');
-    }
   }
 
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {

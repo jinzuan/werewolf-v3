@@ -16,7 +16,10 @@ export interface RuntimeConfig {
   roomsFile: string;
   eventsFile: string;
   reviewsFile: string;
+  insightsFile: string;
   secretsDir: string;
+  credentialsFile: string;
+  outboxDir: string;
   waitingRoomTtlMs: number;
   endedRoomTtlMs: number;
   roomSweepIntervalMs: number;
@@ -120,7 +123,10 @@ export const resolveRuntimeConfig = (
     roomsFile: path.join(dataDir, 'rooms.json'),
     eventsFile: path.join(dataDir, 'events.json'),
     reviewsFile: path.join(dataDir, 'reviews.json'),
+    insightsFile: path.join(dataDir, 'insights.json'),
     secretsDir: path.join(dataDir, 'secrets'),
+    credentialsFile: path.join(dataDir, 'secrets', 'credentials.json'),
+    outboxDir: path.join(dataDir, 'outbox'),
     waitingRoomTtlMs: durationOf(
       env.WW_WAITING_ROOM_TTL_MS,
       DEFAULT_WAITING_ROOM_TTL_MS,

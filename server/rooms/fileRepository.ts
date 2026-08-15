@@ -1,8 +1,10 @@
 import { isDeepStrictEqual } from 'node:util';
-import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import {
   atomicWriteFile,
+  assertSecurePath,
+  readSecureFile,
+  secureFileStats,
   type AsyncAtomicWriteOptions,
   withFileLock,
 } from '../filePersistence';
@@ -102,9 +104,12 @@ const isMissingFile = (error: unknown): boolean =>
   'code' in error &&
   (error as NodeJS.ErrnoException).code === 'ENOENT';
 
-const fileRevision = async (file: string): Promise<string | undefined> => {
+const fileRevision = async (
+  file: string,
+  dataRoot: string,
+): Promise<string | undefined> => {
   try {
-    const details = await stat(file);
+    const details = await secureFileStats(file, { dataRoot });
     return `${details.dev}:${details.ino}:${details.size}:${details.mtimeMs}:${details.ctimeMs}`;
   } catch (error) {
     if (isMissingFile(error)) return undefined;
@@ -120,6 +125,7 @@ export class FileRoomRepository implements RoomRepository {
   readonly environment: RuntimeEnvironment;
   readonly deploymentNamespace: string;
   private readonly persistence: AsyncAtomicWriteOptions;
+  private readonly dataRoot: string;
 
   constructor(
     readonly filePath: string,
@@ -128,6 +134,8 @@ export class FileRoomRepository implements RoomRepository {
     if (!path.isAbsolute(filePath)) {
       throw new TypeError('FileRoomRepository requires an absolute file path.');
     }
+    this.dataRoot = options.dataRoot ?? path.dirname(filePath);
+    assertSecurePath(filePath, this.dataRoot);
     this.environment = options.environment ?? 'development';
     this.deploymentNamespace =
       options.deploymentNamespace ?? options.namespace ?? 'default';
@@ -135,6 +143,8 @@ export class FileRoomRepository implements RoomRepository {
       operations: options.operations,
       sleep: options.sleep,
       logger: options.logger,
+      dataRoot: this.dataRoot,
+      maxBytes: options.maxBytes,
     };
   }
 
@@ -375,7 +385,7 @@ export class FileRoomRepository implements RoomRepository {
   }
 
   private async load(): Promise<RoomRecord[]> {
-    const revision = await fileRevision(this.filePath);
+    const revision = await fileRevision(this.filePath, this.dataRoot);
     if (
       this.rooms &&
       revision === this.diskRevision
@@ -391,7 +401,10 @@ export class FileRoomRepository implements RoomRepository {
 
     let parsed: unknown;
     try {
-      parsed = JSON.parse(await readFile(this.filePath, 'utf8'));
+      parsed = JSON.parse(await readSecureFile(this.filePath, {
+        dataRoot: this.dataRoot,
+        maxBytes: this.persistence.maxBytes,
+      }));
     } catch (error) {
       if (!isMissingFile(error)) throw error;
       this.rooms = [];
@@ -476,7 +489,7 @@ export class FileRoomRepository implements RoomRepository {
       this.persistence,
     );
     if (persisted) {
-      this.diskRevision = await fileRevision(this.filePath);
+      this.diskRevision = await fileRevision(this.filePath, this.dataRoot);
       this.dirty = false;
     } else {
       this.dirty = true;

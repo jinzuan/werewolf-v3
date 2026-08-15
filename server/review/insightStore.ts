@@ -1,7 +1,11 @@
-import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Role } from '../../shared/types';
-import { atomicWriteFile, type AsyncAtomicWriteOptions } from '../filePersistence';
+import {
+  atomicWriteFile,
+  assertSecurePath,
+  readSecureFile,
+  type AsyncAtomicWriteOptions,
+} from '../filePersistence';
 
 export const INSIGHT_SCHEMA_VERSION = 1 as const;
 export const MAX_INSIGHTS_PER_ROLE = 8;
@@ -76,11 +80,23 @@ export class InMemoryInsightStore implements InsightStore {
 export class FileInsightStore implements InsightStore {
   private queue: Promise<unknown> = Promise.resolve();
   private records?: ServerInsightRecord[];
+  private readonly persistence: AsyncAtomicWriteOptions;
+  private readonly dataRoot: string;
 
   constructor(
     private readonly filePath = path.resolve(process.cwd(), 'server', 'data', 'v3-insights.json'),
-    private readonly persistence: AsyncAtomicWriteOptions = {},
-  ) {}
+    persistence: AsyncAtomicWriteOptions = {},
+  ) {
+    if (!path.isAbsolute(filePath)) {
+      throw new TypeError('FileInsightStore requires an absolute file path.');
+    }
+    this.dataRoot = persistence.dataRoot ?? path.dirname(filePath);
+    assertSecurePath(filePath, this.dataRoot);
+    this.persistence = {
+      ...persistence,
+      dataRoot: this.dataRoot,
+    };
+  }
 
   list(role?: Role): Promise<ServerInsightRecord[]> {
     return this.enqueue(async () => {
@@ -135,9 +151,17 @@ export class FileInsightStore implements InsightStore {
   private async load(): Promise<ServerInsightRecord[]> {
     if (this.records) return this.records;
     try {
-      const parsed = JSON.parse(await readFile(this.filePath, 'utf8')) as unknown;
+      const parsed = JSON.parse(await readSecureFile(this.filePath, {
+        dataRoot: this.dataRoot,
+        maxBytes: this.persistence.maxBytes,
+      })) as unknown;
       this.records = Array.isArray(parsed) ? parsed as ServerInsightRecord[] : [];
-    } catch {
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !('code' in error) ||
+        (error as NodeJS.ErrnoException).code !== 'ENOENT'
+      ) throw error;
       this.records = [];
     }
     return this.records;

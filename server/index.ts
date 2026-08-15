@@ -1,5 +1,4 @@
 import { createServer } from 'node:http';
-import path from 'node:path';
 import { Server } from 'socket.io';
 import { FileEventStore } from './events/fileStore';
 import { FileRoomRepository } from './rooms/fileRepository';
@@ -9,6 +8,7 @@ import { FileInsightStore } from './review/insightStore';
 import { FileReviewRepository } from './review/fileReviewRepository';
 import { ReviewPipeline } from './review/reviewPipeline';
 import { bindSocketTransport } from './transport/socketTransport';
+import { ensureSecureDirectory } from './filePersistence';
 import { resolveRuntimeConfig } from './runtimeConfig';
 import {
   EncryptedFileCredentialStore,
@@ -26,6 +26,11 @@ const responseHeaders = (): Record<string, string> => security.environment === '
 
 const port = Number(process.env.PORT ?? 3001);
 const runtime = resolveRuntimeConfig();
+await ensureSecureDirectory(runtime.dataDir);
+await Promise.all([
+  ensureSecureDirectory(runtime.secretsDir, { dataRoot: runtime.dataDir }),
+  ensureSecureDirectory(runtime.outboxDir, { dataRoot: runtime.dataDir }),
+]);
 const httpServer = createServer((request, response) => {
   if (security.environment === 'production' && !isSecureRequest(request, security)) {
     response.writeHead(426, { 'content-type': 'application/json', ...responseHeaders() });
@@ -62,16 +67,18 @@ io.use((socket, next) => {
 const eventStore = new FileEventStore(runtime.eventsFile, {
   environment: runtime.environment,
   deploymentNamespace: runtime.deploymentNamespace,
+  dataRoot: runtime.dataDir,
 });
 const credentialStore = security.secretStore === 'memory'
   ? new InMemoryCredentialStore()
   : security.secretKey
     ? new EncryptedFileCredentialStore(
-        process.env.WW_SECRET_FILE ?? path.resolve(process.cwd(), 'server', 'data', 'v3-secrets.json'),
+        process.env.WW_SECRET_FILE ?? runtime.credentialsFile,
         {
           masterKey: security.secretKey,
           keyId: security.secretKeyId,
           environment: security.environment,
+          dataRoot: runtime.dataDir,
         },
       )
     : security.environment === 'production'
@@ -80,8 +87,12 @@ const credentialStore = security.secretStore === 'memory'
           console.warn('[server:security] memory SecretStore selected; AI credentials expire on restart');
           return new InMemoryCredentialStore();
         })();
-const reviewRepository = new FileReviewRepository(runtime.reviewsFile);
-const insightStore = new FileInsightStore(path.join(runtime.dataDir, 'insights.json'));
+const reviewRepository = new FileReviewRepository(runtime.reviewsFile, {
+  dataRoot: runtime.dataDir,
+});
+const insightStore = new FileInsightStore(runtime.insightsFile, {
+  dataRoot: runtime.dataDir,
+});
 const reviewPipeline = new ReviewPipeline(eventStore, reviewRepository, { insightStore });
 const endpointPolicy = new EndpointPolicy({
   environment: security.environment,
@@ -91,6 +102,7 @@ const endpointPolicy = new EndpointPolicy({
 const roomService = new RoomService(new FileRoomRepository(runtime.roomsFile, {
   environment: runtime.environment,
   deploymentNamespace: runtime.deploymentNamespace,
+  dataRoot: runtime.dataDir,
 }), eventStore, {
   // Mixed rooms hand computer turns back to the room service after each
   // human command. Quick computer rooms already opt into this path directly.

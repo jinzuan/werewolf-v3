@@ -1,6 +1,10 @@
-import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { atomicWriteFile, type AsyncAtomicWriteOptions } from '../filePersistence';
+import {
+  atomicWriteFile,
+  assertSecurePath,
+  readSecureFile,
+  type AsyncAtomicWriteOptions,
+} from '../filePersistence';
 import type { ReviewRepository, ReviewJobRecord } from './reviewRepository';
 
 const clone = <T>(value: T): T => structuredClone(value);
@@ -8,11 +12,23 @@ const clone = <T>(value: T): T => structuredClone(value);
 export class FileReviewRepository implements ReviewRepository {
   private queue: Promise<unknown> = Promise.resolve();
   private jobs?: ReviewJobRecord[];
+  private readonly persistence: AsyncAtomicWriteOptions;
+  private readonly dataRoot: string;
 
   constructor(
     private readonly filePath = path.resolve(process.cwd(), 'server', 'data', 'v3-reviews.json'),
-    private readonly persistence: AsyncAtomicWriteOptions = {},
-  ) {}
+    persistence: AsyncAtomicWriteOptions = {},
+  ) {
+    if (!path.isAbsolute(filePath)) {
+      throw new TypeError('FileReviewRepository requires an absolute file path.');
+    }
+    this.dataRoot = persistence.dataRoot ?? path.dirname(filePath);
+    assertSecurePath(filePath, this.dataRoot);
+    this.persistence = {
+      ...persistence,
+      dataRoot: this.dataRoot,
+    };
+  }
 
   list(): Promise<ReviewJobRecord[]> {
     return this.enqueue(async () => clone(await this.load()));
@@ -65,9 +81,17 @@ export class FileReviewRepository implements ReviewRepository {
   private async load(): Promise<ReviewJobRecord[]> {
     if (this.jobs) return this.jobs;
     try {
-      const parsed = JSON.parse(await readFile(this.filePath, 'utf8')) as unknown;
+      const parsed = JSON.parse(await readSecureFile(this.filePath, {
+        dataRoot: this.dataRoot,
+        maxBytes: this.persistence.maxBytes,
+      })) as unknown;
       this.jobs = Array.isArray(parsed) ? parsed as ReviewJobRecord[] : [];
-    } catch {
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !('code' in error) ||
+        (error as NodeJS.ErrnoException).code !== 'ENOENT'
+      ) throw error;
       this.jobs = [];
     }
     return this.jobs;

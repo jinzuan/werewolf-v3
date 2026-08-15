@@ -1,5 +1,4 @@
 import { isDeepStrictEqual } from 'node:util';
-import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type {
   EventAppendRequest,
@@ -8,6 +7,9 @@ import type {
 } from '../../shared/events';
 import {
   atomicWriteFile,
+  assertSecurePath,
+  readSecureFile,
+  secureFileStats,
   type AsyncAtomicWriteOptions,
   withFileLock,
 } from '../filePersistence';
@@ -48,9 +50,12 @@ const isMissingFile = (error: unknown): boolean =>
   'code' in error &&
   (error as NodeJS.ErrnoException).code === 'ENOENT';
 
-const fileRevision = async (file: string): Promise<string | undefined> => {
+const fileRevision = async (
+  file: string,
+  dataRoot: string,
+): Promise<string | undefined> => {
   try {
-    const details = await stat(file);
+    const details = await secureFileStats(file, { dataRoot });
     return `${details.dev}:${details.ino}:${details.size}:${details.mtimeMs}:${details.ctimeMs}`;
   } catch (error) {
     if (isMissingFile(error)) return undefined;
@@ -66,6 +71,7 @@ export class FileEventStore implements EventStore {
   readonly environment: RuntimeEnvironment;
   readonly deploymentNamespace: string;
   private readonly persistence: AsyncAtomicWriteOptions;
+  private readonly dataRoot: string;
 
   constructor(
     readonly filePath: string,
@@ -74,6 +80,8 @@ export class FileEventStore implements EventStore {
     if (!path.isAbsolute(filePath)) {
       throw new TypeError('FileEventStore requires an absolute file path.');
     }
+    this.dataRoot = options.dataRoot ?? path.dirname(filePath);
+    assertSecurePath(filePath, this.dataRoot);
     this.environment = options.environment ?? 'development';
     this.deploymentNamespace =
       options.deploymentNamespace ?? options.namespace ?? 'default';
@@ -81,6 +89,8 @@ export class FileEventStore implements EventStore {
       operations: options.operations,
       sleep: options.sleep,
       logger: options.logger,
+      dataRoot: this.dataRoot,
+      maxBytes: options.maxBytes,
     };
   }
 
@@ -127,12 +137,15 @@ export class FileEventStore implements EventStore {
   }
 
   private async load(): Promise<PersistedStreams> {
-    const revision = await fileRevision(this.filePath);
+    const revision = await fileRevision(this.filePath, this.dataRoot);
     if (this.streams && revision === this.diskRevision) return this.streams;
 
     let parsed: unknown;
     try {
-      parsed = JSON.parse(await readFile(this.filePath, 'utf8'));
+      parsed = JSON.parse(await readSecureFile(this.filePath, {
+        dataRoot: this.dataRoot,
+        maxBytes: this.persistence.maxBytes,
+      }));
     } catch (error) {
       if (!isMissingFile(error)) throw error;
       this.streams = {};
@@ -215,7 +228,7 @@ export class FileEventStore implements EventStore {
       this.persistence,
     );
     if (persisted) {
-      this.diskRevision = await fileRevision(this.filePath);
+      this.diskRevision = await fileRevision(this.filePath, this.dataRoot);
       this.dirty = false;
     } else {
       this.dirty = true;
