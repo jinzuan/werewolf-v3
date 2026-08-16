@@ -165,11 +165,10 @@ export class FileLifecycleOutbox implements LifecycleOutbox {
   }
 
   private async save(document: LifecycleOutboxDocument): Promise<void> {
-    const saved = await atomicWriteFile(this.filePath, () => JSON.stringify(document, null, 2), {
+    await atomicWriteFile(this.filePath, () => JSON.stringify(document, null, 2), {
       dataRoot: this.dataRoot,
       maxBytes: this.maxBytes,
     });
-    if (!saved) throw new Error('lifecycle outbox write failed');
   }
 
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {

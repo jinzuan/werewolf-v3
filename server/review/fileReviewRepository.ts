@@ -4,6 +4,7 @@ import {
   assertSecurePath,
   readSecureFile,
   type AsyncAtomicWriteOptions,
+  withFileLock,
 } from '../filePersistence';
 import type { ReviewRepository, ReviewJobRecord } from './reviewRepository';
 
@@ -31,20 +32,20 @@ export class FileReviewRepository implements ReviewRepository {
   }
 
   list(): Promise<ReviewJobRecord[]> {
-    return this.enqueue(async () => clone(await this.load()));
+    return this.enqueue(() => withFileLock(this.filePath, async () => clone(await this.load())));
   }
 
   get(gameId: string): Promise<ReviewJobRecord | undefined> {
-    return this.enqueue(async () => {
+    return this.enqueue(() => withFileLock(this.filePath, async () => {
       const job = (await this.load()).find((item) => item.gameId === gameId);
       return job ? clone(job) : undefined;
-    });
+    }));
   }
 
   createPending(
     input: Parameters<ReviewRepository['createPending']>[0],
   ): Promise<{ job: ReviewJobRecord; created: boolean }> {
-    return this.enqueue(async () => {
+    return this.enqueue(() => withFileLock(this.filePath, async () => {
       const jobs = await this.load();
       const existing = jobs.find((item) => item.gameId === input.gameId);
       if (existing) return { job: clone(existing), created: false };
@@ -60,24 +61,25 @@ export class FileReviewRepository implements ReviewRepository {
         createdAt: now,
         updatedAt: now,
       };
-      jobs.push(job);
-      this.jobs = jobs;
-      await this.write(jobs);
+      const nextJobs = [...jobs, job];
+      await this.write(nextJobs);
+      this.jobs = nextJobs;
       return { job: clone(job), created: true };
-    });
+    }));
   }
 
   save(job: ReviewJobRecord): Promise<ReviewJobRecord> {
-    return this.enqueue(async () => {
+    return this.enqueue(() => withFileLock(this.filePath, async () => {
       const jobs = await this.load();
       const next = clone({ ...job, updatedAt: Date.now() });
       const index = jobs.findIndex((item) => item.gameId === next.gameId);
-      if (index === -1) jobs.push(next);
-      else jobs[index] = next;
-      this.jobs = jobs;
-      await this.write(jobs);
+      const nextJobs = [...jobs];
+      if (index === -1) nextJobs.push(next);
+      else nextJobs[index] = next;
+      await this.write(nextJobs);
+      this.jobs = nextJobs;
       return clone(next);
-    });
+    }));
   }
 
   private async load(): Promise<ReviewJobRecord[]> {
@@ -87,7 +89,7 @@ export class FileReviewRepository implements ReviewRepository {
         dataRoot: this.dataRoot,
         maxBytes: this.persistence.maxBytes,
       })) as unknown;
-      this.jobs = Array.isArray(parsed)
+      const jobs = Array.isArray(parsed)
         ? (parsed as ReviewJobRecord[]).map((job) => {
             const generationMode = job.generationMode ?? 'rules';
             const operationId = job.operationId ?? `review:${job.gameId}:${generationMode}`;
@@ -110,6 +112,7 @@ export class FileReviewRepository implements ReviewRepository {
             };
           })
         : [];
+      this.jobs = jobs;
     } catch (error) {
       if (
         !(error instanceof Error) ||

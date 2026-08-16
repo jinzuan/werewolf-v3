@@ -28,7 +28,7 @@ const event = (sequence: number): DomainEvent => ({
   schemaVersion: DOMAIN_EVENT_SCHEMA_VERSION,
 });
 
-test('file event store keeps appended events in memory after persistence fails', async () => {
+test('file event store rejects failed persistence and does not advance the stream', async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'v3-events-'));
   const filePath = path.join(directory, 'events.json');
   const logs: Array<{ message: string; error: unknown }> = [];
@@ -55,16 +55,15 @@ test('file event store keeps appended events in memory after persistence fails',
       logs.push({ message, error });
     },
     });
-    const stored = await store.append({
+    await assert.rejects(() => store.append({
       streamId,
       expectedVersion: 1,
       events: [event(2)],
-    });
+    }), /EACCES|EPERM/);
 
-    assert.equal(stored.length, 1);
     assert.deepEqual(
       (await store.read(streamId)).map(({ event: item }) => item.eventId),
-      ['event-1', 'event-2'],
+      ['event-1'],
     );
     await assert.rejects(
       store.append({

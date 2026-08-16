@@ -140,12 +140,11 @@ const writeEncryptedRecoveryPackage = async (
     tag: cipher.getAuthTag().toString('base64url'),
     ciphertext: ciphertext.toString('base64url'),
   };
-  const saved = await atomicWriteFile(
+  await atomicWriteFile(
     recovery.filePath,
     () => JSON.stringify(document, null, 2),
     { dataRoot: recovery.secretRoot },
   );
-  if (!saved) throw new Error('secret recovery package could not be persisted');
   return recovery.filePath;
 };
 
@@ -186,8 +185,7 @@ const appendAudit = async (
     ...(entry.removedFile ? { removedFile: path.basename(entry.removedFile) } : {}),
     recordedAt: Date.now(),
   });
-  const saved = await atomicWriteFile(target, () => JSON.stringify(existing, null, 2), { dataRoot });
-  if (!saved) throw new Error('secret migration audit could not be persisted');
+  await atomicWriteFile(target, () => JSON.stringify(existing, null, 2), { dataRoot });
 };
 
 const migratedCredential = (
@@ -278,12 +276,11 @@ const migrateLegacyRecords = async (
     throw new Error('secret migration did not sanitize the active room records');
   }
   const dataRoot = options.dataRoot ?? path.dirname(options.inputPath);
-  const saved = await atomicWriteFile(
+  await atomicWriteFile(
     options.inputPath,
     () => JSON.stringify(rooms, null, 2),
     { dataRoot },
   );
-  if (!saved) throw new Error('secret migration could not persist the converted room file');
   const recoveryPath = await writeEncryptedRecoveryPackage(source, options);
   await appendAudit(options.auditPath, options.recovery?.secretRoot ?? dataRoot, {
     sourceHash: sourceHashOf(source),

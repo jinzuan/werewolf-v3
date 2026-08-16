@@ -258,8 +258,7 @@ export class EncryptedFileCredentialStore implements RoomCredentialStore {
   }
 
   private async save(store: PersistedCredentialStore): Promise<void> {
-    const saved = await atomicWriteFile(this.filePath, () => JSON.stringify(store, null, 2), this.persistence);
-    if (!saved) throw new EncryptedCredentialStoreError('credential store write failed');
+    await atomicWriteFile(this.filePath, () => JSON.stringify(store, null, 2), this.persistence);
   }
 
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {

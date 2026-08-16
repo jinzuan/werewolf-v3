@@ -1,23 +1,27 @@
 import {
   chmodSync,
-  copyFileSync,
+  closeSync,
+  fsyncSync,
   lstatSync,
   mkdirSync,
+  openSync,
   renameSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import {
   chmod,
-  copyFile,
   lstat,
   mkdir,
   open,
+  readFile,
   rename,
   rm,
+  stat,
   unlink,
   writeFile as writeFilePromise,
 } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import type { Stats } from 'node:fs';
 
@@ -51,16 +55,20 @@ export interface AsyncAtomicFileOperations {
   mkdir(directory: string, options: { recursive: true }): Promise<unknown>;
   writeFile(file: string, value: string, encoding: 'utf8'): Promise<unknown>;
   rename(source: string, destination: string): Promise<unknown>;
-  copyFile(source: string, destination: string): Promise<unknown>;
+  /** Retained for source compatibility; atomic writes never call this. */
+  copyFile?(source: string, destination: string): Promise<unknown>;
   unlink(file: string): Promise<unknown>;
+  sync(file: string): Promise<unknown>;
 }
 
 export interface SyncAtomicFileOperations {
   mkdir(directory: string, options: { recursive: true }): unknown;
   writeFile(file: string, value: string, encoding: 'utf8'): unknown;
   rename(source: string, destination: string): unknown;
-  copyFile(source: string, destination: string): unknown;
+  /** Retained for source compatibility; atomic writes never call this. */
+  copyFile?(source: string, destination: string): unknown;
   unlink(file: string): unknown;
+  sync(file: string): unknown;
 }
 
 type PersistenceLogger = (message: string, error: unknown) => void;
@@ -87,10 +95,18 @@ export interface SyncAtomicWriteOptions {
 export interface FileLockOptions {
   retryDelayMs?: number;
   maxAttempts?: number;
+  /** Lease duration. A dead local owner can be recovered immediately. */
+  leaseMs?: number;
+  /** Age after which an owner that cannot be checked is considered stale. */
+  staleLockMs?: number;
+  now?: () => number;
+  isProcessAlive?: (pid: number) => boolean;
 }
 
 const RENAME_ATTEMPTS = 4;
 const RETRY_DELAY_MS = 10;
+const DEFAULT_LOCK_LEASE_MS = 30_000;
+const DEFAULT_STALE_LOCK_MS = DEFAULT_LOCK_LEASE_MS;
 
 const secureAsyncWriteFile = (
   file: string,
@@ -118,16 +134,30 @@ const defaultAsyncOperations: AsyncAtomicFileOperations = {
   mkdir,
   writeFile: secureAsyncWriteFile,
   rename,
-  copyFile,
   unlink,
+  sync: async (file: string) => {
+    const handle = await open(file, 'r');
+    try {
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+  },
 };
 
 const defaultSyncOperations: SyncAtomicFileOperations = {
   mkdir: mkdirSync,
   writeFile: secureSyncWriteFile,
   rename: renameSync,
-  copyFile: copyFileSync,
   unlink: unlinkSync,
+  sync: (file: string) => {
+    const descriptor = openSync(file, 'r');
+    try {
+      fsyncSync(descriptor);
+    } finally {
+      closeSync(descriptor);
+    }
+  },
 };
 
 const defaultLogger: PersistenceLogger = (message, error) => {
@@ -463,6 +493,158 @@ export const readSecureFile = async (
 
 /** Serialize mutations from separate server/CLI processes as well as callers
  * sharing one repository instance. The data file itself remains atomic. */
+interface LockLease {
+  schemaVersion: 1;
+  pid: number;
+  host: string;
+  nonce: string;
+  acquiredAt: number;
+  expiresAt: number;
+}
+
+const lockHost = os.hostname();
+
+const lockNonce = (): string =>
+  `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+const defaultProcessAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return !isErrorCode(error, 'ESRCH');
+  }
+};
+
+const parseLockLease = (value: string): LockLease | undefined => {
+  try {
+    const parsed = JSON.parse(value) as Partial<LockLease>;
+    if (
+      parsed.schemaVersion !== 1 ||
+      !Number.isInteger(parsed.pid) ||
+      typeof parsed.host !== 'string' ||
+      typeof parsed.nonce !== 'string' ||
+      !Number.isFinite(parsed.acquiredAt) ||
+      !Number.isFinite(parsed.expiresAt)
+    ) return undefined;
+    return parsed as LockLease;
+  } catch {
+    return undefined;
+  }
+};
+
+const readLockLease = async (lockFile: string): Promise<LockLease | undefined> => {
+  try {
+    return parseLockLease(await readFile(lockFile, 'utf8'));
+  } catch (error) {
+    if (isErrorCode(error, 'ENOENT')) return undefined;
+    throw error;
+  }
+};
+
+const lockIsStale = async (
+  lockFile: string,
+  options: Required<Pick<FileLockOptions, 'staleLockMs' | 'now' | 'isProcessAlive'>>,
+): Promise<boolean> => {
+  let details;
+  try {
+    details = await stat(lockFile);
+  } catch (error) {
+    if (isErrorCode(error, 'ENOENT')) return false;
+    throw error;
+  }
+  const lease = await readLockLease(lockFile);
+  if (lease && lease.host === lockHost && !options.isProcessAlive(lease.pid)) {
+    return true;
+  }
+  const now = options.now();
+  const leaseExpired = lease ? now >= lease.expiresAt : true;
+  const oldEnough = now - details.mtimeMs >= options.staleLockMs;
+  return leaseExpired && oldEnough;
+};
+
+const takeOverStaleLock = async (lockFile: string): Promise<void> => {
+  const quarantine = `${lockFile}.${lockNonce()}.stale`;
+  try {
+    await rename(lockFile, quarantine);
+  } catch (error) {
+    if (!isErrorCode(error, 'ENOENT')) throw error;
+    return;
+  }
+  await rm(quarantine, { force: true });
+};
+
+const writeLockLease = async (
+  handle: Awaited<ReturnType<typeof open>>,
+  lease: LockLease,
+): Promise<void> => {
+  await handle.truncate(0);
+  await handle.write(JSON.stringify(lease), 0, 'utf8');
+  await handle.sync();
+};
+
+const refreshLockLease = async (
+  lockFile: string,
+  current: LockLease,
+  now: () => number,
+  leaseMs: number,
+): Promise<void> => {
+  const temp = `${lockFile}.${current.nonce}.heartbeat`;
+  const refreshed: LockLease = {
+    ...current,
+    expiresAt: now() + leaseMs,
+  };
+  try {
+    await writeFilePromise(temp, JSON.stringify(refreshed), {
+      encoding: 'utf8',
+      flag: 'wx',
+      mode: SECURE_FILE_MODE,
+    });
+    const tempHandle = await open(temp, 'r');
+    try {
+      await tempHandle.sync();
+    } finally {
+      await tempHandle.close();
+    }
+    await rename(temp, lockFile);
+    const directoryHandle = await open(path.dirname(lockFile), 'r');
+    try {
+      await directoryHandle.sync();
+    } finally {
+      await directoryHandle.close();
+    }
+  } catch (error) {
+    try {
+      await rm(temp, { force: true });
+    } catch {
+      // Best-effort cleanup; the current lock remains authoritative.
+    }
+    throw error;
+  }
+};
+
+const releaseLock = async (
+  lockFile: string,
+  handle: Awaited<ReturnType<typeof open>>,
+  nonce: string,
+): Promise<void> => {
+  let closeError: unknown;
+  try {
+    await handle.close();
+  } catch (error) {
+    closeError = error;
+  }
+  let releaseError: unknown;
+  try {
+    const current = await readLockLease(lockFile);
+    if (current?.nonce === nonce) await rm(lockFile);
+  } catch (error) {
+    if (!isErrorCode(error, 'ENOENT')) releaseError = error;
+  }
+  if (closeError) throw closeError;
+  if (releaseError) throw releaseError;
+};
+
 export async function withFileLock<T>(
   file: string,
   operation: () => Promise<T>,
@@ -471,21 +653,61 @@ export async function withFileLock<T>(
   const lockFile = `${file}.lock`;
   const retryDelayMs = options.retryDelayMs ?? 10;
   const maxAttempts = options.maxAttempts ?? 500;
+  const leaseMs = options.leaseMs ?? DEFAULT_LOCK_LEASE_MS;
+  const staleLockMs = options.staleLockMs ?? DEFAULT_STALE_LOCK_MS;
+  const now = options.now ?? Date.now;
+  const isProcessAlive = options.isProcessAlive ?? defaultProcessAlive;
   await ensureSecureDirectory(path.dirname(lockFile));
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     let handle: Awaited<ReturnType<typeof open>> | undefined;
+    let ownsLock = false;
     try {
       handle = await open(lockFile, 'wx', SECURE_FILE_MODE);
       await handle.chmod(SECURE_FILE_MODE);
+      const nonce = lockNonce();
+      const lease: LockLease = {
+        schemaVersion: 1,
+        pid: process.pid,
+        host: lockHost,
+        nonce,
+        acquiredAt: now(),
+        expiresAt: now() + leaseMs,
+      };
+      await writeLockLease(handle, lease);
+      ownsLock = true;
+      let heartbeat = Promise.resolve();
+      const heartbeatTimer = setInterval(() => {
+        heartbeat = heartbeat.then(async () => {
+          const current = await readLockLease(lockFile);
+          if (current?.nonce !== nonce) return;
+          await refreshLockLease(lockFile, current, now, leaseMs);
+        }).catch(() => undefined);
+      }, Math.max(100, Math.floor(leaseMs / 3)));
+      heartbeatTimer.unref?.();
       try {
         return await operation();
       } finally {
-        await handle.close();
-        await rm(lockFile, { force: true });
+        clearInterval(heartbeatTimer);
+        await heartbeat;
+        await releaseLock(lockFile, handle, nonce);
       }
     } catch (error) {
-      if (handle || !isErrorCode(error, 'EEXIST')) throw error;
+      if (handle) {
+        if (!ownsLock) {
+          try {
+            await handle.close();
+          } finally {
+            await rm(lockFile, { force: true });
+          }
+        }
+        throw error;
+      }
+      if (!isErrorCode(error, 'EEXIST')) throw error;
+      if (await lockIsStale(lockFile, { staleLockMs, now, isProcessAlive })) {
+        await takeOverStaleLock(lockFile);
+        continue;
+      }
       await asyncSleep(retryDelayMs);
     }
   }
@@ -547,26 +769,25 @@ export async function atomicWriteFile(
     if (secureFilesystem) {
       await chmod(temp, SECURE_FILE_MODE);
       await secureFileStats(temp, { dataRoot: options.dataRoot });
+      await operations.sync(temp);
     }
 
+    let renameError: unknown;
+    let renamed = false;
     for (let attempt = 1; attempt <= RENAME_ATTEMPTS; attempt += 1) {
       try {
         await operations.rename(temp, file);
-        if (secureFilesystem) await secureFileStats(file, { dataRoot: options.dataRoot });
-        return true;
+        renamed = true;
+        break;
       } catch (error) {
+        renameError = error;
         if (!isErrorCode(error, 'EPERM') || attempt === RENAME_ATTEMPTS) break;
         await sleep(RETRY_DELAY_MS * attempt);
       }
     }
-
-    await operations.copyFile(temp, file);
+    if (!renamed) throw renameError;
     if (secureFilesystem) await secureFileStats(file, { dataRoot: options.dataRoot });
-    try {
-      await operations.unlink(temp);
-    } catch {
-      // The destination is complete; a stale temp file is safe to leave behind.
-    }
+    if (secureFilesystem) await operations.sync(path.dirname(file));
     return true;
   } catch (error) {
     try {
@@ -575,7 +796,7 @@ export async function atomicWriteFile(
       // Best-effort cleanup after the final persistence failure.
     }
     safeLog(logger, file, error);
-    return false;
+    throw error;
   }
 }
 
@@ -606,26 +827,25 @@ export function atomicWriteFileSync(
     if (secureFilesystem) {
       chmodSync(temp, SECURE_FILE_MODE);
       secureFileStatsSync(temp, { dataRoot: options.dataRoot });
+      operations.sync(temp);
     }
 
+    let renameError: unknown;
+    let renamed = false;
     for (let attempt = 1; attempt <= RENAME_ATTEMPTS; attempt += 1) {
       try {
         operations.rename(temp, file);
-        if (secureFilesystem) secureFileStatsSync(file, { dataRoot: options.dataRoot });
-        return true;
+        renamed = true;
+        break;
       } catch (error) {
+        renameError = error;
         if (!isErrorCode(error, 'EPERM') || attempt === RENAME_ATTEMPTS) break;
         sleep(RETRY_DELAY_MS * attempt);
       }
     }
-
-    operations.copyFile(temp, file);
+    if (!renamed) throw renameError;
     if (secureFilesystem) secureFileStatsSync(file, { dataRoot: options.dataRoot });
-    try {
-      operations.unlink(temp);
-    } catch {
-      // The destination is complete; a stale temp file is safe to leave behind.
-    }
+    if (secureFilesystem) operations.sync(path.dirname(file));
     return true;
   } catch (error) {
     try {
@@ -634,6 +854,6 @@ export function atomicWriteFileSync(
       // Best-effort cleanup after the final persistence failure.
     }
     safeLog(logger, file, error);
-    return false;
+    throw error;
   }
 }

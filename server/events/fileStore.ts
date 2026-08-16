@@ -67,7 +67,6 @@ export class FileEventStore implements EventStore {
   private queue: Promise<unknown> = Promise.resolve();
   private streams?: PersistedStreams;
   private diskRevision?: string;
-  private dirty = false;
   readonly environment: RuntimeEnvironment;
   readonly deploymentNamespace: string;
   private readonly persistence: AsyncAtomicWriteOptions;
@@ -115,8 +114,8 @@ export class FileEventStore implements EventStore {
           ...streams,
           [request.streamId]: [...current, ...stored],
         };
-        this.streams = next;
         await this.write(next);
+        this.streams = next;
         return stored;
       }),
     );
@@ -150,16 +149,14 @@ export class FileEventStore implements EventStore {
       if (!isMissingFile(error)) throw error;
       this.streams = {};
       this.diskRevision = undefined;
-      this.dirty = false;
       return this.streams;
     }
 
     const source = this.parseDocument(parsed);
-    this.streams = source;
-    this.diskRevision = revision;
-    this.dirty = false;
     if (!this.isCurrentDocument(parsed, source)) await this.write(source);
-    return this.streams;
+    else this.diskRevision = revision;
+    this.streams = source;
+    return source;
   }
 
   private parseDocument(value: unknown): PersistedStreams {
@@ -222,16 +219,11 @@ export class FileEventStore implements EventStore {
       deploymentNamespace: this.deploymentNamespace,
       streams,
     };
-    const persisted = await atomicWriteFile(
+    await atomicWriteFile(
       this.filePath,
       () => JSON.stringify(document, null, 2),
       this.persistence,
     );
-    if (persisted) {
-      this.diskRevision = await fileRevision(this.filePath, this.dataRoot);
-      this.dirty = false;
-    } else {
-      this.dirty = true;
-    }
+    this.diskRevision = await fileRevision(this.filePath, this.dataRoot);
   }
 }

@@ -5,6 +5,7 @@ import {
   assertSecurePath,
   readSecureFile,
   type AsyncAtomicWriteOptions,
+  withFileLock,
 } from '../filePersistence';
 
 export const INSIGHT_SCHEMA_VERSION = 1 as const;
@@ -99,14 +100,14 @@ export class FileInsightStore implements InsightStore {
   }
 
   list(role?: Role): Promise<ServerInsightRecord[]> {
-    return this.enqueue(async () => {
+    return this.enqueue(() => withFileLock(this.filePath, async () => {
       const records = await this.load();
       return clone(role ? records.filter((item) => item.role === role) : records);
-    });
+    }));
   }
 
   add(record: ServerInsightRecord): Promise<{ record: ServerInsightRecord; added: boolean }> {
-    return this.enqueue(async () => {
+    return this.enqueue(() => withFileLock(this.filePath, async () => {
       const records = await this.load();
       const sameGame = records.find(
         (item) => item.gameId === record.gameId && item.role === record.role,
@@ -123,29 +124,31 @@ export class FileInsightStore implements InsightStore {
         list.push(item);
         byRole.set(item.role, list.slice(-MAX_INSIGHTS_PER_ROLE));
       }
-      this.records = [...byRole.values()].flat();
-      await this.write(this.records);
+      const nextRecords = [...byRole.values()].flat();
+      await this.write(nextRecords);
+      this.records = nextRecords;
       return { record: clone(record), added: true };
-    });
+    }));
   }
 
   clear(role?: Role): Promise<void> {
-    return this.enqueue(async () => {
+    return this.enqueue(() => withFileLock(this.filePath, async () => {
       const records = await this.load();
-      this.records = role ? records.filter((item) => item.role !== role) : [];
-      await this.write(this.records);
-    });
+      const nextRecords = role ? records.filter((item) => item.role !== role) : [];
+      await this.write(nextRecords);
+      this.records = nextRecords;
+    }));
   }
 
   getPromptReference(role: Role): Promise<string> {
-    return this.enqueue(async () => {
+    return this.enqueue(() => withFileLock(this.filePath, async () => {
       const records = (await this.load()).filter((item) => item.role === role);
       if (records.length === 0) return '';
       return [
         '【历史经验，非本局事实】',
         ...records.map((item) => `- ${item.text}`),
       ].join('\n');
-    });
+    }));
   }
 
   private async load(): Promise<ServerInsightRecord[]> {

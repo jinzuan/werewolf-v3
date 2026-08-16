@@ -46,7 +46,7 @@ test('file room repository serializes concurrent saves without losing rooms', as
   }
 });
 
-test('file room repository keeps memory state and restart sees last disk state after persistence failure', async () => {
+test('file room repository rejects failed persistence and restart sees last disk state', async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'v3-rooms-'));
   const filePath = path.join(directory, 'rooms.json');
   const baseline = roomRecord(1);
@@ -71,11 +71,11 @@ test('file room repository keeps memory state and restart sees last disk state a
       },
     });
 
-    await repository.save(unsaved);
+    await assert.rejects(() => repository.save(unsaved), /EACCES|EPERM/);
 
     assert.deepEqual(
       (await repository.list()).map((room) => room.code).sort(),
-      [baseline.code, unsaved.code].sort(),
+      [baseline.code],
     );
     assert.equal(logs.length, 1);
 

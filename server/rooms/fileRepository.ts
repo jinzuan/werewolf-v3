@@ -122,7 +122,6 @@ export class FileRoomRepository implements RoomRepository {
   private queue: Promise<unknown> = Promise.resolve();
   private rooms?: RoomRecord[];
   private diskRevision?: string;
-  private dirty = false;
   readonly environment: RuntimeEnvironment;
   readonly deploymentNamespace: string;
   private readonly persistence: AsyncAtomicWriteOptions;
@@ -178,9 +177,9 @@ export class FileRoomRepository implements RoomRepository {
             'ROOM_ALREADY_EXISTS',
           );
         }
-        rooms.push(migrated);
-        this.rooms = rooms;
-        await this.write(rooms);
+        const nextRooms = [...rooms, migrated];
+        await this.write(nextRooms);
+        this.rooms = nextRooms;
         return clone(migrated);
       }),
     );
@@ -220,9 +219,9 @@ export class FileRoomRepository implements RoomRepository {
             'ROOM_ALREADY_EXISTS',
           );
         }
-        rooms.push(room);
-        this.rooms = rooms;
-        await this.write(rooms);
+        const nextRooms = [...rooms, room];
+        await this.write(nextRooms);
+        this.rooms = nextRooms;
         return { room: clone(room), created: true };
       }),
     );
@@ -238,10 +237,11 @@ export class FileRoomRepository implements RoomRepository {
         );
         const current = index === -1 ? undefined : rooms[index];
         const next = prepareSave(current, migrated);
-        if (index === -1) rooms.push(next);
-        else rooms[index] = next;
-        this.rooms = rooms;
-        await this.write(rooms);
+        const nextRooms = [...rooms];
+        if (index === -1) nextRooms.push(next);
+        else nextRooms[index] = next;
+        await this.write(nextRooms);
+        this.rooms = nextRooms;
       }),
     );
   }
@@ -250,8 +250,9 @@ export class FileRoomRepository implements RoomRepository {
     return this.enqueue(() =>
       withFileLock(this.filePath, async () => {
         const rooms = await this.load();
-        this.rooms = rooms.filter((room) => room.code !== roomKey(code));
-        await this.write(this.rooms);
+        const nextRooms = rooms.filter((room) => room.code !== roomKey(code));
+        await this.write(nextRooms);
+        this.rooms = nextRooms;
       }),
     );
   }
@@ -335,9 +336,10 @@ export class FileRoomRepository implements RoomRepository {
           ? configRevisionOf(current) + 1
           : configRevisionOf(current);
         next.updatedAt = Date.now();
-        rooms[index] = next;
-        this.rooms = rooms;
-        await this.write(rooms);
+        const nextRooms = [...rooms];
+        nextRooms[index] = next;
+        await this.write(nextRooms);
+        this.rooms = nextRooms;
         return (returned === undefined ? clone(next) : returned) as T;
       }),
     );
@@ -393,13 +395,6 @@ export class FileRoomRepository implements RoomRepository {
     ) {
       return this.rooms;
     }
-    // A failed write intentionally leaves the process-local authoritative
-    // state available to its caller. An external controlled write changes the
-    // disk revision and therefore clears this exception on the next read.
-    if (this.rooms && this.dirty && revision === this.diskRevision) {
-      return this.rooms;
-    }
-
     let parsed: unknown;
     try {
       parsed = JSON.parse(await readSecureFile(this.filePath, {
@@ -410,7 +405,6 @@ export class FileRoomRepository implements RoomRepository {
       if (!isMissingFile(error)) throw error;
       this.rooms = [];
       this.diskRevision = undefined;
-      this.dirty = false;
       return this.rooms;
     }
 
@@ -418,14 +412,13 @@ export class FileRoomRepository implements RoomRepository {
     const migrated = migrateRoomRecords(source).map((room) =>
       this.normalizeRoom(stripPersistedConnectionFacts(room)),
     );
-    this.rooms = migrated;
-    this.diskRevision = revision;
-    this.dirty = false;
-
     if (!this.isCurrentDocument(parsed, migrated)) {
       await this.write(migrated);
+    } else {
+      this.diskRevision = revision;
     }
-    return this.rooms;
+    this.rooms = migrated;
+    return migrated;
   }
 
   private parseDocument(value: unknown): RoomRecord[] {
@@ -484,17 +477,12 @@ export class FileRoomRepository implements RoomRepository {
       deploymentNamespace: this.deploymentNamespace,
       rooms,
     };
-    const persisted = await atomicWriteFile(
+    await atomicWriteFile(
       this.filePath,
       () => JSON.stringify(document, null, 2),
       this.persistence,
     );
-    if (persisted) {
-      this.diskRevision = await fileRevision(this.filePath, this.dataRoot);
-      this.dirty = false;
-    } else {
-      this.dirty = true;
-    }
+    this.diskRevision = await fileRevision(this.filePath, this.dataRoot);
   }
 
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {
