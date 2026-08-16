@@ -1,4 +1,5 @@
 import type {
+  CommandReceipt,
   CreateRoomOptionsV31,
   IdentityCredentials,
   RoomAccess,
@@ -123,6 +124,8 @@ export interface RoomRecord {
   config?: RoomConfigRecord;
   gameId?: string;
   recentRoomCommands?: IdempotencyRecord[];
+  /** Compact room mutation receipts retained for command reconciliation. */
+  commandReceipts?: CommandReceipt[];
   /** Durable create claim. The request id is never generated again on retry. */
   createRequestId?: string;
   createActorId?: string;

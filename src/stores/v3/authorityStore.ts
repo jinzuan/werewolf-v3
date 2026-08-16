@@ -23,17 +23,16 @@ import {
   fetchV3Snapshot,
   getV3Catalog,
   getV3Room,
+  getV3CommandReceipt,
   getV3Review,
   joinV3Room,
   listV3Rooms,
   resetV3Connection,
   getV3AIConfig,
-  updateV3AIConfig,
   resumeV3Room,
   sendGameCommand,
   sendV3RoomCommand,
   spectateV3Room,
-  startV3Game,
   subscribeV3Connection,
   subscribeV3Messages,
   subscribeV3Errors,
@@ -43,6 +42,10 @@ import {
 } from '../../net/v3Socket';
 import type { ClientAck, TransportFailure } from '../../net/v3Socket';
 import { getErrorMessage } from '../../v3/presentation';
+import {
+  CommandOutcomeRegistry,
+  type CommandOutcome,
+} from '../../v3/commandOutcome';
 import {
   mergeEventEnvelope,
   type EventStreamState,
@@ -116,6 +119,13 @@ const responseMessage = (response: ClientAck): string =>
     ? response.message || '连接暂时不可用，请重试。'
     : getErrorMessage(response.code);
 
+const commandOutcomeRegistry = new CommandOutcomeRegistry();
+const commandRequests = new Map<string, {
+  roomId: string;
+  expectedRoomRevision: number;
+  command: RoomMutationCommand;
+}>();
+
 const isRoomStatusWithGame = (status: RoomView['status']): boolean =>
   status === 'playing' || status === 'ended';
 
@@ -163,6 +173,8 @@ export interface V3Store {
   catalogStatus: 'idle' | 'loading' | 'ready' | 'error';
   catalogError: string | null;
   pendingRoomCommand: string | null;
+  commandOutcomes: Record<string, CommandOutcome>;
+  lastCommandOutcome: CommandOutcome | null;
   rooms: RoomSummary[];
   catalog: RoomCreationCatalog | null;
   room: RoomView | null;
@@ -206,6 +218,8 @@ export interface V3Store {
   cancelReadyCheck: () => Promise<boolean>;
   setReady: (ready: boolean) => Promise<boolean>;
   startGame: () => Promise<boolean>;
+  mutateRoom: (command: RoomMutationCommand) => Promise<boolean>;
+  reconcileCommand: (commandId: string) => Promise<CommandOutcome | null>;
   dispatch: (command: GameCommand) => Promise<boolean>;
   leaveRoom: () => void;
   clearAuthority: (reason?: string | null) => void;
@@ -251,6 +265,13 @@ export const useV3Store = create<V3Store>()((set, get) => {
       aiConfigSummary: null,
       aiConfigStatus: 'idle',
       aiConfigError: null,
+    });
+  };
+
+  const publishOutcome = (outcome: CommandOutcome): void => {
+    set({
+      commandOutcomes: commandOutcomeRegistry.all(),
+      lastCommandOutcome: outcome,
     });
   };
 
@@ -526,9 +547,19 @@ export const useV3Store = create<V3Store>()((set, get) => {
         if (message.type !== 'room.closed') return;
         const current = get();
         if (current.session?.roomCode !== message.roomCode) return;
+        const causal = message.causeCommandId
+          ? commandOutcomeRegistry.markCommitted(message.causeCommandId)
+          : [...Object.keys(commandOutcomeRegistry.all())]
+            .map((commandId) => commandOutcomeRegistry.get(commandId))
+            .find((outcome) => outcome?.status === 'unknown' && outcome.commandType === 'room.dissolve');
+        if (causal) publishOutcome(causal);
         clearAuthority('房间已解散。');
       }),
       subscribeV3RoomSnapshots((message) => {
+        if (message.causeCommandId) {
+          const outcome = commandOutcomeRegistry.markCommitted(message.causeCommandId);
+          publishOutcome(outcome);
+        }
         const accepted = applyRoomView(message.room);
         if (
           accepted &&
@@ -627,6 +658,13 @@ export const useV3Store = create<V3Store>()((set, get) => {
             ? 'cancel_ready_check'
             : undefined;
     if (action && !roomActions(current.room).includes(action)) return false;
+    const commandId = crypto.randomUUID();
+    commandRequests.set(commandId, {
+      roomId: current.session.roomId,
+      expectedRoomRevision: current.room.roomRevision,
+      command,
+    });
+    publishOutcome(commandOutcomeRegistry.begin(commandId, command.type));
     set({ loading: true, error: null });
     set({ pendingRoomCommand: command.type });
     const response = await sendV3RoomCommand(
@@ -634,16 +672,85 @@ export const useV3Store = create<V3Store>()((set, get) => {
       current.session.roomId,
       current.room.roomRevision,
       command,
+      commandId,
     );
     if (response.ok === false) {
+      const alreadyCommitted = isTransportFailure(response) &&
+        commandOutcomeRegistry.get(commandId)?.status === 'committed';
+      if (alreadyCommitted) {
+        set({ loading: false, pendingRoomCommand: null });
+        return true;
+      }
       if (!isTransportFailure(response) && response.room) applyRoomView(response.room);
-      set({ loading: false, pendingRoomCommand: null, error: responseMessage(response) });
+      const outcome = isTransportFailure(response)
+        ? response.sent
+          ? commandOutcomeRegistry.markUnknown(commandId, command.type)
+          : commandOutcomeRegistry.markNotSent(commandId, command.type)
+        : commandOutcomeRegistry.markRejected(commandId, response.code, response.receipt);
+      publishOutcome(outcome);
+      set({
+        loading: false,
+        pendingRoomCommand: null,
+        error: outcome.status === 'unknown' ? '正在确认结果，请勿重复操作。' : responseMessage(response),
+      });
       return false;
     }
+    const outcome = commandOutcomeRegistry.markCommitted(commandId, response.receipt);
+    publishOutcome(outcome);
     if (response.room) applyRoomView(response.room);
-    set({ loading: false, pendingRoomCommand: null });
+    if ('summary' in response && response.summary !== undefined) {
+      set({ aiConfigSummary: response.summary });
+    }
+    set({ loading: false, pendingRoomCommand: null, error: null });
     if (command.type === 'room.start_game') await recoverGameProjection();
     return true;
+  };
+
+  const reconcileCommand = async (commandId: string): Promise<CommandOutcome | null> => {
+    const current = get();
+    const request = commandRequests.get(commandId);
+    if (!current.session || !request) return commandOutcomeRegistry.get(commandId) ?? null;
+    const queried = await getV3CommandReceipt(
+      current.session.actorId,
+      request.roomId,
+      commandId,
+    );
+    if (queried.ok === true && queried.receipt) {
+      const outcome = queried.receipt.status === 'committed'
+        ? commandOutcomeRegistry.markCommitted(commandId, queried.receipt)
+        : commandOutcomeRegistry.markRejected(commandId, queried.receipt.errorCode, queried.receipt);
+      publishOutcome(outcome);
+      if (outcome.status === 'committed') await get().refreshRoom();
+      return outcome;
+    }
+    if (queried.ok === false) {
+      const outcome = commandOutcomeRegistry.markUnknown(commandId, request.command.type);
+      publishOutcome(outcome);
+      return outcome;
+    }
+
+    // No receipt yet: replay the exact commandId. A new commandId would turn
+    // an unknown into a duplicate room mutation.
+    const replay = await sendV3RoomCommand(
+      current.session.actorId,
+      request.roomId,
+      request.expectedRoomRevision,
+      request.command,
+      commandId,
+    );
+    if (replay.ok === true) {
+      const outcome = commandOutcomeRegistry.markCommitted(commandId, replay.receipt);
+      publishOutcome(outcome);
+      if (replay.room) applyRoomView(replay.room);
+      return outcome;
+    }
+    const outcome = isTransportFailure(replay)
+      ? replay.sent
+        ? commandOutcomeRegistry.markUnknown(commandId, request.command.type)
+        : commandOutcomeRegistry.markNotSent(commandId, request.command.type)
+      : commandOutcomeRegistry.markRejected(commandId, replay.code, replay.receipt);
+    publishOutcome(outcome);
+    return outcome;
   };
 
   return {
@@ -655,6 +762,8 @@ export const useV3Store = create<V3Store>()((set, get) => {
     catalogStatus: 'idle',
     catalogError: null,
     pendingRoomCommand: null,
+    commandOutcomes: commandOutcomeRegistry.all(),
+    lastCommandOutcome: null,
     rooms: [],
     catalog: null,
     room: null,
@@ -850,19 +959,16 @@ export const useV3Store = create<V3Store>()((set, get) => {
         !roomActions(current.room).includes('update_ai_config')
       ) return false;
       set({ aiConfigStatus: 'updating', aiConfigError: null });
-      const response = await updateV3AIConfig(
-        current.session.actorId,
-        current.session.roomId,
-        current.room.roomRevision,
-        patch,
-      );
-      if (response.ok === false) {
-        set({ aiConfigStatus: 'error', aiConfigError: responseMessage(response) });
-        await get().refreshRoom();
+      const success = await runRoomMutation({
+        type: 'room.update_ai_config',
+        payload: { patch },
+      });
+      if (!success) {
+        set({ aiConfigStatus: 'error', aiConfigError: get().error });
+        if (get().lastCommandOutcome?.status !== 'unknown') await get().refreshRoom();
         return false;
       }
       set({
-        aiConfigSummary: response.summary,
         aiConfigStatus: 'ready',
         aiConfigError: null,
       });
@@ -894,24 +1000,14 @@ export const useV3Store = create<V3Store>()((set, get) => {
       }),
 
     startGame: async () => {
-      const current = get();
-      if (!current.session || !current.room) return false;
-      set({ loading: true, error: null });
-      set({ pendingRoomCommand: 'room.start_game' });
-      const response = await startV3Game(
-        current.session.actorId,
-        current.session.roomId,
-        current.room.roomRevision,
-      );
-      if (response.ok === false) {
-        if (!isTransportFailure(response) && response.room) applyRoomView(response.room);
-        set({ loading: false, pendingRoomCommand: null, error: responseMessage(response) });
-        return false;
-      }
-      applyRoomView(response.room);
-      set({ loading: false, pendingRoomCommand: null });
-      return recoverGameProjection();
+      return runRoomMutation({
+        type: 'room.start_game',
+        payload: {},
+      });
     },
+
+    mutateRoom: runRoomMutation,
+    reconcileCommand,
 
     dispatch: async (command) => {
       const current = get();

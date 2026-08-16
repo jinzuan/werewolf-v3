@@ -1,9 +1,11 @@
-import { randomBytes, randomInt, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
 import type { EventStore, ViewerContext } from '../../shared/events';
 import type {
+  CommandReceipt,
   CreateRoomOptionsV31,
   GameCommand,
   GameCommandMeta,
+  RoomMutationCommand,
   ProtocolErrorCode,
   RoomConfigIssue,
   RoomConfigView,
@@ -43,6 +45,11 @@ import { RoomPolicy, RoomPolicyError, roomCounts } from './roomPolicy';
 import { RoomProjector, assertIdentityRoom } from './roomProjector';
 import type { RoomRepository } from './repository';
 import { RoomRevisionConflictError } from './repository';
+import {
+  RoomLifecycleService,
+  type RoomMutationResult,
+  type RoomTombstone,
+} from './roomLifecycleService';
 import type { RuntimeEnvironment } from '../runtimeConfig';
 import {
   EndpointPolicy,
@@ -123,6 +130,7 @@ export interface RoomServiceErrorOptions {
   messageKey: string;
   params?: Record<string, string | number>;
   issues?: RoomConfigIssue[];
+  receipt?: CommandReceipt;
 }
 
 /** Errors crossing the socket boundary have stable, UI-safe fields. */
@@ -131,6 +139,7 @@ export class RoomServiceError extends Error {
   readonly messageKey: string;
   readonly params?: Record<string, string | number>;
   readonly issues?: RoomConfigIssue[];
+  readonly receipt?: CommandReceipt;
 
   constructor(options: RoomServiceErrorOptions) {
     super(options.code);
@@ -139,6 +148,7 @@ export class RoomServiceError extends Error {
     this.messageKey = options.messageKey;
     this.params = options.params;
     this.issues = options.issues;
+    this.receipt = options.receipt;
   }
 }
 
@@ -176,6 +186,7 @@ export interface RoomServiceOptions {
   reviewPipeline?: ReviewPipeline;
   insightStore?: InsightStore;
   aiTelemetry?: AITelemetry;
+  lifecycleService?: RoomLifecycleService;
 }
 
 export class RoomService {
@@ -187,8 +198,9 @@ export class RoomService {
     (roomCode: string, reason: RoomSnapshotReason) => void | Promise<void>
   >();
   private readonly roomDissolvedListeners = new Set<
-    (roomCode: string, roomId: string) => void | Promise<void>
+    (roomCode: string, roomId: string, causeCommandId?: string) => void | Promise<void>
   >();
+  private readonly lifecycle: RoomLifecycleService;
   private readonly connectionLeases = new Map<string, Set<string>>();
   private readonly aiProvider?: AIProvider;
   private readonly aiTelemetry: AITelemetry;
@@ -262,6 +274,7 @@ export class RoomService {
         registry: this.catalog.registry,
       });
     this.credentialStore = options.credentialStore ?? new InMemoryCredentialStore();
+    this.lifecycle = options.lifecycleService ?? new RoomLifecycleService();
     this.credentialNamespace = options.credentialNamespace ?? process.env.WW_DEPLOYMENT_NAMESPACE ?? 'development';
     this.endpointPolicy = options.endpointPolicy ?? new EndpointPolicy({ environment: this.environment });
     this.aiProviderFactory = options.aiProviderFactory ?? ((config, providerOptions) =>
@@ -602,10 +615,125 @@ export class RoomService {
   }
 
   subscribeRoomDissolved(
-    listener: (roomCode: string, roomId: string) => void | Promise<void>,
+    listener: (roomCode: string, roomId: string, causeCommandId?: string) => void | Promise<void>,
   ): () => void {
     this.roomDissolvedListeners.add(listener);
     return () => this.roomDissolvedListeners.delete(listener);
+  }
+
+  /** Query the durable receipt before a client retries an unknown command. */
+  async commandReceipt(
+    identity: SocketIdentity,
+    commandId: string,
+  ): Promise<CommandReceipt | undefined> {
+    if (!commandId.trim()) throw this.error('INVALID_COMMAND', 'room.error.invalid_command');
+    const room = await this.repository.get(identity.roomCode);
+    if (room) {
+      assertIdentityRoom(identity, room);
+      const stored = (room.commandReceipts ?? []).find(
+        (receipt) => receipt.commandId === commandId,
+      );
+      if (stored && stored.actorId !== identity.actorId) {
+        throw this.error('IDENTITY_MISMATCH', 'room.error.identity_mismatch');
+      }
+      return stored;
+    }
+    const tombstone = this.lifecycle.getTombstone(identity.roomCode);
+    const receipt = this.lifecycle.getReceipt(identity.roomCode, commandId);
+    if (
+      tombstone &&
+      tombstone.roomId === identity.roomId &&
+      tombstone.authSummary.actorIds.includes(identity.actorId) &&
+      tombstone.authSummary.resumeTokenDigests.includes(this.resumeTokenDigest(identity.resumeToken))
+    ) return receipt;
+    throw this.error('ROOM_NOT_FOUND', 'room.error.not_found');
+  }
+
+  /**
+   * Single room-mutation seam used by socket transport. Every implementation
+   * records its receipt in the same repository mutation as the room fact.
+   */
+  async runRoomMutation(
+    identity: SocketIdentity,
+    commandId: string,
+    expectedRoomRevision: number,
+    command: RoomMutationCommand,
+  ): Promise<RoomMutationResult> {
+    const previous = await this.commandReceipt(identity, commandId).catch((error) => {
+      if (error instanceof RoomServiceError && error.code === 'ROOM_NOT_FOUND') return undefined;
+      throw error;
+    });
+    if (previous) {
+      if (previous.status === 'rejected') {
+        throw this.error(
+          previous.errorCode ?? 'ACTION_NOT_ALLOWED',
+          previous.messageKey ?? 'room.error.action_not_allowed',
+          undefined,
+          undefined,
+          previous,
+        );
+      }
+      const current = await this.repository.get(identity.roomCode);
+      return {
+        receipt: previous,
+        ...(current ? { room: this.projectRoom(current, identity.actorId) } : {}),
+      };
+    }
+
+    try {
+      switch (command.type) {
+        case 'room.update_config':
+          return { room: await this.updateConfig(identity, command.payload.config, expectedRoomRevision, commandId), receipt: await this.requireReceipt(identity.roomCode, commandId) };
+        case 'room.update_ai_config': {
+          const outcome = await this.updateAIConfig(identity, command.payload.patch, expectedRoomRevision, commandId);
+          return {
+            room: await this.get(identity.roomCode, identity.actorId),
+            summary: outcome.summary as unknown as Record<string, unknown> | null,
+            roomRevision: outcome.roomRevision,
+            receipt: await this.requireReceipt(identity.roomCode, commandId),
+          };
+        }
+        case 'room.begin_ready_check':
+          return { room: await this.beginReadyCheck(identity, expectedRoomRevision, commandId), receipt: await this.requireReceipt(identity.roomCode, commandId) };
+        case 'room.cancel_ready_check':
+          return { room: await this.cancelReadyCheck(identity, expectedRoomRevision, commandId), receipt: await this.requireReceipt(identity.roomCode, commandId) };
+        case 'room.ready':
+          return { room: await this.setReady(identity, command.payload.ready, expectedRoomRevision, commandId), receipt: await this.requireReceipt(identity.roomCode, commandId) };
+        case 'room.start_game':
+          return { room: await this.startGame(identity, { commandId, expectedRoomRevision }), receipt: await this.requireReceipt(identity.roomCode, commandId) };
+        case 'room.transfer_host':
+          return { room: await this.transferHost(identity, command.payload.targetMemberId, expectedRoomRevision, commandId), receipt: await this.requireReceipt(identity.roomCode, commandId) };
+        case 'room.leave': {
+          const room = await this.leave(identity, expectedRoomRevision, commandId);
+          return { ...(room ? { room } : {}), receipt: await this.requireReceipt(identity.roomCode, commandId) };
+        }
+        case 'room.dissolve': {
+          const tombstone = await this.dissolve(identity, command.payload.confirm, expectedRoomRevision, commandId);
+          return { tombstone, receipt: await this.requireReceipt(identity.roomCode, commandId) };
+        }
+      }
+    } catch (error) {
+      const mapped = this.mapError(error) as RoomServiceError;
+      const receipt = await this.recordRejectedReceipt(identity, commandId, command.type, mapped).catch(() => undefined);
+      if (receipt) {
+        throw new RoomServiceError({
+          code: mapped.code,
+          messageKey: mapped.messageKey,
+          params: mapped.params,
+          issues: mapped.issues,
+          receipt,
+        });
+      }
+      throw mapped;
+    }
+  }
+
+  async publishRoomClosed(tombstone: RoomTombstone): Promise<void> {
+    await Promise.allSettled(
+      [...this.roomDissolvedListeners].map((listener) =>
+        listener(tombstone.roomCode, tombstone.roomId, tombstone.causeCommandId),
+      ),
+    );
   }
 
   async listPublicRooms(): Promise<RoomSummary[]> {
@@ -791,6 +919,7 @@ export class RoomService {
     identity: SocketIdentity,
     config: RoomConfigView,
     expectedRoomRevision: number,
+    commandId: string = randomUUID(),
   ): Promise<RoomView> {
     const existing = await this.requireRoom(identity.roomCode);
     const input = {
@@ -817,7 +946,7 @@ export class RoomService {
       room.members.forEach((member) => {
         if (member.kind === 'player' && !member.isAI) member.ready = false;
       });
-    });
+    }, commandId);
     const updated = await this.requireRoom(identity.roomCode);
     if (existing.config?.credentialRef && !updated.config?.credentialRef) {
       await this.deleteRoomCredential(existing);
@@ -897,6 +1026,7 @@ export class RoomService {
     let secretMutation: RoomAISecretMutation | undefined;
     let cleanupRef: string | undefined;
     let outcome: RoomAIConfigCommandOutcome | undefined;
+    let committedReceipt: CommandReceipt | undefined;
     try {
       const result = await this.repository.mutate<
         { kind: 'cached'; outcome: RoomAIConfigCommandOutcome } |
@@ -1034,10 +1164,20 @@ export class RoomService {
             response: clone(outcome),
           },
         ].slice(-64);
+        committedReceipt = this.makeReceipt(
+          draft,
+          identity,
+          commandId,
+          'room.update_ai_config',
+          'committed',
+          nextRoomRevision,
+        );
+        this.appendCommittedReceipt(draft, committedReceipt);
         return { kind: 'applied', outcome, ...(cleanupRef ? { cleanupRef } : {}) };
       });
 
       outcome = result.outcome;
+      if (committedReceipt) this.lifecycle.rememberReceipt(committedReceipt);
       if (result.kind === 'applied' && result.cleanupRef) {
         await this.credentialStore.delete(
           { namespace: this.credentialNamespace, roomCode: identity.roomCode },
@@ -1075,25 +1215,33 @@ export class RoomService {
     }
   }
 
-  async beginReadyCheck(identity: SocketIdentity, expectedRoomRevision: number): Promise<RoomView> {
+  async beginReadyCheck(
+    identity: SocketIdentity,
+    expectedRoomRevision: number,
+    commandId: string = randomUUID(),
+  ): Promise<RoomView> {
     await this.mutateRoom(identity, expectedRoomRevision, 'begin_ready_check', (room) => {
       room.status = 'ready_check';
       room.configLocked = true;
       room.members.forEach((member) => {
         if (member.kind === 'player' && !member.isAI) member.ready = false;
       });
-    });
+    }, commandId);
     return this.get(identity.roomCode, identity.actorId);
   }
 
-  async cancelReadyCheck(identity: SocketIdentity, expectedRoomRevision: number): Promise<RoomView> {
+  async cancelReadyCheck(
+    identity: SocketIdentity,
+    expectedRoomRevision: number,
+    commandId: string = randomUUID(),
+  ): Promise<RoomView> {
     await this.mutateRoom(identity, expectedRoomRevision, 'cancel_ready_check', (room) => {
       room.status = 'waiting';
       room.configLocked = false;
       room.members.forEach((member) => {
         if (member.kind === 'player' && !member.isAI) member.ready = false;
       });
-    });
+    }, commandId);
     return this.get(identity.roomCode, identity.actorId);
   }
 
@@ -1101,6 +1249,7 @@ export class RoomService {
     identity: SocketIdentity,
     ready: boolean,
     expectedRoomRevision: number,
+    commandId: string = randomUUID(),
   ): Promise<RoomView> {
     await this.mutateRoom(identity, expectedRoomRevision, 'set_ready', (room) => {
       const member = room.members.find((item) => item.id === identity.actorId);
@@ -1108,7 +1257,7 @@ export class RoomService {
         throw this.error('ACTION_NOT_ALLOWED', 'room.error.ready_not_allowed');
       }
       member.ready = ready;
-    });
+    }, commandId);
     return this.get(identity.roomCode, identity.actorId);
   }
 
@@ -1139,28 +1288,47 @@ export class RoomService {
     return this.startWithRevision(identity.roomCode, identity.actorId, commandId, expectedRoomRevision);
   }
 
-  async leave(identity: SocketIdentity, expectedRoomRevision: number): Promise<RoomView | undefined> {
+  async leave(
+    identity: SocketIdentity,
+    expectedRoomRevision: number,
+    commandId: string = randomUUID(),
+  ): Promise<RoomView | undefined> {
     const room = await this.requireRoom(identity.roomCode);
     this.policy.assertAllowed(room, identity.actorId, 'leave');
-    await this.repository.mutate(identity.roomCode, expectedRoomRevision, (draft) => {
-      assertIdentityRoom(identity, draft);
-      draft.members = draft.members.filter((member) => member.id !== identity.actorId);
-      draft.players = draft.players.filter((player) => player.id !== identity.actorId);
-      if (draft.hostId === identity.actorId) {
-        const nextHost = draft.members.find(
-          (member) => member.kind === 'player' && !member.isAI,
-        );
-        if (nextHost) draft.hostId = nextHost.id;
-      }
-      this.touchActivity(draft);
-    });
-    const current = await this.repository.get(identity.roomCode);
+    let committedReceipt: CommandReceipt | undefined;
+    let committedTombstone: RoomTombstone | undefined;
+    try {
+      await this.repository.mutate(identity.roomCode, expectedRoomRevision, (draft) => {
+        assertIdentityRoom(identity, draft);
+        this.policy.assertAllowed(draft, identity.actorId, 'leave');
+        draft.members = draft.members.filter((member) => member.id !== identity.actorId);
+        draft.players = draft.players.filter((player) => player.id !== identity.actorId);
+        if (draft.hostId === identity.actorId) {
+          const nextHost = draft.members.find(
+            (member) => member.kind === 'player' && !member.isAI,
+          );
+          if (nextHost) draft.hostId = nextHost.id;
+        }
+        this.touchActivity(draft);
+        committedReceipt = this.makeReceipt(draft, identity, commandId, 'room.leave', 'committed', draft.roomRevision! + 1);
+        this.appendCommittedReceipt(draft, committedReceipt);
+        committedTombstone = this.makeTombstone(draft, commandId, 'last_member_left', identity.actorId, identity.resumeToken);
+      });
+      if (committedReceipt) this.lifecycle.rememberReceipt(committedReceipt);
+    } catch (error) {
+      const mapped = this.mapError(error) as RoomServiceError;
+      const receipt = await this.recordRejectedReceipt(identity, commandId, 'room.leave', mapped).catch(() => undefined);
+      if (receipt) throw new RoomServiceError({ code: mapped.code, messageKey: mapped.messageKey, params: mapped.params, issues: mapped.issues, receipt });
+      throw mapped;
+    }
+    const current = await this.repository.get(identity.roomCode).catch(() => undefined);
     if (!current || current.members.length === 0) {
+      if (committedTombstone) this.lifecycle.rememberTombstone(committedTombstone);
       if (current?.config?.credentialRef) {
         await this.deleteRoomCredential(current);
       }
       this.roomAIProviders.delete(identity.roomCode.toUpperCase());
-      await this.repository.remove(identity.roomCode);
+      await this.repository.remove(identity.roomCode).catch(() => undefined);
       return undefined;
     }
     return this.projectRoom(current, current.hostId);
@@ -1170,6 +1338,7 @@ export class RoomService {
     identity: SocketIdentity,
     targetMemberId: string,
     expectedRoomRevision: number,
+    commandId: string = randomUUID(),
   ): Promise<RoomView> {
     await this.mutateRoom(identity, expectedRoomRevision, 'transfer_host', (room) => {
       const target = room.members.find((member) => member.id === targetMemberId);
@@ -1177,34 +1346,54 @@ export class RoomService {
         throw this.error('MEMBER_NOT_FOUND', 'room.error.host_target_not_found');
       }
       room.hostId = target.id;
-    });
+    }, commandId);
     return this.get(identity.roomCode, identity.actorId);
   }
 
-  async dissolve(identity: SocketIdentity, confirm: boolean, expectedRoomRevision: number): Promise<void> {
+  async dissolve(
+    identity: SocketIdentity,
+    confirm: boolean,
+    expectedRoomRevision: number,
+    commandId: string = randomUUID(),
+  ): Promise<RoomTombstone> {
     if (!confirm) throw this.error('ACTION_NOT_ALLOWED', 'room.error.dissolve_confirmation_required');
     const room = await this.requireRoom(identity.roomCode);
     this.policy.assertAllowed(room, identity.actorId, 'dissolve');
-    await this.repository.mutate(identity.roomCode, expectedRoomRevision, (draft) => {
-      assertIdentityRoom(identity, draft);
-      draft.lastStartFailure = undefined;
-      draft.status = 'ended';
-      draft.closedAt = this.now();
-      draft.closeReason = 'dissolved';
-      this.touchActivity(draft);
-    });
-    const tombstone = await this.requireRoom(identity.roomCode);
-    await Promise.allSettled(
-      [...this.roomDissolvedListeners].map((listener) =>
-        listener(tombstone.code, tombstone.id),
-      ),
-    );
-    for (const key of [...this.connectionLeases.keys()]) {
-      if (key.startsWith(`${tombstone.code}:`)) this.connectionLeases.delete(key);
+    let committedReceipt: CommandReceipt | undefined;
+    let committedTombstone: RoomTombstone | undefined;
+    try {
+      await this.repository.mutate(identity.roomCode, expectedRoomRevision, (draft) => {
+        assertIdentityRoom(identity, draft);
+        this.policy.assertAllowed(draft, identity.actorId, 'dissolve');
+        draft.lastStartFailure = undefined;
+        draft.status = 'ended';
+        draft.closedAt = this.now();
+        draft.closeReason = 'dissolved';
+        this.touchActivity(draft);
+        committedReceipt = this.makeReceipt(draft, identity, commandId, 'room.dissolve', 'committed', draft.roomRevision! + 1);
+        this.appendCommittedReceipt(draft, committedReceipt);
+        committedTombstone = this.makeTombstone(draft, commandId);
+      });
+    } catch (error) {
+      const mapped = this.mapError(error) as RoomServiceError;
+      const receipt = await this.recordRejectedReceipt(identity, commandId, 'room.dissolve', mapped).catch(() => undefined);
+      if (receipt) throw new RoomServiceError({ code: mapped.code, messageKey: mapped.messageKey, params: mapped.params, issues: mapped.issues, receipt });
+      throw mapped;
     }
-    await this.deleteRoomCredential(tombstone);
+    const committedRoom = await this.repository.get(identity.roomCode).catch(() => undefined) ?? room;
+    const tombstone = committedTombstone ?? this.makeTombstone(committedRoom, commandId);
+    this.lifecycle.rememberTombstone(tombstone);
+    if (committedReceipt) this.lifecycle.rememberReceipt(committedReceipt);
+    for (const key of [...this.connectionLeases.keys()]) {
+      if (key.startsWith(`${tombstone.roomCode}:`)) this.connectionLeases.delete(key);
+    }
+    await this.deleteRoomCredential(committedRoom);
     this.roomAIProviders.delete(identity.roomCode.toUpperCase());
-    await this.repository.remove(identity.roomCode);
+    // Cleanup is deliberately best effort. The committed tombstone/receipt
+    // must never be reported as a failed command because a listener or secret
+    // deletion was unavailable.
+    await this.repository.remove(identity.roomCode).catch(() => undefined);
+    return tombstone;
   }
 
   async dispatchGame(identity: SocketIdentity, meta: GameCommandMeta, command: GameCommand) {
@@ -1760,8 +1949,118 @@ export class RoomService {
     messageKey: string,
     params?: Record<string, string | number>,
     issues?: RoomConfigIssue[],
+    receipt?: CommandReceipt,
   ): RoomServiceError {
-    return new RoomServiceError({ code, messageKey, params, issues });
+    return new RoomServiceError({ code, messageKey, params, issues, receipt });
+  }
+
+  private makeReceipt(
+    room: RoomRecord,
+    identity: SocketIdentity,
+    commandId: string,
+    commandType: string,
+    status: CommandReceipt['status'],
+    revision: number,
+    error?: RoomServiceError,
+  ): CommandReceipt {
+    return {
+      schemaVersion: 1,
+      environment: this.environment,
+      deploymentNamespace: this.deploymentNamespace,
+      revision,
+      commandId,
+      commandType,
+      actorId: identity.actorId,
+      roomId: room.id,
+      roomCode: room.code,
+      status,
+      createdAt: this.now(),
+      roomRevision: status === 'committed' ? revision : room.roomRevision,
+      ...(error ? { errorCode: error.code, messageKey: error.messageKey } : {}),
+    };
+  }
+
+  private appendCommittedReceipt(room: RoomRecord, receipt: CommandReceipt): void {
+    room.commandReceipts = [
+      ...(room.commandReceipts ?? []).filter((item) => item.commandId !== receipt.commandId),
+      receipt,
+    ].slice(-128);
+  }
+
+  private async recordRejectedReceipt(
+    identity: SocketIdentity,
+    commandId: string,
+    commandType: string,
+    error: RoomServiceError,
+  ): Promise<CommandReceipt | undefined> {
+    const room = await this.repository.get(identity.roomCode);
+    if (!room) return this.lifecycle.getReceipt(identity.roomCode, commandId);
+    const existing = room.commandReceipts?.find((item) => item.commandId === commandId);
+    if (existing) {
+      this.lifecycle.rememberReceipt(existing);
+      return existing;
+    }
+    const receipt = this.makeReceipt(
+      room,
+      identity,
+      commandId,
+      commandType,
+      'rejected',
+      room.roomRevision ?? 1,
+      error,
+    );
+    await this.repository.mutate(room.code, (draft) => {
+      const repeated = draft.commandReceipts?.find((item) => item.commandId === commandId);
+      if (!repeated) this.appendCommittedReceipt(draft, receipt);
+    });
+    const committed = await this.repository.get(room.code);
+    const stored = committed?.commandReceipts?.find((item) => item.commandId === commandId) ?? receipt;
+    this.lifecycle.rememberReceipt(stored);
+    return stored;
+  }
+
+  private async requireReceipt(roomCode: string, commandId: string): Promise<CommandReceipt> {
+    const receipt = this.lifecycle.getReceipt(roomCode, commandId) ??
+      (await this.repository.get(roomCode))?.commandReceipts?.find((item) => item.commandId === commandId);
+    if (!receipt) throw this.error('UNKNOWN_ERROR', 'room.error.receipt_unavailable');
+    this.lifecycle.rememberReceipt(receipt);
+    return receipt;
+  }
+
+  private makeTombstone(
+    room: RoomRecord,
+    causeCommandId?: string,
+    reason: RoomTombstone['reason'] = 'dissolved',
+    actorId?: string,
+    actorResumeToken?: string,
+  ): RoomTombstone {
+    const actorIds = room.members.map((member) => member.id);
+    if (actorId && !actorIds.includes(actorId)) actorIds.push(actorId);
+    const resumeTokenDigests = room.members
+      .map((member) => this.resumeTokenDigest(member.resumeToken))
+      .filter(Boolean);
+    if (actorResumeToken) resumeTokenDigests.push(this.resumeTokenDigest(actorResumeToken));
+    return {
+      schemaVersion: 1,
+      environment: this.environment,
+      deploymentNamespace: this.deploymentNamespace,
+      revision: (room.roomRevision ?? 1) + 1,
+      roomCode: room.code,
+      roomId: room.id,
+      reason,
+      closedAt: room.closedAt ?? this.now(),
+      retainedUntil: (room.closedAt ?? this.now()) + 30 * 24 * 60 * 60 * 1000,
+      ...(causeCommandId ? { causeCommandId } : {}),
+      authSummary: {
+        actorIds,
+        memberCount: room.members.length,
+        resumeTokenDigests: [...new Set(resumeTokenDigests)],
+      },
+    };
+  }
+
+  private resumeTokenDigest(value: string): string {
+    return createHash('sha256').update(value).digest('hex');
   }
 
   private async notifyRoomChange(
@@ -1805,9 +2104,30 @@ export class RoomService {
         expectedRoomRevision,
       });
       if (result.session instanceof GameSession) this.sessions.set(roomCode.toUpperCase(), result.session);
+      let committedReceipt: CommandReceipt | undefined;
       await this.repository.mutate(roomCode, (draft) => {
         this.touchActivity(draft);
+        const identity = draft.members.find((member) => member.id === actorId);
+        if (identity) {
+          committedReceipt = this.makeReceipt(
+            draft,
+            {
+              actorId,
+              roomCode: draft.code,
+              roomId: draft.id,
+              kind: identity.kind,
+              omniscient: Boolean(identity.omniscient),
+              resumeToken: identity.resumeToken,
+            },
+            commandId,
+            'room.start_game',
+            'committed',
+            (draft.roomRevision ?? 1) + 1,
+          );
+          this.appendCommittedReceipt(draft, committedReceipt);
+        }
       });
+      if (committedReceipt) this.lifecycle.rememberReceipt(committedReceipt);
       this.startAI(roomCode, room.config?.mode === 'quick_computer');
       return this.projectRoom(await this.requireRoom(roomCode), identity);
     } catch (error) {
@@ -1820,16 +2140,39 @@ export class RoomService {
     expectedRoomRevision: number,
     action: Parameters<RoomPolicy['assertAllowed']>[2],
     mutation: (room: RoomRecord) => void,
+    commandId: string = randomUUID(),
   ): Promise<void> {
+    let committedReceipt: CommandReceipt | undefined;
     try {
       await this.repository.mutate(identity.roomCode, expectedRoomRevision, (room) => {
         assertIdentityRoom(identity, room);
         this.policy.assertAllowed(room, identity.actorId, action);
         mutation(room);
         this.touchActivity(room);
+        committedReceipt = this.makeReceipt(
+          room,
+          identity,
+          commandId,
+          `room.${action}`,
+          'committed',
+          (room.roomRevision ?? 1) + 1,
+        );
+        this.appendCommittedReceipt(room, committedReceipt);
       });
+      if (committedReceipt) this.lifecycle.rememberReceipt(committedReceipt);
     } catch (error) {
-      throw this.mapError(error);
+      const mapped = this.mapError(error) as RoomServiceError;
+      const receipt = await this.recordRejectedReceipt(identity, commandId, `room.${action}`, mapped).catch(() => undefined);
+      if (receipt) {
+        throw new RoomServiceError({
+          code: mapped.code,
+          messageKey: mapped.messageKey,
+          params: mapped.params,
+          issues: mapped.issues,
+          receipt,
+        });
+      }
+      throw mapped;
     }
   }
 

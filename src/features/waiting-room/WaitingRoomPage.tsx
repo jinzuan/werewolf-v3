@@ -8,9 +8,7 @@ import type {
   StartCheckItem,
 } from '../../../shared/protocol';
 import { AppShell } from '../../components/shell/AppShell';
-import { sendV3RoomCommand } from '../../net/v3Socket';
 import { useV3Store } from '../../stores/v3Store';
-import { getErrorMessage } from '../../v3/presentation';
 import { Card } from '../../ui/Card';
 import { RoomActions } from './components/RoomActions';
 import { RoomConfigEditor } from './components/RoomConfigEditor';
@@ -45,6 +43,14 @@ const pendingActionForCommand = (
       return 'set_ready';
     case 'room.start_game':
       return 'start_game';
+    case 'room.update_config':
+      return 'update_config';
+    case 'room.transfer_host':
+      return 'transfer_host';
+    case 'room.dissolve':
+      return 'dissolve';
+    case 'room.leave':
+      return 'leave';
     default:
       return null;
   }
@@ -75,6 +81,7 @@ export function WaitingRoomPage() {
   const cancelReadyCheck = useV3Store((state) => state.cancelReadyCheck);
   const setReady = useV3Store((state) => state.setReady);
   const startGame = useV3Store((state) => state.startGame);
+  const mutateRoom = useV3Store((state) => state.mutateRoom);
   const refreshRoom = useV3Store((state) => state.refreshRoom);
   const aiSummary = useV3Store((state) => state.aiConfigSummary);
   const aiConfigStatus = useV3Store((state) => state.aiConfigStatus);
@@ -82,7 +89,6 @@ export function WaitingRoomPage() {
   const loadAIConfig = useV3Store((state) => state.loadAIConfig);
   const updateAIConfig = useV3Store((state) => state.updateAIConfig);
   const clearAuthority = useV3Store((state) => state.clearAuthority);
-  const [directPending, setDirectPending] = useState<DirectRoomAction | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [configEditorOpen, setConfigEditorOpen] = useState(false);
   const [aiEditorOpen, setAIEditorOpen] = useState(false);
@@ -108,19 +114,10 @@ export function WaitingRoomPage() {
       return false;
     }
 
-    setDirectPending(action);
     setPageError(null);
-    const response = await sendV3RoomCommand(
-      currentSession.actorId,
-      currentSession.roomId,
-      currentRoom.roomRevision,
-      command,
-    );
-
-    if (response.ok === false) {
-      await refreshRoom();
-      setPageError(getErrorMessage(response.code));
-      setDirectPending(null);
+    const success = await mutateRoom(command);
+    if (!success) {
+      if (useV3Store.getState().lastCommandOutcome?.status !== 'unknown') await refreshRoom();
       return false;
     }
 
@@ -130,9 +127,8 @@ export function WaitingRoomPage() {
     } else {
       await refreshRoom();
     }
-    setDirectPending(null);
     return true;
-  }, [clearAuthority, navigate, refreshRoom]);
+  }, [clearAuthority, mutateRoom, navigate, refreshRoom]);
 
   const onCopyInvite = useCallback(async () => {
     if (!room || !session || !isActionAllowed(room, 'invite')) return;
@@ -162,7 +158,7 @@ export function WaitingRoomPage() {
   const isHost = currentMember?.isHost === true;
   const locked = room.status === 'starting';
   const canCopyInvite = !locked && isHost && Boolean(session.credentials.joinToken) && isActionAllowed(room, 'invite');
-  const pendingAction = directPending ?? pendingActionForCommand(pendingRoomCommand);
+  const pendingAction = pendingActionForCommand(pendingRoomCommand);
   const error = pageError ?? storeError;
 
   const begin = () => {
@@ -287,7 +283,7 @@ export function WaitingRoomPage() {
         <RoomConfigEditor
           room={room}
           open={configEditorOpen && isHost && isActionAllowed(room, 'update_config')}
-          pending={directPending === 'update_config'}
+          pending={pendingRoomCommand === 'room.update_config'}
           onClose={() => setConfigEditorOpen(false)}
           onSubmit={updateConfig}
         />

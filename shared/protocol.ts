@@ -350,12 +350,10 @@ export interface ProtocolAckError {
   issues?: RoomConfigIssue[];
   /** Present on ROOM_REVISION_CONFLICT so clients can converge immediately. */
   room?: RoomView;
-<<<<<<< HEAD
   retryable?: boolean;
-=======
   /** Present when the server durably recorded a rejected mutation. */
   receipt?: CommandReceipt;
->>>>>>> fix2-d
+  /** Present when the server durably recorded a rejected mutation. */
 }
 
 export type ProtocolAckSuccess<

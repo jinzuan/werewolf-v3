@@ -14,7 +14,7 @@ type SocketAck = {
   room: { code: string; id: string; roomRevision: number };
   credentials: { joinToken?: string };
 };
-type ClosedMessage = { type: 'room.closed'; roomCode: string; roomId: string; reason: 'dissolved' };
+type ClosedMessage = { type: 'room.closed'; roomCode: string; roomId: string; reason: 'dissolved'; causeCommandId?: string };
 
 const waitForConnect = (socket: Socket): Promise<void> => new Promise((resolve, reject) => {
   socket.once('connect', resolve);
@@ -74,7 +74,7 @@ test('dissolve emits a closed tombstone to every bound socket', async () => {
     const ack = await new Promise<SocketAck>((resolve) => host.emit('v3:command', dissolve, resolve));
     assert.equal(ack.ok, true);
     assert.deepEqual(await closed, {
-      type: 'room.closed', roomCode: created.room.code, roomId: created.room.id, reason: 'dissolved',
+      type: 'room.closed', roomCode: created.room.code, roomId: created.room.id, reason: 'dissolved', causeCommandId: 'dissolve-command',
     });
     assert.equal(await rooms.getRecord(created.room.code), undefined);
   } finally {

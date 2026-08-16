@@ -311,6 +311,7 @@ export const migrateRoomRecord = (input: RoomRecord): RoomRecord => {
     recentRoomCommands: (room.recentRoomCommands ?? []).map((command) =>
       clone(command),
     ),
+    commandReceipts: (room.commandReceipts ?? []).map((receipt) => clone(receipt)),
     createdAt: room.createdAt ?? Date.now(),
     updatedAt: room.updatedAt ?? room.createdAt ?? Date.now(),
     lastActivityAt:

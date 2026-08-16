@@ -98,11 +98,9 @@ const errorResponse = (error: unknown): ProtocolAckError => {
     messageKey?: unknown;
     params?: unknown;
     issues?: unknown;
-<<<<<<< HEAD
     retryable?: unknown;
-=======
     receipt?: unknown;
->>>>>>> fix2-d
+    receipt?: unknown;
   };
   const code =
     typeof candidate?.code === 'string' && STABLE_CODES.has(candidate.code as ProtocolErrorCode)
@@ -119,13 +117,13 @@ const errorResponse = (error: unknown): ProtocolAckError => {
       ? { params: candidate.params as Record<string, string | number> }
       : {}),
     ...(Array.isArray(candidate?.issues) ? { issues: candidate.issues } : {}),
-<<<<<<< HEAD
     ...(typeof candidate?.retryable === 'boolean' ? { retryable: candidate.retryable } : {}),
-=======
     ...(candidate?.receipt && typeof candidate.receipt === 'object'
       ? { receipt: candidate.receipt as ProtocolAckError['receipt'] }
       : {}),
->>>>>>> fix2-d
+    ...(candidate?.receipt && typeof candidate.receipt === 'object'
+      ? { receipt: candidate.receipt as ProtocolAckError['receipt'] }
+      : {}),
   };
 };
 

@@ -269,6 +269,7 @@ export type RoomReadCommand =
   | { type: 'room.resume'; payload: { roomCode: string } }
   | { type: 'room.get'; payload: { roomCode: string } }
   | { type: 'room.ai_config.get'; payload: EmptyRoomCommandPayload }
+  | { type: 'room.command_receipt'; payload: { commandId: string } }
   | { type: 'review.get'; payload: { roomCode: string } };
 
 export type RoomMutationCommand =
@@ -297,4 +298,6 @@ export interface RoomSnapshotMessage {
   type: 'room.snapshot';
   room: RoomViewV31;
   reason: RoomSnapshotReason;
+  /** Causal command for ACK-loss reconciliation. */
+  causeCommandId?: string;
 }
