@@ -4,7 +4,7 @@ import type {
   ProtocolAckError,
   ProtocolErrorCode,
   RoomSnapshotReason,
-  RoomView,
+  RoomMutationCommand,
   V3Command,
 } from '../../shared/protocol';
 import type { RoomAccess, SocketIdentity } from '../rooms/types';
@@ -76,6 +76,9 @@ const STABLE_CODES = new Set<ProtocolErrorCode>([
 export interface SocketTransportOptions {
   /** Test-only fault injection: commit create, then discard exactly one ACK. */
   dropCreateAckOnce?: boolean;
+  /** Test-only fault injection for mutation ACK/push reconciliation. */
+  dropMutationAckOnce?: boolean;
+  dropMutationPushOnce?: boolean;
   security?: RuntimeSecurityConfig;
 }
 
@@ -87,6 +90,7 @@ const errorResponse = (error: unknown): ProtocolAckError => {
       messageKey: error.messageKey,
       ...(error.params ? { params: error.params } : {}),
       ...(error.issues ? { issues: error.issues } : {}),
+      ...(error.receipt ? { receipt: error.receipt } : {}),
     };
   }
   const candidate = error as {
@@ -94,6 +98,11 @@ const errorResponse = (error: unknown): ProtocolAckError => {
     messageKey?: unknown;
     params?: unknown;
     issues?: unknown;
+<<<<<<< HEAD
+    retryable?: unknown;
+=======
+    receipt?: unknown;
+>>>>>>> fix2-d
   };
   const code =
     typeof candidate?.code === 'string' && STABLE_CODES.has(candidate.code as ProtocolErrorCode)
@@ -110,6 +119,13 @@ const errorResponse = (error: unknown): ProtocolAckError => {
       ? { params: candidate.params as Record<string, string | number> }
       : {}),
     ...(Array.isArray(candidate?.issues) ? { issues: candidate.issues } : {}),
+<<<<<<< HEAD
+    ...(typeof candidate?.retryable === 'boolean' ? { retryable: candidate.retryable } : {}),
+=======
+    ...(candidate?.receipt && typeof candidate.receipt === 'object'
+      ? { receipt: candidate.receipt as ProtocolAckError['receipt'] }
+      : {}),
+>>>>>>> fix2-d
   };
 };
 
@@ -139,6 +155,13 @@ export function bindSocketTransport(
   let dropCreateAck =
     (process.env.NODE_ENV === 'test' || process.env.WW_ENV === 'test') &&
     (options.dropCreateAckOnce === true || process.env.WW_TEST_DROP_CREATE_ACK_ONCE === '1');
+  let dropMutationAck = options.dropMutationAckOnce === true;
+  let dropMutationPush = options.dropMutationPushOnce === true;
+  const mutationPushBlocked = new Set<string>();
+  const deferredRoomPushes = new Map<string, {
+    reason: RoomSnapshotReason;
+    causeCommandId?: string;
+  }>();
   const pushCurrent = async (target: Socket): Promise<void> => {
     const targetState = state(target);
     const identity = targetState.identity;
@@ -165,13 +188,30 @@ export function bindSocketTransport(
   const pushRoom = async (
     roomCode: string,
     reason: RoomSnapshotReason,
+    causeCommandId?: string,
   ): Promise<void> => {
+    if (mutationPushBlocked.has(roomCode.toUpperCase())) {
+      deferredRoomPushes.set(roomCode.toUpperCase(), {
+        reason,
+        ...(causeCommandId ? { causeCommandId } : {}),
+      });
+      return;
+    }
     for (const target of io.sockets.sockets.values()) {
       const targetIdentity = state(target).identity;
       if (targetIdentity?.roomCode !== roomCode) continue;
       try {
         const room = await rooms.get(roomCode, targetIdentity.actorId);
-        target.emit('v3:room', { type: 'room.snapshot', room, reason });
+        if (dropMutationPush) {
+          dropMutationPush = false;
+          continue;
+        }
+        target.emit('v3:room', {
+          type: 'room.snapshot',
+          room,
+          reason,
+          ...(causeCommandId ? { causeCommandId } : {}),
+        });
         await pushCurrent(target);
       } catch {
         target.emit('v3:error', {
@@ -188,7 +228,7 @@ export function bindSocketTransport(
   // Push each connection's own projection so players, public spectators,
   // and omniscient monitors never share an authority snapshot.
   rooms.subscribeRoomChanges(pushRoom);
-  rooms.subscribeRoomDissolved(async (roomCode, roomId) => {
+  rooms.subscribeRoomDissolved(async (roomCode, roomId, causeCommandId) => {
     for (const target of io.sockets.sockets.values()) {
       const targetState = state(target);
       if (targetState.identity?.roomCode !== roomCode) continue;
@@ -197,6 +237,7 @@ export function bindSocketTransport(
         roomCode,
         roomId,
         reason: 'dissolved',
+        ...(causeCommandId ? { causeCommandId } : {}),
       });
       const targetIdentity = targetState.identity;
       target.leave(`room:${roomCode}`);
@@ -355,6 +396,14 @@ export function bindSocketTransport(
             return;
           }
 
+          if (command.type === 'room.command_receipt') {
+            ack?.({
+              ok: true,
+              receipt: await rooms.commandReceipt(identity, command.payload.commandId) ?? null,
+            });
+            return;
+          }
+
           if (command.type === 'review.get') {
             if (command.payload.roomCode !== identity.roomCode) {
               throw new RoomServiceError({ code: 'ROOM_MISMATCH', messageKey: 'room.error.room_mismatch' });
@@ -383,61 +432,58 @@ export function bindSocketTransport(
             return;
           }
 
-          const revision = requireMutation(request);
-          let room: RoomView | undefined;
-          let reason: Parameters<typeof pushRoom>[1] = 'status_changed';
-          switch (command.type) {
-            case 'room.update_config':
-              room = await rooms.updateConfig(identity, command.payload.config, revision.expectedRoomRevision);
-              reason = 'config_changed';
-              break;
-            case 'room.update_ai_config': {
-              const result = await rooms.updateAIConfig(
-                identity,
-                command.payload.patch,
-                revision.expectedRoomRevision,
-                revision.commandId,
-              );
-              ack?.({ ok: true, ...result });
-              await pushRoom(identity.roomCode, 'config_changed');
-              return;
-            }
-            case 'room.begin_ready_check':
-              room = await rooms.beginReadyCheck(identity, revision.expectedRoomRevision);
-              reason = 'status_changed';
-              break;
-            case 'room.cancel_ready_check':
-              room = await rooms.cancelReadyCheck(identity, revision.expectedRoomRevision);
-              reason = 'status_changed';
-              break;
-            case 'room.ready':
-              room = await rooms.setReady(identity, command.payload.ready, revision.expectedRoomRevision);
-              reason = 'ready_changed';
-              break;
-            case 'room.start_game':
-              room = await rooms.startGame(identity, revision);
-              reason = 'status_changed';
-              break;
-            case 'room.transfer_host':
-              room = await rooms.transferHost(identity, command.payload.targetMemberId, revision.expectedRoomRevision);
-              reason = 'host_changed';
-              break;
-            case 'room.leave':
-              room = await rooms.leave(identity, revision.expectedRoomRevision);
-              socket.leave(`room:${identity.roomCode}`);
-              state(socket).identity = undefined;
-              break;
-            case 'room.dissolve':
-              await rooms.dissolve(identity, command.payload.confirm, revision.expectedRoomRevision);
-              socket.leave(`room:${identity.roomCode}`);
-              state(socket).identity = undefined;
-              ack?.({ ok: true });
-              return;
+          if (!command.type.startsWith('room.')) {
+            throw new RoomServiceError({ code: 'COMMAND_NOT_IMPLEMENTED', messageKey: 'room.error.command_not_implemented' });
           }
-          ack?.({ ok: true, ...(room ? { room } : {}) });
-          await pushRoom(identity.roomCode, reason);
+
+          const revision = requireMutation(request);
+          mutationPushBlocked.add(identity.roomCode.toUpperCase());
+          const result = await rooms.runRoomMutation(
+            identity,
+            revision.commandId,
+            revision.expectedRoomRevision,
+            command as RoomMutationCommand,
+          );
+          const reason: Parameters<typeof pushRoom>[1] =
+            command.type === 'room.update_config' || command.type === 'room.update_ai_config'
+              ? 'config_changed'
+              : command.type === 'room.ready'
+                ? 'ready_changed'
+                : command.type === 'room.transfer_host'
+                  ? 'host_changed'
+                  : command.type === 'room.leave'
+                    ? 'left'
+                    : 'status_changed';
+          // ACK is the first externally visible outcome. Pushes and identity
+          // detachment happen only after the receipt has reached the caller.
+          if (dropMutationAck) {
+            dropMutationAck = false;
+          } else {
+            ack?.({
+              ok: true,
+              receipt: result.receipt,
+              ...(result.room ? { room: result.room } : {}),
+              ...(result.summary !== undefined ? { summary: result.summary } : {}),
+              ...(result.roomRevision !== undefined ? { roomRevision: result.roomRevision } : {}),
+            });
+          }
+          if (result.tombstone) {
+            mutationPushBlocked.delete(identity.roomCode.toUpperCase());
+            deferredRoomPushes.delete(identity.roomCode.toUpperCase());
+            await rooms.publishRoomClosed(result.tombstone);
+            return;
+          }
+          if (command.type === 'room.leave') {
+            socket.leave(`room:${identity.roomCode}`);
+            state(socket).identity = undefined;
+          }
+          mutationPushBlocked.delete(identity.roomCode.toUpperCase());
+          deferredRoomPushes.delete(identity.roomCode.toUpperCase());
+          await pushRoom(identity.roomCode, reason, revision.commandId);
         } catch (error) {
-          ack?.(errorResponse(error));
+          mutationPushBlocked.delete(state(socket).identity?.roomCode?.toUpperCase() ?? '');
+          const response = errorResponse(error);
+          ack?.(response);
         }
       },
     );

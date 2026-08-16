@@ -1,4 +1,5 @@
 import type { EventStore, StoredEvent, ViewerContext } from '../../shared/events';
+import { createHash } from 'node:crypto';
 import type {
   ReviewArchivePlayer,
   ReviewEvidenceRef,
@@ -293,6 +294,8 @@ export class ReviewPipeline {
     return {
       gameId,
       roomId,
+      streamId: `game:${gameId}`,
+      contentHash: createHash('sha256').update(JSON.stringify(events)).digest('hex'),
       startedAt: started?.event.occurredAt ?? events[0]?.event.occurredAt ?? this.now(),
       endedAt: ended.event.occurredAt,
       winner,
