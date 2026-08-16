@@ -49,6 +49,7 @@ export const mergeEventEnvelope = (
     lastSeenSeq: Math.max(
       state.lastSeenSeq,
       envelope.afterSequence,
+      envelope.lastSequence ?? 0,
       ...scoped.map((event) => event.sequence),
     ),
     events: [...merged.values()]

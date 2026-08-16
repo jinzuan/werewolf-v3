@@ -19,12 +19,10 @@ import { RoleCard } from '../../ui/RoleCard';
 import { Seat } from '../../ui/Seat';
 import { avatarAssetMap } from '../../ui/assetRegistry';
 import { Modal } from '../../ui/Modal';
-import type { RoomAIConfig, RoomCreationCatalog } from '../../../shared/roomContract';
+import type { RoomCreationCatalog } from '../../../shared/roomContract';
 import {
   clearWizardDraft,
   cloneDraft,
-  createInitialAIConfig,
-  isAIConfigConfigured,
   createInitialDraft,
   issuesForStep,
   messageForIssue,
@@ -247,16 +245,12 @@ function PlayersStep({
   draft,
   catalog,
   issues,
-  aiConfig,
-  onAIConfigChange,
   update,
   onNext,
 }: {
   draft: WizardDraft;
   catalog: RoomCreationCatalog;
   issues: WizardIssue[];
-  aiConfig: RoomAIConfig;
-  onAIConfigChange: (patch: Partial<RoomAIConfig>) => void;
   update: (patch: Partial<WizardDraft>) => void;
   onNext: () => void;
 }) {
@@ -365,83 +359,8 @@ function PlayersStep({
         <SeatPreview draft={draft} />
       </Card>
 
-      {draft.mode !== 'human' ? (
-        <AIConfigPanel config={aiConfig} update={onAIConfigChange} />
-      ) : null}
-
       <WizardActions onNext={onNext} nextLabel="继续选择角色" />
     </div>
-  );
-}
-
-const aiProviderLabels: Record<RoomAIConfig['provider'], string> = {
-  custom: '自定义兼容接口',
-  local: '本地模型服务',
-  deepseek: 'DeepSeek',
-  siliconflow: 'SiliconFlow',
-};
-
-function AIConfigPanel({
-  config,
-  update,
-}: {
-  config: RoomAIConfig;
-  update: (patch: Partial<RoomAIConfig>) => void;
-}) {
-  const usesCustomEndpoint = config.provider === 'custom' || config.provider === 'local';
-  return (
-    <Card data-wizard-block="players" className="v3-ai-config-card">
-      <div className="v3-card-heading">
-        <Sparkles size={20} />
-        <div>
-          <h2>电脑玩家设置</h2>
-          <p>房主可以为本局电脑玩家指定模型和访问凭据，服务端不会替你决定模型。</p>
-        </div>
-      </div>
-      <div className="v3-ai-config-grid">
-        <label className="v3-field">
-          <span>服务商</span>
-          <select className="v3-input" value={config.provider} onChange={(event) => update({ provider: event.target.value as RoomAIConfig['provider'] })}>
-            {(Object.keys(aiProviderLabels) as RoomAIConfig['provider'][]).map((provider) => <option key={provider} value={provider}>{aiProviderLabels[provider]}</option>)}
-          </select>
-        </label>
-        <label className="v3-field">
-          <span>模型名称</span>
-          <Input value={config.model} onChange={(event) => update({ model: event.target.value })} placeholder="例如 qwen3.5-32b" />
-        </label>
-        <label className="v3-field">
-          <span>访问密钥</span>
-          <Input type="password" autoComplete="off" value={config.apiKey} onChange={(event) => update({ apiKey: event.target.value })} placeholder="可选" />
-        </label>
-        <label className="v3-field">
-          <span>备用访问凭据</span>
-          <Input type="password" autoComplete="off" value={config.token} onChange={(event) => update({ token: event.target.value })} placeholder="可选，优先用于请求" />
-        </label>
-        {usesCustomEndpoint ? (
-          <label className="v3-field v3-ai-config-grid__wide">
-            <span>接口地址</span>
-            <Input value={config.endpoint} onChange={(event) => update({ endpoint: event.target.value })} placeholder="https://…/v1/chat/completions" />
-          </label>
-        ) : null}
-        <label className="v3-field">
-          <span>温度</span>
-          <Input type="number" min="0" max="2" step="0.1" value={config.temperature} onChange={(event) => update({ temperature: Math.min(2, Math.max(0, Number(event.target.value) || 0)) })} />
-        </label>
-        <label className="v3-field">
-          <span>最大输出长度</span>
-          <Input type="number" min="128" max="4096" step="128" value={config.maxTokens} onChange={(event) => update({ maxTokens: Math.min(4096, Math.max(128, Number(event.target.value) || 128)) })} />
-        </label>
-        <label className="v3-field">
-          <span>行动风格</span>
-          <select className="v3-input" value={config.behavior} onChange={(event) => update({ behavior: event.target.value as RoomAIConfig['behavior'] })}>
-            <option value="random">随机平衡</option>
-            <option value="aggressive">主动进攻</option>
-            <option value="conservative">谨慎观察</option>
-          </select>
-        </label>
-      </div>
-      <p className="v3-ai-config-note">访问凭据只随本次创建请求发送，不写入浏览器草稿；请在可信连接下填写。</p>
-    </Card>
   );
 }
 
@@ -570,7 +489,6 @@ function RulesStep({
 
 function ConfirmStep({
   draft,
-  aiConfig,
   issues,
   busy,
   onBack,
@@ -578,7 +496,6 @@ function ConfirmStep({
   onCreate,
 }: {
   draft: WizardDraft;
-  aiConfig: RoomAIConfig;
   issues: WizardIssue[];
   busy: boolean;
   onBack: () => void;
@@ -590,7 +507,7 @@ function ConfirmStep({
   return (
     <div style={css('gap')}>
       <Card data-wizard-block="players" tabIndex={-1}>
-        <div style={{ ...row, justifyContent: 'space-between' }}><div><h2 style={{ margin: 0 }}>房间与人数</h2><p style={{ margin: 'var(--ww-space-2) 0 0' }}>{draft.roomName} · {modeLabel[draft.mode]} · {draft.maxPlayers}个席位</p><p style={{ margin: 0, color: 'var(--ww-text-muted)' }}>{expectedComputerSeats}个电脑席 · 至少{draft.minHumanPlayers}名真人</p>{draft.mode !== 'human' ? <p style={{ margin: 0, color: 'var(--ww-text-muted)' }}>电脑玩家：{isAIConfigConfigured(aiConfig) ? `已配置 · ${aiConfig.model}` : '未配置，将使用安全演示策略'}</p> : null}</div><Button variant="quiet" onClick={() => onEdit('players')}>修改</Button></div>
+        <div style={{ ...row, justifyContent: 'space-between' }}><div><h2 style={{ margin: 0 }}>房间与人数</h2><p style={{ margin: 'var(--ww-space-2) 0 0' }}>{draft.roomName} · {modeLabel[draft.mode]} · {draft.maxPlayers}个席位</p><p style={{ margin: 0, color: 'var(--ww-text-muted)' }}>{expectedComputerSeats}个电脑席 · 至少{draft.minHumanPlayers}名真人</p>{draft.mode !== 'human' ? <p style={{ margin: 0, color: 'var(--ww-text-muted)' }}>电脑玩家参数将在等待房由受权房主配置。</p> : null}</div><Button variant="quiet" onClick={() => onEdit('players')}>修改</Button></div>
         <FieldError issue={issueFor('players')} />
       </Card>
       <Card data-wizard-block="roleSetup" tabIndex={-1}>
@@ -630,7 +547,6 @@ export function RoomWizardPage() {
   const [draft, setDraft] = useState<WizardDraft | null>(null);
   const [serverIssues, setServerIssues] = useState<WizardIssue[]>([]);
   const [busy, setBusy] = useState(false);
-  const [aiConfig, setAIConfig] = useState<RoomAIConfig>(createInitialAIConfig);
 
   useEffect(() => {
     if (!catalog && catalogStatus === 'idle') void refreshCatalog();
@@ -723,7 +639,7 @@ export function RoomWizardPage() {
       return;
     }
     setBusy(true);
-    const response = await createRoomWithOptions(optionsFromDraft(draft, aiConfig));
+    const response = await createRoomWithOptions(optionsFromDraft(draft));
     if (response.ok === false) {
       const mapped = serverIssuesToWizardIssues('issues' in response ? response.issues : undefined);
       const nextIssues = mapped.length > 0 ? mapped : [{ path: '', message: messageForIssue(response.code), step: codeFallbackStep(response.code), errorCode: response.code }];
@@ -759,10 +675,10 @@ export function RoomWizardPage() {
       {error && serverIssues.length === 0 ? <div className="v3-alert v3-alert--error" role="alert">{error}</div> : null}
       <div className="v3-wizard-grid" style={grid}>
         <section className="v3-wizard-main" aria-label={`第${stepIndex(currentStep) + 1}步`}>
-          {currentStep === 'players' ? <PlayersStep draft={draft} catalog={catalog} issues={visibleIssues} aiConfig={aiConfig} onAIConfigChange={(patch) => setAIConfig((current) => ({ ...current, ...patch }))} update={update} onNext={continueStep} /> : null}
+          {currentStep === 'players' ? <PlayersStep draft={draft} catalog={catalog} issues={visibleIssues} update={update} onNext={continueStep} /> : null}
           {currentStep === 'roles' ? <RolesStep draft={draft} catalog={catalog} issues={visibleIssues} update={update} onBack={() => navigateStep('players')} onNext={continueStep} /> : null}
           {currentStep === 'rules' ? <RulesStep draft={draft} issues={visibleIssues} update={update} onBack={() => navigateStep('roles')} onNext={continueStep} /> : null}
-          {currentStep === 'confirm' ? <ConfirmStep draft={draft} aiConfig={aiConfig} issues={visibleIssues} busy={busy} onBack={() => navigateStep('rules')} onEdit={navigateStep} onCreate={() => void create()} /> : null}
+          {currentStep === 'confirm' ? <ConfirmStep draft={draft} issues={visibleIssues} busy={busy} onBack={() => navigateStep('rules')} onEdit={navigateStep} onCreate={() => void create()} /> : null}
         </section>
         <details className="v3-wizard-preview" open>
           <summary>查看本局预览</summary>

@@ -21,6 +21,7 @@ import {
   adoptV3Identity,
   createV3Room,
   fetchV3Snapshot,
+  fetchV3Events,
   getV3Catalog,
   getV3Room,
   getV3CommandReceipt,
@@ -451,8 +452,30 @@ export const useV3Store = create<V3Store>()((set, get) => {
       response.snapshot,
       current.session.gameId === response.snapshot.gameId,
     );
-    if (accepted && get().room?.status === 'ended') await refreshReview();
-    return accepted;
+    if (!accepted) return false;
+
+    const session = get().session;
+    if (!session) return false;
+    const eventsResponse = await fetchV3Events(
+      session.roomCode,
+      session.actorId,
+      session.lastSeenSeq,
+    );
+    if (eventsResponse.ok === false) {
+      set({ error: responseMessage(eventsResponse) });
+      return false;
+    }
+    const merged = acceptEnvelope({
+      type: 'game.events',
+      roomId: eventsResponse.roomId,
+      gameId: eventsResponse.gameId,
+      afterSequence: eventsResponse.afterSequence,
+      lastSequence: eventsResponse.lastSequence,
+      events: eventsResponse.events,
+    });
+    if (!merged) return false;
+    if (get().room?.status === 'ended') await refreshReview();
+    return true;
   };
 
   const recover = async (): Promise<boolean> => {

@@ -375,6 +375,14 @@ export type RoomCreationCatalogAck = ProtocolAck<{
 }>;
 export type RoomViewAck = ProtocolAck<{ room: RoomView }>;
 export type GameCommandAck = ProtocolAck<{ events: DomainEvent[] }>;
+/** Initial/recovery event reads use the same projected stream as live pushes. */
+export type GameEventsAck = ProtocolAck<{
+  roomId: string;
+  gameId: string;
+  afterSequence: number;
+  lastSequence: number;
+  events: DomainEvent[];
+}>;
 export type RoomListAck = ProtocolAck<{ rooms: RoomSummary[] }>;
 export type SnapshotAck = ProtocolAck<{ snapshot: ProjectedSnapshot }>;
 export type ReviewViewAck = ProtocolAck<{ review: PostGameReviewView }>;
@@ -511,6 +519,8 @@ export interface GameEventsMessage {
   roomId: string;
   gameId: string;
   afterSequence: number;
+  /** Latest authoritative stream cursor, including events hidden by projection. */
+  lastSequence?: number;
   events: DomainEvent[];
 }
 

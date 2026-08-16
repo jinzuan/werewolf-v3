@@ -5,8 +5,6 @@ import {
   canNavigateToStep,
   clearWizardDraft,
   createInitialDraft,
-  createInitialAIConfig,
-  isAIConfigConfigured,
   optionsFromDraft,
   readWizardDraft,
   roleSetupTotal,
@@ -109,20 +107,14 @@ test('options use the frozen CreateRoomOptionsV31 field contract', () => {
   assert.equal(options.reviewEnabled, true);
 });
 
-test('computer-player credentials stay out of the browser draft but enter the create request', () => {
+test('room creation options never carry browser-managed AI configuration', () => {
   const draft = createInitialDraft(catalog);
-  const aiConfig = {
-    ...createInitialAIConfig(),
-    model: 'local-test-model',
-    token: 'secret-token',
-  };
   const stored = new MemoryStorage();
   writeWizardDraft(stored, draft);
-  const options = optionsFromDraft({ ...draft, mode: 'mixed', aiFillPolicy: 'fixed', computerSeats: 1, minHumanPlayers: 11 }, aiConfig);
+  const options = optionsFromDraft({ ...draft, mode: 'mixed', aiFillPolicy: 'fixed', computerSeats: 1, minHumanPlayers: 11 });
 
-  assert.equal(isAIConfigConfigured(aiConfig), true);
-  assert.equal(options.aiConfig?.token, 'secret-token');
-  assert.doesNotMatch(JSON.stringify(readWizardDraft(stored)), /secret-token/);
+  assert.equal('aiConfig' in options, false);
+  assert.doesNotMatch(JSON.stringify(readWizardDraft(stored)), /apiKey|token|credential|secret/i);
 });
 
 test('server field issues map to a safe Chinese message and the correct block', () => {

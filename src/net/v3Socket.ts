@@ -13,6 +13,7 @@ import type {
   CreateRoomOptionsV31,
   GameCommand,
   GameCommandAck,
+  GameEventsAck,
   JoinRoomAck,
   ProtocolAck,
   ProtocolAckError,
@@ -704,4 +705,16 @@ export const fetchV3Snapshot = (
     openRoomConnection(),
     'v3:snapshot',
     { roomCode, actorId },
+  );
+
+/** Read the authoritative, viewer-projected event stream during recovery. */
+export const fetchV3Events = (
+  roomCode: string,
+  actorId: string,
+  afterSequence = 0,
+): Promise<ClientAck<GameEventsAck extends ProtocolAck<infer P> ? P : never>> =>
+  emitAck(
+    openRoomConnection(),
+    'v3:events',
+    { roomCode, actorId, afterSequence },
   );
