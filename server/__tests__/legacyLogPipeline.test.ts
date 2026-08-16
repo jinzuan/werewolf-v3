@@ -1,152 +1,156 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import test from 'node:test';
 import { resolve } from 'node:path';
-import { RoomEngine, type EngineAIAdapter } from '../engine';
-import type { Player } from '../../shared/types';
-import type { ArchiveRecord } from '../../shared/protocol';
+import test from 'node:test';
+import { createV3Application } from '../app/createV3Application';
+import { InMemoryEventStore } from '../events/store';
+import { resolveRuntimeConfig } from '../runtimeConfig';
+import { RoomCatalogService } from '../rooms/roomCatalogService';
+import type { DomainEvent } from '../../shared/events';
+import type { CreateRoomOptionsV31 } from '../../shared/roomContract';
 
-const adapter = (): EngineAIAdapter => ({
-  source: 'real_ai',
-  resetExperienceCache: () => {},
-  resetSpeechRepeatCache: () => {},
-  callAIApi: async (...args: unknown[]) => {
-    const players = args[3] as Player[];
-    const phase = args[5] as string;
-    if (phase === '狼人讨论') {
-      const target = players.find((player) => player.role !== 'wolf');
-      return target ? `建议{${target.name}}作为今晚刀口。` : '跳过';
-    }
-    if (phase === '复盘') return '只基于本局可验证事件复盘，下一局按新证据更新判断。';
-    return '我会结合公开票型和时间线继续判断。';
-  },
-  generateAIVoteDecision: async (...args: unknown[]) => {
-    const players = args[3] as Player[];
-    const playerName = args[2] as string;
-    const target = players.find((player) => player.isAlive && player.name !== playerName);
-    return { targetId: target?.id ?? 'skip', reason: '按公开票型判断。' };
-  },
-  generateAIThought: async (...args: unknown[]) => {
-    const role = args[1] as string;
-    const players = args[3] as Player[];
-    const playerName = args[2] as string;
-    if (role === 'witch') return '用药: 不用';
-    return players.find((player) => player.isAlive && player.name !== playerName)?.id ?? '';
-  },
-});
-
-const waitUntil = async (predicate: () => boolean, timeoutMs = 3_000): Promise<void> => {
-  const deadline = Date.now() + timeoutMs;
-  while (!predicate() && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
+const options = (reviewEnabled: boolean): CreateRoomOptionsV31 => {
+  const catalog = new RoomCatalogService().getCatalog();
+  const preset = catalog.rolePresets.find((item) => item.enabled);
+  assert.ok(preset);
+  return {
+    catalogVersion: catalog.catalogVersion,
+    roomName: 'V3 log test',
+    creator: { name: 'V3 observer', avatarId: 'avatar-test' },
+    mode: 'quick_computer',
+    visibility: 'invite_only',
+    maxPlayers: 12,
+    minHumanPlayers: 0,
+    computerSeats: 0,
+    aiFillPolicy: 'fill_to_max',
+    roleSetup: { ...preset.roleSetup },
+    rolePresetId: preset.id,
+    rulesetId: preset.rulesetId,
+    rulesetVersion: preset.rulesetVersion,
+    readyPolicy: 'all_connected_humans',
+    allowPublicSpectators: false,
+    reviewEnabled,
+  };
 };
 
-test('legacy engine records AI source and wolf action timeline at the write boundary', async () => {
-  const engine = new RoomEngine({
-    roomName: 'legacy log test',
-    maxPlayers: 4,
-    auto: true,
-    reviewEnabled: true,
-    noArchive: true,
-    aiAdapter: adapter(),
-    hub: { broadcastRoom: () => {}, destroyRoom: () => {} },
-  });
-  engine.fillAIPlayers(4);
-  engine.autoStartIfNeeded();
-
-  await waitUntil(() => {
-    const types = new Set(engine.getTimelineEvents().map((event) => event.eventType));
-    return types.has('wolf.message') && types.has('wolf.vote_cast') && types.has('wolf.kill_locked');
-  });
-  engine.destroy();
-
-  const timeline = engine.getTimelineEvents();
-  assert.ok(timeline.some((event) => event.eventType === 'wolf.message' && event.source === 'real_ai'));
-  assert.ok(timeline.some((event) => event.eventType === 'wolf.vote_cast' && event.source === 'real_ai'));
-  assert.ok(timeline.some((event) => event.eventType === 'wolf.kill_locked' && event.source === 'real_ai'));
-  assert.ok(engine.wolfChat.some((message) => message.source === 'real_ai'));
-  assert.ok(engine.wolfChat.every((message) => !message.content.includes('[mock]')));
-});
-
-test('test-drive keeps source metadata out of speech text and enables archive review', () => {
-  const source = readFileSync(resolve(process.cwd(), 'test-drive.ts'), 'utf8');
-  assert.doesNotMatch(source, /MOCK_MARKER|\[mock\]/);
-  assert.match(source, /reviewEnabled:\s*true/);
-  assert.match(source, /noArchive:\s*false/);
-});
-
-test('test-drive last words forwards the engine ledger through the shared AI path', () => {
-  const source = readFileSync(resolve(process.cwd(), 'test-drive.ts'), 'utf8');
-  const lastWordsBranch = source.match(/if \(gamePhase === '遗言'\) \{([\s\S]*?)\n {6}\}/)?.[1] || '';
-  assert.match(lastWordsBranch, /ai\.callAIApi/);
-  assert.match(lastWordsBranch, /messagesIn/);
-  assert.match(lastWordsBranch, /_gameHistory/);
-});
-
-test('QC output is produced from the archive callback and its canonical game log', () => {
-  const source = readFileSync(resolve(process.cwd(), 'test-drive.ts'), 'utf8');
-  assert.match(source, /onArchive:\s*\(record\)\s*=>/);
-  assert.match(source, /archivedRecord\.gameLogEvents/);
-  assert.doesNotMatch(source, /const out = \[\.\.\.header, \.\.\.events\]/);
-});
-
-test('archive callback and engine log expose the same complete final event source', async () => {
-  const archives: ArchiveRecord[] = [];
-  const engine = new RoomEngine({
-    roomName: 'canonical log test',
-    maxPlayers: 4,
-    auto: true,
-    reviewEnabled: true,
-    noArchive: true,
-    aiAdapter: adapter(),
-    hub: {
-      broadcastRoom: () => {},
-      destroyRoom: () => {},
-      onArchive: (record) => archives.push(record),
+const application = () => createV3Application(
+  resolveRuntimeConfig({
+    WW_ENV: 'test',
+    WW_DATA_DIR: '/tmp/werewolf-v3-log-test',
+    WW_DEPLOYMENT_NAMESPACE: 'log-test',
+  }),
+  {
+    autoDrive: true,
+    roomOptions: {
+      aiTimeoutMs: 100,
+      session: { stageDurationMs: 500, rng: () => 0.25 },
     },
-  });
-  engine.fillAIPlayers(4);
-  engine.autoStartIfNeeded();
+  },
+);
 
-  await waitUntil(() => archives.length > 0, 12_000);
-  engine.destroy();
+const waitForEnd = async (app: ReturnType<typeof application>, code: string): Promise<NonNullable<Awaited<ReturnType<typeof app.rooms.getRecord>>>> => {
+  const deadline = Date.now() + 20_000;
+  let record = await app.rooms.getRecord(code);
+  while (record?.status !== 'ended' && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    record = await app.rooms.getRecord(code);
+  }
+  assert.ok(record);
+  assert.equal(record.status, 'ended');
+  return record;
+};
 
-  assert.equal(archives.length, 1);
-  assert.deepEqual(
-    archives[0].gameLogEvents?.map((event) => event.line),
-    engine.getGameLogEvents().map((event) => event.line),
-  );
-  assert.match(archives[0].gameLogEvents?.at(-1)?.line || '', /游戏结束/);
+test('V3 event stream records AI wolf discussion and kill decisions at commit time', async () => {
+  const app = application();
+  await app.start();
+  try {
+    const created = await app.rooms.create({
+      actorId: 'observer',
+      createRequestId: 'v3-log-events',
+      options: options(false),
+    });
+    const record = await waitForEnd(app, created.room.code);
+    const events = await app.eventStore.read(`game:${record.gameId}`);
+    const types = new Set(events.map(({ event }) => event.eventType));
+    assert.ok(types.has('wolf.message'));
+    assert.ok(types.has('wolf.vote_cast'));
+    assert.ok(types.has('wolf.kill_locked'));
+    assert.ok(events.some(({ event }) => event.eventType === 'game.ended'));
+  } finally {
+    await app.close();
+  }
 });
 
-test('legacy exile enters last words before a vote can finish the game', async () => {
-  const engine = new RoomEngine({
-    roomName: 'legacy exile last words test',
-    maxPlayers: 4,
-    reviewEnabled: false,
-    noArchive: true,
-    aiAdapter: adapter(),
-    hub: { broadcastRoom: () => {}, destroyRoom: () => {} },
+test('test-drive uses the V3 composition root and keeps the review enabled', () => {
+  const source = readFileSync(resolve(process.cwd(), 'test-drive.ts'), 'utf8');
+  assert.match(source, /createV3Application/);
+  assert.match(source, /reviewEnabled: true/);
+  assert.doesNotMatch(source, /RoomEngine/);
+});
+
+test('review archive and QC source are the same completed V3 event stream', async () => {
+  const gameId = 'v3-review-archive';
+  const roomId = 'v3-review-room';
+  const eventStore = new InMemoryEventStore();
+  const event = (
+    sequence: number,
+    eventType: DomainEvent['eventType'],
+    payload: Record<string, unknown>,
+  ): DomainEvent => ({
+    eventId: `${gameId}-${sequence}`,
+    roomId,
+    gameId,
+    sequence,
+    occurredAt: sequence,
+    phase: sequence === 1 ? 'night' : 'ended',
+    stage: sequence === 1 ? 'guard_seer' : null,
+    eventType,
+    payload,
+    visibility: eventType === 'game.state_updated' ? 'spectator_omniscient' : 'public_timeline',
+    correlationId: `review-${sequence}`,
+    schemaVersion: 1,
   });
-  engine.fillAIPlayers(4);
-  (engine as unknown as { beginRoles: () => void }).beginRoles();
-  const wolf = engine.players.find((player) => player.role === 'wolf');
-  assert.ok(wolf);
-  engine.game!.phase = 'vote';
-
-  await (engine as unknown as {
-    applyVoteResult: (targetId: string) => Promise<void>;
-  }).applyVoteResult(wolf.id);
-
-  assert.equal(engine.winnerTeam, 'good');
-  assert.ok(
-    engine.messages.some(
-      (message) => message.playerId === wolf.id && message.type === 'public',
-    ),
+  await eventStore.append({
+    streamId: `game:${gameId}`,
+    expectedVersion: 0,
+    events: [
+      event(1, 'game.started', { day: 1 }),
+      event(2, 'game.state_updated', {
+        gameState: { day: 1 },
+        players: [
+          { id: 'wolf-1', name: '狼人一号', role: 'wolf', isAI: true, isAlive: true, order: 1 },
+          { id: 'villager-1', name: '平民一号', role: 'villager', isAI: true, isAlive: true, order: 2 },
+        ],
+      }),
+      event(3, 'game.ended', { winner: 'good', reason: 'test' }),
+    ],
+  });
+  const app = createV3Application(
+    resolveRuntimeConfig({
+      WW_ENV: 'test',
+      WW_DATA_DIR: '/tmp/werewolf-v3-log-test',
+      WW_DEPLOYMENT_NAMESPACE: 'log-test',
+    }),
+    { autoDrive: false, eventStore },
   );
-  assert.match(
-    engine.getGameLogEvents().find((event) => event.line.includes(`${wolf.name} 遗言`))?.line || '',
-    new RegExp(`${wolf.name} 遗言`),
-  );
+  await app.start();
+  try {
+    await app.reviewPipeline.enqueue({
+      gameId,
+      roomId,
+      reviewEnabled: true,
+    });
+    await app.reviewPipeline.process(gameId);
+    const review = await app.reviewPipeline.get(gameId);
+    assert.ok(review);
+    assert.equal(review.status, 'completed');
+    const events = await app.eventStore.read(`game:${gameId}`);
+    assert.deepEqual(
+      review.archive.events.map(({ event }) => event.eventId),
+      events.sort((left, right) => left.event.sequence - right.event.sequence).map(({ event }) => event.eventId),
+    );
+    assert.ok(review.messages.length > 0);
+  } finally {
+    await app.close();
+  }
 });

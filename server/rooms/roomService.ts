@@ -24,13 +24,10 @@ import {
   endpointMatchesCapability,
   getAIProviderCapability,
 } from '../../shared/aiProviderCapabilities';
-import type { AIConfig, GameAction, Player, Role } from '../../shared/types';
-import { AIOrchestrator } from '../ai/orchestrator';
-import { AIFallbackRegistry, defaultAITelemetry, type AITelemetry } from '../ai/aiTelemetry';
+import type { AIConfig, Player } from '../../shared/types';
+import { defaultAITelemetry, type AITelemetry } from '../ai/aiTelemetry';
 import { DeterministicAIProvider } from '../ai/deterministicProvider';
 import { HttpAIProvider } from '../ai/httpProvider';
-import { buildAIRuntimeContext } from '../ai/runtimeContext';
-import { experienceLibrary } from '../ai/experienceLibrary';
 import type { AIProvider } from '../ai/types';
 import type { HttpAIProviderOptions } from '../ai/httpProvider';
 import type { InsightStore } from '../review/insightStore';
@@ -51,6 +48,7 @@ import {
 } from './roomLifecycleService';
 import type { LifecycleOutbox } from './lifecycleOutbox';
 import type { RoomRepository } from './repository';
+import { SessionCoordinator } from './sessionCoordinator';
 import { RoomRevisionConflictError } from './repository';
 import type { RuntimeEnvironment } from '../runtimeConfig';
 import {
@@ -221,9 +219,7 @@ export interface RoomServiceOptions {
 
 export class RoomService {
   private readonly sessions = new Map<string, GameSession>();
-  private readonly aiRuns = new Map<string, Promise<void>>();
   private readonly roomAIProviders = new Map<string, AIProvider>();
-  private readonly fastAutoRooms = new Set<string>();
   private readonly roomChangeListeners = new Set<
     (roomCode: string, reason: RoomSnapshotReason) => void | Promise<void>
   >();
@@ -235,7 +231,7 @@ export class RoomService {
   private readonly connectionLeases = new Map<string, Set<string>>();
   private readonly aiProvider?: AIProvider;
   private readonly aiTelemetry: AITelemetry;
-  private readonly aiFallbackRegistry = new AIFallbackRegistry();
+  private readonly coordinator: SessionCoordinator;
   private readonly catalog: RoomCatalogService;
   private readonly policy: RoomPolicy;
   private readonly projector: RoomProjector;
@@ -299,6 +295,15 @@ export class RoomService {
     this.sweepLogger = options.sweepLogger;
     this.reviewPipeline = options.reviewPipeline;
     this.insightStore = options.insightStore;
+    this.coordinator = new SessionCoordinator({
+      getRoom: async (roomCode) => this.repository.get(roomCode),
+      getSession: (roomCode) => this.sessions.get(roomCode.toUpperCase()),
+      providerForRoom: (room) => this.providerForRoom(room),
+      insightStore: this.insightStore,
+      timeoutMs: options.aiTimeoutMs,
+      now: options.session?.now,
+      telemetry: this.aiTelemetry,
+    });
     this.connectionRegistry = options.connectionRegistry ?? new ConnectionRegistry();
     for (const fact of repository.takeLegacyConnectionFacts?.() ?? []) {
       for (const memberId of fact.memberIds) {
@@ -340,7 +345,6 @@ export class RoomService {
         session?.dispose();
         this.sessions.delete(intent.roomCode.toUpperCase());
         this.roomAIProviders.delete(intent.roomCode.toUpperCase());
-        this.fastAutoRooms.delete(intent.roomCode.toUpperCase());
         void room;
       },
     });
@@ -1573,6 +1577,8 @@ export class RoomService {
         roomId: room.id,
         status: 'disabled' as const,
         enabled: false,
+        generationMode: 'rules' as const,
+        operationId: `review:${gameId}:rules`,
         timeline: [],
         messages: [],
         insights: [],
@@ -1585,11 +1591,34 @@ export class RoomService {
       roomId: room.id,
       status: 'pending' as const,
       enabled: Boolean(room.config?.reviewEnabled),
+      generationMode: 'rules' as const,
+      operationId: `review:${gameId}:rules`,
       timeline: [],
       messages: [],
       insights: [],
       updatedAt: Date.now(),
     };
+  }
+
+  async reviewInsights(identity: SocketIdentity) {
+    const viewer = await this.viewerForIdentity(identity);
+    if (viewer.kind !== 'player' || !this.insightStore) return [];
+    return this.insightStore.list(viewer.role);
+  }
+
+  async clearReviewInsights(identity: SocketIdentity, role?: import('../../shared/types').Role): Promise<void> {
+    const viewer = await this.viewerForIdentity(identity);
+    if (viewer.kind !== 'player') {
+      throw this.error('SPECTATOR_READ_ONLY', 'room.error.spectator_read_only');
+    }
+    if (role && role !== viewer.role) {
+      throw this.error('SPECTATOR_READ_ONLY', 'room.error.spectator_read_only');
+    }
+    if (this.reviewPipeline) {
+      await this.reviewPipeline.clearInsights(viewer, role);
+    } else {
+      await this.insightStore?.clear(viewer.role);
+    }
   }
 
   async getRecord(roomCode: string): Promise<RoomRecord | undefined> {
@@ -1624,17 +1653,16 @@ export class RoomService {
 
   async close(): Promise<void> {
     this.closed = true;
+    await this.coordinator.close();
     if (this.sweepTimer) {
       clearInterval(this.sweepTimer);
       this.sweepTimer = undefined;
     }
     for (const session of this.sessions.values()) session.dispose();
     await new Promise((resolve) => setImmediate(resolve));
-    this.aiRuns.clear();
     this.roomAIProviders.clear();
     this.connectionRegistry.clear();
     this.connectionLeases.clear();
-    this.fastAutoRooms.clear();
     this.legacyRoomCodes.clear();
     this.roomChangeListeners.clear();
   }
@@ -2373,19 +2401,12 @@ export class RoomService {
   private async persistSession(
     roomCode: string,
     session: GameSession,
-    force = false,
   ): Promise<void> {
-    const normalizedRoomCode = roomCode.toUpperCase();
-    if (!force && this.fastAutoRooms.has(normalizedRoomCode)) {
-      // Fast legacy auto rooms intentionally batch disk writes, but their
-      // live monitor still needs every authoritative state transition.
-      await this.notifyRoomChange(roomCode, 'status_changed');
-      return;
-    }
     const snapshot = session.serialize();
     let status: RoomRecord['status'] | undefined;
     let endedGameId: string | undefined;
     let endedReviewEnabled = false;
+    let autoRoom = false;
     await this.repository.mutate(roomCode, (room) => {
       // The coordinator owns the starting transaction. Do not let the initial
       // game.started event advance its CAS before the playing commit.
@@ -2396,6 +2417,7 @@ export class RoomService {
       if (snapshot.state.gameState.phase === 'ended') room.status = 'ended';
       this.touchActivity(room);
       status = room.status;
+      autoRoom = room.config?.mode === 'quick_computer';
       if (status === 'ended') {
         endedGameId = snapshot.state.gameId;
         endedReviewEnabled = Boolean(room.config?.reviewEnabled);
@@ -2405,6 +2427,13 @@ export class RoomService {
       // This callback is also used by AI actions and deadline recovery.  The
       // transport turns it into per-socket projections for the whole room.
       await this.notifyRoomChange(roomCode, 'status_changed');
+      if (status === 'playing') {
+        // Keep the same auto-drive gate for human/mixed rooms after a direct
+        // session transition. Quick-computer rooms are explicitly automatic;
+        // tests and manual mixed-room callers can still advance a session one
+        // command at a time with autoDrive disabled.
+        this.startAI(roomCode, autoRoom);
+      }
     }
     if (status === 'ended' && endedGameId && this.reviewPipeline) {
       // The session has already appended game.ended and its final state event.
@@ -2437,134 +2466,6 @@ export class RoomService {
       this.options.autoDrive === false ||
       (!autoRoom && this.options.autoDrive !== true)
     ) return;
-    if (this.aiRuns.has(roomCode)) return;
-    const fastAuto = autoRoom && this.legacyRoomCodes.has(roomCode.toUpperCase());
-    if (fastAuto) this.fastAutoRooms.add(roomCode);
-    const run = this.driveAI(roomCode, autoRoom).finally(async () => {
-      if (fastAuto) {
-        this.fastAutoRooms.delete(roomCode);
-        const session = this.sessions.get(roomCode.toUpperCase());
-        if (session) await this.persistSession(roomCode, session, true);
-      }
-      this.aiRuns.delete(roomCode);
-    });
-    this.aiRuns.set(roomCode, run);
-  }
-
-  private async driveAI(roomCode: string, autoRoom: boolean): Promise<void> {
-    for (let step = 0; step < 2_000; step += 1) {
-      if (this.closed) return;
-      const room = await this.requireRoom(roomCode);
-      const session = this.sessions.get(room.code);
-      if (!session || room.status !== 'playing') return;
-      const state = session.serialize().state;
-      const actorEntry = state.gameState.allowedActors?.find((entry) =>
-        state.players.find(
-          (player) => player.id === entry.playerId && (autoRoom || player.isAI),
-        ),
-      );
-      if (!actorEntry) return;
-      const actor = state.players.find((player) => player.id === actorEntry.playerId);
-      if (!actor?.role) return;
-      const projectedPlayers = this.projectAIPlayers(state.players, actor.id, actor.role);
-      const visibleEvents = await session.eventsFor({
-        kind: 'player',
-        playerId: actor.id,
-        role: actor.role,
-      });
-      const provider = await this.providerForRoom(room);
-      const historicalExperience = this.insightStore
-        ? await this.insightStore.getPromptReference(actor.role)
-        : '';
-      const experience = [
-        experienceLibrary.getReference(actor.role, session.stageRevision),
-        historicalExperience,
-      ].filter(Boolean).join('\n\n');
-      const promptContext = provider.requiresPromptContext
-        ? buildAIRuntimeContext({
-            actorId: actor.id,
-            role: actor.role,
-            phase: state.gameState.phase,
-            stage: state.gameState.phase === 'night' ? state.night.stage : state.dayFlow.stage,
-            dayNumber: state.gameState.day,
-            roundNumber:
-              state.gameState.phase === 'voting'
-                ? state.dayFlow.voteRound
-                : state.gameState.phase === 'night'
-                  ? state.gameState.wolfDiscussionRound
-                  : state.gameState.dayPhase?.discussionRounds || 1,
-            players: projectedPlayers,
-            visibleEvents,
-            allowedActions: actorEntry.actions,
-            voteCandidates: state.dayFlow.voteCandidates,
-            guardianLastTarget: state.gameState.guardianLastTarget,
-            witchHasHealPotion: state.gameState.witchHasHealPotion,
-            witchHasPoisonPotion: state.gameState.witchHasPoisonPotion,
-            hunterShotAvailable: actorEntry.actions.includes('hunter_shoot'),
-            wolfVoteRound: state.gameState.wolfDiscussionRound,
-            lastWordsRound:
-              state.gameState.phase === 'lastWords'
-                ? 3 - state.dayFlow.lastWordsRemaining
-                : undefined,
-            lastWordsRoundsRemaining:
-              state.gameState.phase === 'lastWords'
-                ? state.dayFlow.lastWordsRemaining
-                : undefined,
-            experience,
-          })
-        : undefined;
-      const orchestrator = new AIOrchestrator(provider, this.options.session?.now, {
-        timeoutMs: this.options.aiTimeoutMs,
-        telemetry: this.aiTelemetry,
-        fallbackRegistry: this.aiFallbackRegistry,
-      });
-      await orchestrator.act(session, {
-        roomId: room.id,
-        gameId: session.gameId,
-        playerId: actor.id,
-        role: actor.role,
-        phase: state.gameState.phase,
-        stage: state.gameState.phase === 'night' ? state.night.stage : state.dayFlow.stage,
-        stageRevision: session.stageRevision,
-        deadlineTs: state.gameState.deadlineTs,
-        players: projectedPlayers,
-        allowedActions: [...actorEntry.actions],
-        allowedCommandTypes: actorEntry.actions.map((action) => this.commandTypeForAction(action)),
-        ...(promptContext ? { promptContext } : {}),
-      });
-      await new Promise((resolve) => setImmediate(resolve));
-    }
-    throw this.error('UNKNOWN_ERROR', 'room.error.ai_step_limit');
-  }
-
-  private projectAIPlayers(players: readonly Player[], actorId: string, role: Role): Player[] {
-    return players.map((player) => ({
-      ...player,
-      role:
-        player.id === actorId || (role === 'wolf' && player.role === 'wolf')
-          ? player.role
-          : null,
-      aiConfig: undefined,
-    }));
-  }
-
-  private commandTypeForAction(action: GameAction): GameCommand['type'] {
-    switch (action) {
-      case 'guard':
-      case 'check':
-      case 'heal':
-      case 'poison':
-        return 'game.night_action';
-      case 'wolf_speak': return 'game.wolf_speak';
-      case 'wolf_vote': return 'game.wolf_vote';
-      case 'skip_night': return 'game.skip_night';
-      case 'speak': return 'game.speak';
-      case 'skip_speech': return 'game.skip_speech';
-      case 'vote':
-      case 'abstain': return 'game.vote';
-      case 'hunter_shoot':
-      case 'skip_hunter_shot': return 'game.hunter_shoot';
-      default: return 'game.speak';
-    }
+    void this.coordinator.scheduleEligibleAI({ roomCode, autoRoom });
   }
 }

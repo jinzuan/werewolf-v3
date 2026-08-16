@@ -19,6 +19,7 @@ import type {
   AISuggestion,
 } from './types';
 import { AIProviderError as ProviderError } from './types';
+import { buildPromptPipeline } from './promptPipeline';
 
 interface ProviderSettings {
   key: string;
@@ -45,6 +46,8 @@ export interface HttpAIProviderOptions {
   enqueueTimeoutMs?: number;
   telemetry?: AITelemetry;
   safeHttpClient?: SafeHttpClient;
+  promptMaxChars?: number;
+  promptMaxEvents?: number;
 }
 
 interface ResponseEnvelope {
@@ -238,71 +241,6 @@ const normalizeError = (
   return new ProviderError('network', retryCount);
 };
 
-const behaviorInstruction: Record<AIConfig['defaultBehavior'], string> = {
-  aggressive: 'Prefer proactive pressure, clear commitments, and decisive legal actions.',
-  conservative: 'Prefer information gathering, low-risk legal actions, and preserve optionality.',
-  random: 'Keep decisions varied while remaining consistent with the supplied facts and legal actions.',
-};
-
-const promptFor = (
-  context: AIRequestContext,
-  behavior: AIConfig['defaultBehavior'],
-) => {
-  const projection = context.projectedContext;
-  const snapshot = projection?.snapshot;
-  const players =
-    snapshot?.players ??
-    context.players.map((player) => ({
-      ...player,
-      role:
-        player.id === context.playerId ||
-        (context.role === 'wolf' && player.role === 'wolf')
-          ? player.role
-          : null,
-      aiConfig: undefined,
-    }));
-  const gameState = snapshot?.gameState;
-  const publicEvents = projection?.publicEvents ?? [];
-  const privateEvents = projection?.privateEvents ?? [];
-  const rules = projection?.rules ?? {
-    id: 'werewolf.v3.default-12p',
-    version: 'unknown',
-    values: {},
-  };
-  const experience = projection?.experience ?? '';
-
-  return {
-    system: [
-      'You are a server-side werewolf game action planner.',
-      `Role: ${context.role}.`,
-      `Play style: ${behaviorInstruction[behavior]}`,
-      'Use only the supplied role-visible context. Do not infer hidden roles.',
-      `Ruleset ${rules.id} ${rules.version}: ${JSON.stringify(rules.values)}`,
-      experience ? `Behavior reference:\n${experience}` : '',
-      'Return JSON only: {"command":{"type":"...","payload":{...}},"reason":"..."}',
-      `Allowed command types: ${JSON.stringify(context.allowedCommandTypes)}`,
-      `Allowed actions: ${JSON.stringify(context.allowedActions ?? [])}`,
-    ]
-      .filter(Boolean)
-      .join('\n'),
-    user: JSON.stringify({
-      playerId: context.playerId,
-      phase: context.phase,
-      stage: context.stage,
-      stageRevision: context.stageRevision,
-      players: players.map((player) => ({
-        id: player.id,
-        name: player.name,
-        role: player.role,
-        isAlive: player.isAlive,
-      })),
-      gameState,
-      publicEvents,
-      privateEvents,
-    }),
-  };
-};
-
 export class HttpAIProvider implements AIProvider {
   readonly mode = 'real_ai' as const;
   private readonly settings: ProviderSettings;
@@ -317,15 +255,14 @@ export class HttpAIProvider implements AIProvider {
   private readonly timeoutMs: number;
   private readonly maxRetries: number;
   private readonly baseDelayMs: number;
-  private readonly behavior: AIConfig['defaultBehavior'];
   private readonly endpointPolicy: EndpointPolicy;
+  private readonly promptBudget: { maxChars?: number; maxEvents?: number };
 
   constructor(
     config: AIConfig = loadAIConfig(),
     options: HttpAIProviderOptions = {},
   ) {
     this.settings = settingsFor(config, options.endpoint);
-    this.behavior = config.defaultBehavior;
     this.queue = options.queue ?? defaultProviderQueue;
     this.circuitBreaker = options.circuitBreaker ?? defaultAICircuitBreaker;
     this.enqueueTimeoutMs = options.enqueueTimeoutMs ?? 5_000;
@@ -338,6 +275,10 @@ export class HttpAIProvider implements AIProvider {
     this.maxRetries = options.maxRetries ?? 2;
     this.baseDelayMs = options.baseDelayMs ?? 250;
     this.endpointPolicy = options.endpointPolicy ?? new EndpointPolicy();
+    this.promptBudget = {
+      maxChars: options.promptMaxChars,
+      maxEvents: options.promptMaxEvents,
+    };
     const testTransport: SafeHttpTransport | undefined = options.fetch
       ? async ({ url, options: requestOptions }) => options.fetch!(url, requestOptions)
       : undefined;
@@ -347,7 +288,7 @@ export class HttpAIProvider implements AIProvider {
   }
 
   async suggest(context: AIRequestContext): Promise<AISuggestion> {
-    const prompt = promptFor(context, this.behavior);
+    const prompt = buildPromptPipeline(context, this.promptBudget).prompt;
     if (!this.circuitBreaker.allow(this.settings.key)) {
       throw new ProviderError('circuit_open', 0);
     }

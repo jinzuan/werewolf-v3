@@ -51,6 +51,8 @@ export class FileReviewRepository implements ReviewRepository {
       const now = Date.now();
       const job: ReviewJobRecord = {
         ...clone(input),
+        generationMode: input.generationMode ?? 'rules',
+        operationId: input.operationId ?? `review:${input.gameId}:${input.generationMode ?? 'rules'}`,
         status: 'pending',
         messages: clone(input.messages ?? []),
         insights: clone(input.insights ?? []),
@@ -85,7 +87,29 @@ export class FileReviewRepository implements ReviewRepository {
         dataRoot: this.dataRoot,
         maxBytes: this.persistence.maxBytes,
       })) as unknown;
-      this.jobs = Array.isArray(parsed) ? parsed as ReviewJobRecord[] : [];
+      this.jobs = Array.isArray(parsed)
+        ? (parsed as ReviewJobRecord[]).map((job) => {
+            const generationMode = job.generationMode ?? 'rules';
+            const operationId = job.operationId ?? `review:${job.gameId}:${generationMode}`;
+            return {
+              ...job,
+              generationMode,
+              operationId,
+              archive: {
+                ...job.archive,
+                operationId: job.archive?.operationId ?? `review-archive:${job.gameId}`,
+              },
+              messages: (job.messages ?? []).map((message, index) => ({
+                ...message,
+                operationId: message.operationId ?? `${operationId}:message:${index}`,
+              })),
+              insights: (job.insights ?? []).map((insight, index) => ({
+                ...insight,
+                operationId: insight.operationId ?? `${operationId}:insight:${insight.role}:${index}`,
+              })),
+            };
+          })
+        : [];
     } catch (error) {
       if (
         !(error instanceof Error) ||

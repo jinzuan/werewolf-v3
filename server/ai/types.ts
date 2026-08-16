@@ -66,6 +66,12 @@ export interface AIPromptContext {
   legalTargets?: AILegalTarget[];
   abstainAllowed?: boolean;
   publicClaimPlan?: string;
+  /** The authoritative RuleSet projection used for this request. */
+  ruleset?: {
+    id: string;
+    version: string;
+    values: Record<string, unknown>;
+  };
 }
 
 export interface AIContextProjection {
@@ -126,8 +132,6 @@ export class AIProviderError extends Error {
 }
 
 export interface AIProvider {
-  /** Providers that consume V3 prompt context opt into the projected event read. */
-  readonly requiresPromptContext?: boolean;
   /** real_ai is the only production provider mode; rules-degraded is explicit. */
   readonly mode?: 'real_ai' | 'rules-degraded' | 'test-deterministic';
   suggest(context: AIRequestContext): Promise<AISuggestion>;

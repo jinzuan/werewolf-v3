@@ -10,6 +10,7 @@ import type {
 } from './types';
 import { AIProviderError as ProviderError } from './types';
 import type { GameSession } from '../session/gameSession';
+import type { PromptContextCache } from './promptContextCache';
 import {
   AIFallbackRegistry,
   defaultAIFallbackRegistry,
@@ -21,6 +22,7 @@ export interface AIOrchestratorOptions {
   timeoutMs?: number;
   telemetry?: AITelemetry;
   fallbackRegistry?: AIFallbackRegistry;
+  contextCache?: PromptContextCache;
 }
 
 const commandTypeForAction = (action: GameAction): GameCommand['type'] => {
@@ -66,6 +68,7 @@ export class AIOrchestrator {
   private readonly timeoutMs: number;
   private readonly aggregateTelemetry: AITelemetry;
   private readonly fallbackRegistry: AIFallbackRegistry;
+  private readonly contextCache?: PromptContextCache;
 
   constructor(
     private readonly provider: AIProvider,
@@ -75,6 +78,7 @@ export class AIOrchestrator {
     this.timeoutMs = options.timeoutMs ?? 5_000;
     this.aggregateTelemetry = options.telemetry ?? defaultAITelemetry;
     this.fallbackRegistry = options.fallbackRegistry ?? defaultAIFallbackRegistry;
+    this.contextCache = options.contextCache;
   }
 
   async act(
@@ -93,7 +97,9 @@ export class AIOrchestrator {
       retryCount: 0,
     });
 
-    const projection = await projectAIContext(session, context);
+    const projection = await projectAIContext(session, context, {
+      cache: this.contextCache,
+    });
     const allowedActions = [
       ...(context.allowedActions && context.allowedActions.length > 0
         ? context.allowedActions
@@ -251,7 +257,7 @@ export class AIOrchestrator {
       actorId: context.playerId,
       commandId: `ai:${callId}`,
       sentAt: this.now(),
-      expectedStageRevision: session.stageRevision,
+      expectedStageRevision: context.stageRevision,
     };
   }
 

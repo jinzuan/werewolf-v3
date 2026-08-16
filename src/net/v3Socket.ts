@@ -18,6 +18,7 @@ import type {
   ProtocolAckError,
   ResumeRoomAck,
   ReviewViewAck,
+  ReviewInsightsAck,
   RoomAIConfigAck,
   RoomAIConfigPatch,
   RoomAIConfigUpdateAck,
@@ -589,6 +590,23 @@ export const getV3Review = (
       meta: commandMeta(actorId, roomId),
       command: { type: 'review.get', payload: { roomCode } },
     } satisfies ClientCommand,
+  );
+
+export const clearV3ReviewInsights = (
+  actorId: string,
+  roomId: string,
+  expectedRoomRevision: number,
+  role?: import('../../shared/types').Role,
+): Promise<ClientAck<ReviewInsightsAck extends ProtocolAck<infer P> ? P : never>> =>
+  emitAck(
+    openRoomConnection(),
+    'v3:command',
+    roomMutationRequest(
+      actorId,
+      roomId,
+      expectedRoomRevision,
+      { type: 'review.insights.clear', payload: role ? { role } : {} },
+    ),
   );
 
 export const sendV3RoomCommand = (

@@ -5,11 +5,13 @@ import type {
   ReviewInsight,
   ReviewJobStatus,
   ReviewMessage,
+  ReviewGenerationMode,
 } from '../../shared/reviewContract';
 
 export interface CanonicalReviewArchive {
   gameId: string;
   roomId: string;
+  operationId: string;
   /** Canonical source; the event bytes live in the durable event segments. */
   streamId?: string;
   contentHash?: string;
@@ -26,6 +28,8 @@ export interface ReviewJobRecord {
   gameId: string;
   roomId: string;
   enabled: boolean;
+  generationMode: ReviewGenerationMode;
+  operationId: string;
   status: ReviewJobStatus;
   archive: CanonicalReviewArchive;
   messages: ReviewMessage[];
@@ -42,7 +46,8 @@ export interface ReviewRepository {
   get(gameId: string): Promise<ReviewJobRecord | undefined>;
   /** Atomic by gameId; retries return the original durable job. */
   createPending(
-    job: Omit<ReviewJobRecord, 'status' | 'messages' | 'insights' | 'attempts' | 'createdAt' | 'updatedAt'> &
+    job: Omit<ReviewJobRecord, 'status' | 'messages' | 'insights' | 'attempts' | 'createdAt' | 'updatedAt' | 'generationMode' | 'operationId'> &
+      Partial<Pick<ReviewJobRecord, 'generationMode' | 'operationId'>> &
       Partial<Pick<ReviewJobRecord, 'messages' | 'insights'>>,
   ): Promise<{ job: ReviewJobRecord; created: boolean }>;
   save(job: ReviewJobRecord): Promise<ReviewJobRecord>;
@@ -70,6 +75,8 @@ export class InMemoryReviewRepository implements ReviewRepository {
     const now = Date.now();
     const job: ReviewJobRecord = {
       ...clone(input),
+      generationMode: input.generationMode ?? 'rules',
+      operationId: input.operationId ?? `review:${input.gameId}:${input.generationMode ?? 'rules'}`,
       status: 'pending',
       messages: clone(input.messages ?? []),
       insights: clone(input.insights ?? []),
@@ -94,6 +101,8 @@ export const reviewViewFromJob = (job: ReviewJobRecord): PostGameReviewView => (
   roomId: job.roomId,
   status: job.status,
   enabled: job.enabled,
+  generationMode: job.generationMode ?? 'rules',
+  operationId: job.operationId ?? `review:${job.gameId}:${job.generationMode ?? 'rules'}`,
   ...(job.errorCode ? { errorCode: job.errorCode } : {}),
   timeline: [],
   messages: clone(job.messages),

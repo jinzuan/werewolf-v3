@@ -3,6 +3,11 @@ import type { GameAction, Role } from '../../shared/types';
 import type { GameSession } from '../session/gameSession';
 import { experienceLibrary } from './experienceLibrary';
 import type { AIContextProjection, AIRequestContext } from './types';
+import type { PromptContextCache } from './promptContextCache';
+
+export interface ProjectAIContextOptions {
+  cache?: PromptContextCache;
+}
 
 const BASE_RULE_KEYS = [
   'flow.night_stages',
@@ -103,10 +108,13 @@ export async function projectAIContext(
     AIRequestContext,
     'playerId' | 'role' | 'stageRevision' | 'allowedActions'
   >,
+  options: ProjectAIContextOptions = {},
 ): Promise<AIContextProjection> {
   const viewer = playerViewer(context);
   const snapshot = await session.snapshotFor(viewer);
-  const events = await session.eventsFor(viewer);
+  const events = options.cache
+    ? await options.cache.eventsFor(session, viewer)
+    : await session.eventsFor(viewer);
   const allowedActions: GameAction[] = [
     ...(context.allowedActions && context.allowedActions.length > 0
       ? context.allowedActions

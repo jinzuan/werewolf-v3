@@ -6,7 +6,9 @@ import type {
   ReviewInsight,
   ReviewMessage,
   ReviewTeam,
+  ReviewGenerationMode,
 } from '../../shared/reviewContract';
+import { isEvidenceBackedInsight } from '../../shared/experienceReview';
 import type { Role } from '../../shared/types';
 import { InMemoryInsightStore, type InsightStore, type ServerInsightRecord } from './insightStore';
 import { projectReview } from './reviewProjector';
@@ -22,12 +24,14 @@ export interface ReviewMessageDraft {
   team?: ReviewTeam;
   role?: Role;
   evidenceEventIds: string[];
+  operationId?: string;
 }
 
 export interface ReviewInsightDraft {
   role: Role;
   text: string;
   evidenceEventIds: string[];
+  operationId?: string;
 }
 
 export interface ReviewGeneration {
@@ -61,7 +65,7 @@ const refFor = (stored: StoredEvent): ReviewEvidenceRef => ({
 });
 
 /** Safe local fallback used when no external review provider is configured. */
-export class DeterministicReviewGenerator implements ReviewGenerator {
+export class RulesReviewGenerator implements ReviewGenerator {
   async generate(input: ReviewGeneratorInput): Promise<ReviewGeneration> {
     const publicEvents = input.events.filter(({ event }) => event.visibility === 'public_timeline');
     const ended = publicEvents.find(({ event }) => event.eventType === 'game.ended') ?? input.events.at(-1);
@@ -116,17 +120,24 @@ export class DeterministicReviewGenerator implements ReviewGenerator {
   }
 }
 
+/** Compatibility name for older in-process tests; production selects rules mode explicitly. */
+export class DeterministicReviewGenerator extends RulesReviewGenerator {}
+
 export interface ReviewPipelineOptions {
   now?: () => number;
   generator?: ReviewGenerator;
   insightStore?: InsightStore;
   runningTimeoutMs?: number;
+  defaultGenerationMode?: ReviewGenerationMode;
+  aiGenerator?: ReviewGenerator;
+  rulesGenerator?: ReviewGenerator;
 }
 
 export interface ReviewEnqueueInput {
   gameId: string;
   roomId: string;
   reviewEnabled: boolean;
+  generationMode?: ReviewGenerationMode;
 }
 
 export class ReviewPipeline {
@@ -134,20 +145,28 @@ export class ReviewPipeline {
   private readonly now: () => number;
   private readonly runningTimeoutMs: number;
   private readonly insightStore: InsightStore;
+  private readonly defaultGenerationMode: ReviewGenerationMode;
+  private readonly aiGenerator?: ReviewGenerator;
+  private readonly rulesGenerator: ReviewGenerator;
   private readonly active = new Map<string, Promise<ReviewJobRecord | undefined>>();
+  private closed = false;
 
   constructor(
     private readonly eventStore: EventStore,
     private readonly repository: ReviewRepository,
     private readonly options: ReviewPipelineOptions,
   ) {
-    this.generator = options.generator ?? new DeterministicReviewGenerator();
+    this.generator = options.generator ?? options.rulesGenerator ?? new RulesReviewGenerator();
+    this.rulesGenerator = options.rulesGenerator ?? this.generator;
+    this.aiGenerator = options.aiGenerator ?? (options.generator ? options.generator : undefined);
+    this.defaultGenerationMode = options.defaultGenerationMode ?? 'rules';
     this.now = options.now ?? Date.now;
     this.runningTimeoutMs = options.runningTimeoutMs ?? 60_000;
     this.insightStore = options.insightStore ?? new InMemoryInsightStore();
   }
 
   async enqueue(input: ReviewEnqueueInput): Promise<ReviewJobRecord> {
+    const generationMode = input.generationMode ?? this.defaultGenerationMode;
     const existing = await this.repository.get(input.gameId);
     if (existing) {
       if (existing.enabled !== input.reviewEnabled) {
@@ -155,6 +174,7 @@ export class ReviewPipeline {
         // duplicate callback must never change a previously committed job.
         return existing;
       }
+      if ((existing.generationMode ?? 'rules') !== generationMode) return existing;
       void this.process(input.gameId);
       return existing;
     }
@@ -163,13 +183,23 @@ export class ReviewPipeline {
       gameId: input.gameId,
       roomId: input.roomId,
       enabled: input.reviewEnabled,
+      generationMode,
+      operationId: `review:${input.gameId}:${generationMode}`,
       archive,
     });
     void this.process(input.gameId);
     return result.job;
   }
 
+  async close(): Promise<void> {
+    if (this.closed) return;
+    this.closed = true;
+    await Promise.allSettled(this.active.values());
+    this.active.clear();
+  }
+
   async process(gameId: string): Promise<ReviewJobRecord | undefined> {
+    if (this.closed) return this.repository.get(gameId);
     const current = this.active.get(gameId);
     if (current) return current;
     const run = this.processOnce(gameId).finally(() => this.active.delete(gameId));
@@ -208,6 +238,13 @@ export class ReviewPipeline {
     return job ? projectReview(job, viewer) : undefined;
   }
 
+  /** Only a player can clear the experience for that player's own role. */
+  async clearInsights(viewer: ViewerContext, role?: Role): Promise<void> {
+    if (viewer.kind !== 'player') throw new Error('REVIEW_INSIGHT_CLEAR_FORBIDDEN');
+    if (role && role !== viewer.role) throw new Error('REVIEW_INSIGHT_CLEAR_FORBIDDEN');
+    await this.insightStore.clear(viewer.role);
+  }
+
   private async processOnce(gameId: string): Promise<ReviewJobRecord | undefined> {
     let job = await this.repository.get(gameId);
     if (!job) return undefined;
@@ -223,7 +260,11 @@ export class ReviewPipeline {
       return this.repository.save({ ...job, status: 'disabled', runningSince: undefined });
     }
     try {
-      const generated = await this.generator.generate({
+      const generator = job.generationMode === 'ai'
+        ? this.aiGenerator
+        : this.rulesGenerator;
+      if (!generator) throw new Error('REVIEW_AI_GENERATOR_UNAVAILABLE');
+      const generated = await generator.generate({
         archive: clone(job.archive),
         events: clone(job.archive.events),
       });
@@ -294,6 +335,7 @@ export class ReviewPipeline {
     return {
       gameId,
       roomId,
+      operationId: `review-archive:${gameId}:${createHash('sha256').update(JSON.stringify(events)).digest('hex')}`,
       streamId: `game:${gameId}`,
       contentHash: createHash('sha256').update(JSON.stringify(events)).digest('hex'),
       startedAt: started?.event.occurredAt ?? events[0]?.event.occurredAt ?? this.now(),
@@ -319,6 +361,7 @@ export class ReviewPipeline {
     if (draft.audience === 'public' && refs.some((ref) => eventsById.get(ref.eventId)?.event.visibility !== 'public_timeline')) return undefined;
     return {
       id: `review-message:${index}:${refs[0].eventId}`,
+      operationId: draft.operationId ?? `review-message:${eventsById.get(refs[0].eventId)?.event.gameId ?? 'unknown'}:${index}`,
       text: messageText,
       audience: draft.audience,
       ...(draft.team ? { team: draft.team } : {}),
@@ -342,11 +385,12 @@ export class ReviewPipeline {
     // An event id alone is not a transferable lesson. Require a concrete
     // event anchor so generic advice and hallucinated conclusions do not enter
     // the cross-game prompt context.
-    if (!/(第\d+[晚天]|首夜|查验|投票|票型|狼刀|刀口|放逐|猎人开枪|守护|解药|毒杀|遗言|平安夜)/.test(insightText)) {
+    if (!isEvidenceBackedInsight(insightText)) {
       return undefined;
     }
     return {
       id: `review-insight:${job.gameId}:${draft.role}:${index}`,
+      operationId: draft.operationId ?? `review-insight:${job.operationId}:${draft.role}`,
       role: draft.role,
       text: insightText,
       evidence: refs,

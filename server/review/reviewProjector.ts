@@ -115,6 +115,8 @@ export const projectReview = (
     roomId: job.roomId,
     status: job.status,
     enabled: job.enabled,
+    generationMode: job.generationMode ?? 'rules',
+    operationId: job.operationId ?? `review:${job.gameId}:${job.generationMode ?? 'rules'}`,
     ...(job.errorCode ? { errorCode: job.errorCode } : {}),
     timeline,
     messages,

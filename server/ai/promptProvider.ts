@@ -1,6 +1,6 @@
 import type { AIPrompt } from './promptBuilder';
-import { buildAIPrompt } from './promptBuilder';
 import { parseAIOutput } from './outputParser';
+import { buildPromptPipeline } from './promptPipeline';
 import { RepeatPolicy } from './repeatPolicy';
 import type {
   AIProvider,
@@ -21,7 +21,6 @@ const correctionMessage = (message: string): string =>
   `上一条输出未通过服务端校验：${message}。只修正动作、格式或合法目标，不重新分析，不添加解释。`;
 
 export class PromptAIProvider implements AIProvider {
-  readonly requiresPromptContext = true;
   private readonly repeatPolicy: RepeatPolicy;
   private readonly maxCorrectionAttempts: number;
 
@@ -45,10 +44,7 @@ export class PromptAIProvider implements AIProvider {
         requiredNovelty:
           correction || context.promptContext?.requiredNovelty,
       };
-      const prompt = buildAIPrompt(
-        { ...context, promptContext },
-        correction || undefined,
-      );
+      const prompt = buildPromptPipeline({ ...context, promptContext }).prompt;
       const raw = await this.client.complete(prompt, {
         ...context,
         promptContext,

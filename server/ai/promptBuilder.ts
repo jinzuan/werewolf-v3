@@ -423,6 +423,9 @@ const formatRuntimeFacts = (
     `【你自己的近期发言】\n${listText(promptContext.ownPreviousSpeeches)}`,
     `【你上次发言后出现的新信息】\n${listText(promptContext.newInformationSinceLastTurn, '无新增信息')}`,
     `【当前视角局势摘要】\n${promptContext.situationSummary || '无'}`,
+    `【服务端 RuleSet】\n${promptContext.ruleset
+      ? `${promptContext.ruleset.id} ${promptContext.ruleset.version}: ${JSON.stringify(promptContext.ruleset.values)}`
+      : '未提供独立 RuleSet 投影；仍以本请求中的服务端规则为准。'}`,
     `【当前角色私有事实】\n${privateFacts}`,
     `【合法动作】\n${listText(promptContext.legalActions?.map((action) => ACTION_LABELS[action]), '无')}`,
     `【合法目标】\n${formatTargets(promptContext.legalTargets)}`,

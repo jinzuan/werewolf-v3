@@ -1,16 +1,9 @@
 import { createServer } from 'node:http';
-import path from 'node:path';
 import { Server } from 'socket.io';
-import { FileEventStore } from './events/fileStore';
-import { FileRoomRepository } from './rooms/fileRepository';
-import { RoomService } from './rooms/roomService';
 import { HttpAIProvider } from './ai/httpProvider';
 import type { HttpAIProviderOptions } from './ai/httpProvider';
 import { defaultAITelemetry } from './ai/aiTelemetry';
 import type { AIConfig } from '../shared/types';
-import { FileInsightStore } from './review/insightStore';
-import { FileReviewRepository } from './review/fileReviewRepository';
-import { ReviewPipeline } from './review/reviewPipeline';
 import { bindSocketTransport } from './transport/socketTransport';
 import { ensureSecureDirectory } from './filePersistence';
 import { resolveRuntimeConfig } from './runtimeConfig';
@@ -23,7 +16,7 @@ import {
   parseRuntimeSecurityConfig,
   SafeHttpClient,
 } from './security';
-import { FileLifecycleOutbox } from './rooms/lifecycleOutbox';
+import { createV3Application } from './app/createV3Application';
 
 const security = parseRuntimeSecurityConfig();
 const responseHeaders = (): Record<string, string> => security.environment === 'production'
@@ -70,11 +63,6 @@ io.use((socket, next) => {
   }
   next();
 });
-const eventStore = new FileEventStore(runtime.eventsFile, {
-  environment: runtime.environment,
-  deploymentNamespace: runtime.deploymentNamespace,
-  dataRoot: runtime.dataDir,
-});
 const credentialStore = security.secretStore === 'memory'
   ? new InMemoryCredentialStore()
   : security.secretKey
@@ -93,13 +81,6 @@ const credentialStore = security.secretStore === 'memory'
           console.warn('[server:security] memory SecretStore selected; AI credentials expire on restart');
           return new InMemoryCredentialStore();
         })();
-const reviewRepository = new FileReviewRepository(runtime.reviewsFile, {
-  dataRoot: runtime.dataDir,
-});
-const insightStore = new FileInsightStore(runtime.insightsFile, {
-  dataRoot: runtime.dataDir,
-});
-const reviewPipeline = new ReviewPipeline(eventStore, reviewRepository, { insightStore });
 const endpointPolicy = new EndpointPolicy({
   environment: security.environment,
   allowPrivateEndpoints: security.allowPrivateAIEndpoints,
@@ -108,40 +89,19 @@ const endpointPolicy = new EndpointPolicy({
 const safeHttpClient = new SafeHttpClient(endpointPolicy);
 const aiProviderFactory = (config: AIConfig, options: HttpAIProviderOptions) =>
   new HttpAIProvider(config, { ...options, safeHttpClient, telemetry: defaultAITelemetry });
-const lifecycleOutbox = new FileLifecycleOutbox(
-  path.join(runtime.outboxDir, 'room-lifecycle.json'),
-  {
-    environment: runtime.environment,
-    deploymentNamespace: runtime.deploymentNamespace,
-    dataRoot: runtime.dataDir,
-  },
-);
-const roomService = new RoomService(new FileRoomRepository(runtime.roomsFile, {
-  environment: runtime.environment,
-  deploymentNamespace: runtime.deploymentNamespace,
-  dataRoot: runtime.dataDir,
-}), eventStore, {
-  // Mixed rooms hand computer turns back to the room service after each
-  // human command. Quick computer rooms already opt into this path directly.
-  autoDrive: true,
-  environment: runtime.environment,
-  deploymentNamespace: runtime.deploymentNamespace,
-  waitingRoomTtlMs: runtime.waitingRoomTtlMs,
-  endedRoomTtlMs: runtime.endedRoomTtlMs,
-  roomSweepIntervalMs: runtime.roomSweepIntervalMs,
-  startupGraceMs: runtime.startupGraceMs,
+const application = createV3Application(runtime, {
   credentialStore,
-  lifecycleOutbox,
-  credentialNamespace: runtime.deploymentNamespace,
-  endpointPolicy,
   aiProviderFactory,
-  aiTelemetry: defaultAITelemetry,
-  reviewPipeline,
-  insightStore,
+  roomOptions: {
+    autoDrive: true,
+    credentialNamespace: runtime.deploymentNamespace,
+    endpointPolicy,
+    aiTelemetry: defaultAITelemetry,
+  },
 });
 
-await roomService.restore();
-bindSocketTransport(io, roomService, { security });
+await application.start();
+bindSocketTransport(io, application.rooms, { security });
 
 httpServer.listen(port, runtime.bindHost, () => {
   const scheme = security.environment === 'production' ? 'https' : 'http';
@@ -153,3 +113,11 @@ httpServer.listen(port, runtime.bindHost, () => {
     console.warn('[server:security] development/test HTTP exception is limited to loopback');
   }
 });
+
+const shutdown = async (): Promise<void> => {
+  await application.close();
+  await new Promise<void>((resolve) => io.close(() => resolve()));
+  await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+};
+process.once('SIGTERM', () => void shutdown().finally(() => process.exit(0)));
+process.once('SIGINT', () => void shutdown().finally(() => process.exit(0)));

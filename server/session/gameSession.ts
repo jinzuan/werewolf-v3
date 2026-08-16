@@ -3,6 +3,7 @@ import type {
   DomainEvent,
   DomainEventType,
   EventStore,
+  StoredEvent,
   ViewerContext,
 } from '../../shared/events';
 import { DOMAIN_EVENT_SCHEMA_VERSION } from '../../shared/events';
@@ -137,6 +138,8 @@ export class GameSession {
   private readonly onChanged?: SessionOptions['onChanged'];
   private timer: unknown;
   private timerRevision = -1;
+  private storedEventCache: StoredEvent[] = [];
+  private eventCacheLoaded = false;
   private state: SessionState;
 
   constructor(
@@ -178,6 +181,10 @@ export class GameSession {
 
   get stageRevision(): number {
     return this.state.gameState.stageRevision ?? 0;
+  }
+
+  get sequence(): number {
+    return this.state.sequence;
   }
 
   get deadlineTs(): number | null {
@@ -227,7 +234,7 @@ export class GameSession {
   }
 
   async eventsFor(viewer: ViewerContext, afterSequence = 0) {
-    const stored = await this.eventStore.read(this.streamId(), afterSequence);
+    const stored = (await this.storedEvents()).filter(({ event }) => event.sequence > afterSequence);
     return stored
       .map(({ event }) => this.projector.projectEvent(event, viewer))
       .filter((event): event is DomainEvent => event !== undefined);
@@ -240,8 +247,22 @@ export class GameSession {
   }
 
   async snapshotFor(viewer: ViewerContext) {
-    const events = await this.eventStore.read(this.streamId());
+    const events = await this.storedEvents();
     return this.projector.projectSnapshot(events, viewer);
+  }
+
+  private async storedEvents(): Promise<StoredEvent[]> {
+    if (!this.eventCacheLoaded) {
+      this.storedEventCache = await this.eventStore.read(this.streamId());
+      this.eventCacheLoaded = true;
+    } else {
+      const delta = await this.eventStore.read(
+        this.streamId(),
+        this.storedEventCache.at(-1)?.event.sequence ?? 0,
+      );
+      if (delta.length > 0) this.storedEventCache = [...this.storedEventCache, ...delta];
+    }
+    return structuredClone(this.storedEventCache);
   }
 
   private async handle(
@@ -341,20 +362,39 @@ export class GameSession {
     if (command.type === 'game.wolf_speak') {
       if (
         actor.role !== 'wolf' ||
-        this.state.night.stage !== 'wolf_discussion'
+        this.state.night.stage !== 'wolf_discussion' ||
+        this.state.gameState.wolfCurrentSpeaker !== actor.id
       ) {
         return null;
       }
-      return [
+      const events = [
         this.event(
           'wolf.message',
-          { actorId: actor.id, content: command.payload.content.slice(0, 300) },
+          {
+            actorId: actor.id,
+            round: this.state.gameState.wolfDiscussionRound,
+            content: command.payload.content.slice(0, 300),
+          },
           'wolf_private',
           undefined,
           correlationId,
           actor.id,
         ),
       ];
+      const order = this.state.gameState.wolfSpeakerOrder.filter((id) =>
+        this.state.players.some((player) => player.id === id && player.isAlive && player.role === 'wolf'),
+      );
+      const index = order.indexOf(actor.id);
+      const next = index >= 0 ? order[index + 1] : undefined;
+      if (next) {
+        this.state.gameState.wolfCurrentSpeaker = next;
+      } else {
+        // One bounded discussion pass per night.  The next committed action
+        // is a wolf vote; a provider cannot keep a wolf-speak loop alive.
+        this.state.gameState.wolfCurrentSpeaker = null;
+        this.state.night = startWolfVote(this.state.night);
+      }
+      return events;
     }
     if (command.type === 'game.night_action') {
       return this.applyNightAction(actor, command.payload, correlationId);
@@ -979,6 +1019,8 @@ export class GameSession {
     this.state.gameState.actionDone = {};
     this.state.gameState.wolfVotes = {};
     this.state.gameState.wolfDiscussionRound = 1;
+    this.state.gameState.wolfSpeakerOrder = [];
+    this.state.gameState.wolfCurrentSpeaker = null;
     this.state.gameState.wolfVoteComplete = false;
     this.state.gameState.guardianActionComplete = false;
     this.state.gameState.witchActionComplete = false;
@@ -997,6 +1039,13 @@ export class GameSession {
       this.state.witchInventory.poison > 0;
     if (this.state.gameState.phase === 'night') {
       this.state.gameState.nightStage = this.state.night.stage;
+      if (this.state.night.stage === 'wolf_discussion') {
+        const wolves = this.alivePlayers('wolf').map((player) => player.id);
+        this.state.gameState.wolfSpeakerOrder = wolves;
+        if (!this.state.gameState.wolfCurrentSpeaker || !wolves.includes(this.state.gameState.wolfCurrentSpeaker)) {
+          this.state.gameState.wolfCurrentSpeaker = wolves[0] ?? null;
+        }
+      }
     }
     const allowed = this.allowedActors();
     this.state.gameState.allowedActors = allowed;
@@ -1026,10 +1075,12 @@ export class GameSession {
               : []),
           ];
         case 'wolf_discussion':
-          return alive('wolf').map((player) => ({
-            playerId: player.id,
-            actions: ['wolf_speak', 'wolf_vote'],
-          }));
+          return alive('wolf')
+            .filter((player) => player.id === this.state.gameState.wolfCurrentSpeaker)
+            .map((player) => ({
+              playerId: player.id,
+              actions: ['wolf_speak', 'wolf_vote'],
+            }));
         case 'wolf_vote':
           return alive('wolf')
             .filter(

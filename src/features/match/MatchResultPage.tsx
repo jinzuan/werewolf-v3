@@ -35,6 +35,7 @@ export function MatchResultPage() {
   const events = useV3Store((state) => state.events);
   const review = useV3Store((state) => state.review);
   const refreshReview = useV3Store((state) => state.refreshReview);
+  const clearReviewInsights = useV3Store((state) => state.clearReviewInsights);
 
   useEffect(() => {
     if (room?.status !== 'ended') return undefined;
@@ -178,7 +179,7 @@ export function MatchResultPage() {
 
       <Card>
         <div className="v3-panel-heading">
-          <div><span>服务端复盘管线</span><h2>AI 复盘与心得</h2></div>
+          <div><span>服务端复盘管线</span><h2>{review?.generationMode === 'ai' ? 'AI 复盘与心得' : '规则复盘与心得'}</h2></div>
           <Badge tone={review?.status === 'completed' ? 'success' : review?.status === 'failed' ? 'danger' : 'info'}>
             {review?.status === 'completed'
               ? '已完成'
@@ -207,6 +208,9 @@ export function MatchResultPage() {
               <p className="v3-inline-note">当前视角没有可展示的复盘结论。</p>
             )}
           </div>
+        )}
+        {snapshot.viewer.kind === 'player' && review?.status === 'completed' && review.insights.length > 0 && (
+          <Button variant="quiet" onClick={() => void clearReviewInsights()}>清除我的角色心得</Button>
         )}
       </Card>
 

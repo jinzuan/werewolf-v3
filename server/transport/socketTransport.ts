@@ -406,6 +406,17 @@ export function bindSocketTransport(
             return;
           }
 
+          if (command.type === 'review.insights.list') {
+            ack?.({ ok: true, insights: await rooms.reviewInsights(identity) });
+            return;
+          }
+
+          if (command.type === 'review.insights.clear') {
+            await rooms.clearReviewInsights(identity, command.payload.role);
+            ack?.({ ok: true, insights: await rooms.reviewInsights(identity) });
+            return;
+          }
+
           if (isGameCommand(command)) {
             if (!('gameId' in meta) || !('expectedStageRevision' in meta)) {
               throw new RoomServiceError({ code: 'INVALID_GAME_META', messageKey: 'room.error.invalid_game_meta' });

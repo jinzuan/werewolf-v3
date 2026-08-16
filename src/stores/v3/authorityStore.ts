@@ -25,6 +25,7 @@ import {
   getV3Room,
   getV3CommandReceipt,
   getV3Review,
+  clearV3ReviewInsights,
   joinV3Room,
   listV3Rooms,
   resetV3Connection,
@@ -211,6 +212,7 @@ export interface V3Store {
   resumeSession: () => Promise<boolean>;
   refreshSnapshot: () => Promise<boolean>;
   refreshReview: () => Promise<boolean>;
+  clearReviewInsights: () => Promise<boolean>;
   loadAIConfig: () => Promise<boolean>;
   updateAIConfig: (patch: RoomAIConfigPatch) => Promise<boolean>;
   clearAIConfig: () => Promise<boolean>;
@@ -643,6 +645,22 @@ export const useV3Store = create<V3Store>()((set, get) => {
     return true;
   };
 
+  const clearReviewInsights = async (): Promise<boolean> => {
+    const current = get();
+    if (!current.session) return false;
+    const response = await clearV3ReviewInsights(
+      current.session.actorId,
+      current.session.roomId,
+      current.room?.roomRevision ?? 1,
+    );
+    if (response.ok === false) {
+      set({ error: responseMessage(response) });
+      return false;
+    }
+    await refreshReview();
+    return true;
+  };
+
   const runRoomMutation = async (
     command: RoomMutationCommand,
   ): Promise<boolean> => {
@@ -926,6 +944,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
 
     refreshSnapshot: async () => recoverGameProjection(),
     refreshReview,
+    clearReviewInsights,
 
     loadAIConfig: async () => {
       const current = get();

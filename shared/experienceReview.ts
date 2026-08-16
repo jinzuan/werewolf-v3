@@ -116,6 +116,12 @@ const hasVerifiableEventReference = (
   return evidence.tags.some((tag) => tag.length > 0 && insight.includes(tag));
 };
 
+/** Shared evidence gate for server and browser review consumers. */
+export const isEvidenceBackedInsight = (
+  insight: string,
+  evidenceTags: string[] = [],
+): boolean => hasVerifiableEventReference(insight, { tags: evidenceTags });
+
 /**
  * Runtime review data predates the event-reference gate and is intentionally
  * stored as plain strings.  Normalize that old shape on read and remove only

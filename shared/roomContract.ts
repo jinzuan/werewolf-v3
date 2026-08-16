@@ -274,7 +274,8 @@ export type RoomReadCommand =
   | { type: 'room.get'; payload: { roomCode: string } }
   | { type: 'room.ai_config.get'; payload: EmptyRoomCommandPayload }
   | { type: 'room.command_receipt'; payload: { commandId: string } }
-  | { type: 'review.get'; payload: { roomCode: string } };
+  | { type: 'review.get'; payload: { roomCode: string } }
+  | { type: 'review.insights.list'; payload: EmptyRoomCommandPayload };
 
 export type RoomMutationCommand =
   | {
@@ -294,7 +295,8 @@ export type RoomMutationCommand =
       type: 'room.transfer_host';
       payload: { targetMemberId: string };
     }
-  | { type: 'room.dissolve'; payload: { confirm: boolean } };
+  | { type: 'room.dissolve'; payload: { confirm: boolean } }
+  | { type: 'review.insights.clear'; payload: { role?: Role } };
 
 export type RoomCommand = RoomReadCommand | RoomMutationCommand;
 

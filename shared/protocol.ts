@@ -378,6 +378,15 @@ export type GameCommandAck = ProtocolAck<{ events: DomainEvent[] }>;
 export type RoomListAck = ProtocolAck<{ rooms: RoomSummary[] }>;
 export type SnapshotAck = ProtocolAck<{ snapshot: ProjectedSnapshot }>;
 export type ReviewViewAck = ProtocolAck<{ review: PostGameReviewView }>;
+export interface ReviewInsightSummary {
+  id: string;
+  role: Role;
+  text: string;
+  evidenceEventIds: string[];
+  gameId: string;
+  createdAt: number;
+}
+export type ReviewInsightsAck = ProtocolAck<{ insights: ReviewInsightSummary[] }>;
 export type RoomAIConfigAck = ProtocolAck<{
   summary: RoomAIConfigSummary | null;
 }>;

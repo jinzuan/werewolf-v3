@@ -13,6 +13,7 @@ export type ReviewJobStatus = (typeof REVIEW_JOB_STATUSES)[number];
 
 export type ReviewAudience = 'public' | 'team' | 'role';
 export type ReviewTeam = 'wolf' | 'good';
+export type ReviewGenerationMode = 'ai' | 'rules';
 
 /** A safe reference to an authoritative event. It is not the event itself. */
 export interface ReviewEvidenceRef {
@@ -23,6 +24,7 @@ export interface ReviewEvidenceRef {
 
 export interface ReviewMessage {
   id: string;
+  operationId: string;
   text: string;
   audience: ReviewAudience;
   team?: ReviewTeam;
@@ -32,6 +34,7 @@ export interface ReviewMessage {
 
 export interface ReviewInsight {
   id: string;
+  operationId: string;
   role: Role;
   text: string;
   evidence: ReviewEvidenceRef[];
@@ -52,6 +55,8 @@ export interface PostGameReviewView {
   roomId: string;
   status: ReviewJobStatus;
   enabled: boolean;
+  generationMode: ReviewGenerationMode;
+  operationId: string;
   errorCode?: string;
   timeline: ReviewTimelineEntry[];
   messages: ReviewMessage[];

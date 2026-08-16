@@ -1,7 +1,7 @@
 /**
- * qc-run.mjs — QC 试跑封装（NEXT_VERSION_PLAN_v2.md D 项）
- * v3.0 阶段 0b：test-drive.ts 改为 headless 直接驱动真实 engine（server/engine.ts），
- * 用 tsx 直跑（不再 tsc 编译 CJS——test-drive 依赖整个 server 栈）。
+ * qc-run.mjs — QC 试跑封装。
+ * test-drive.ts 使用正式 V3 composition root 的 headless application，
+ * 用 tsx 直跑，确保 QC 与生产/主测试共享同一服务装配路径。
  */
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
