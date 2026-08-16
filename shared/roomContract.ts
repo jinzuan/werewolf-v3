@@ -41,6 +41,29 @@ export type RoomAIProviderMode = 'real_ai' | 'rules-degraded' | 'test-determinis
 export const AI_PROVIDER_VALUES = ['siliconflow', 'deepseek', 'local', 'custom'] as const;
 export const AI_BEHAVIOR_VALUES = ['aggressive', 'conservative', 'random'] as const;
 
+/** V3 room-editor defaults. Secrets are intentionally absent. */
+export const ROOM_AI_DEFAULTS = {
+  defaultBehavior: 'random' as RoomAIBehavior,
+  siliconflow: {
+    model: 'deepseek-ai/DeepSeek-V4-Flash',
+    endpoint: 'https://api.siliconflow.cn/v1/chat/completions',
+    temperature: 0.9,
+    maxTokens: 512,
+  },
+  deepseek: {
+    model: 'deepseek-chat',
+    endpoint: 'https://api.deepseek.com/v1/chat/completions',
+    temperature: 0.9,
+    maxTokens: 512,
+  },
+  local: {
+    model: 'qwen/qwen3.6-35b-a3b',
+    endpoint: 'http://127.0.0.1:1234/v1/chat/completions',
+    temperature: 0.9,
+    maxTokens: 512,
+  },
+} as const;
+
 export interface RoomAIProviderConfig {
   provider: RoomAIProvider;
   model: string;

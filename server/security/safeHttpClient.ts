@@ -204,15 +204,6 @@ export class SafeHttpClient {
     }
     return new Promise((resolve, reject) => {
       let settled = false;
-      const fail = (error: unknown) => {
-        if (settled) return;
-        settled = true;
-        request.destroy();
-        reject(error);
-      };
-      const signal = options.signal;
-      const onAbort = () => fail(abortError());
-      signal?.addEventListener('abort', onAbort, { once: true });
       const request = httpRequest({
         hostname: endpoint.hostname,
         port: endpoint.port,
@@ -251,6 +242,15 @@ export class SafeHttpClient {
           }));
         });
       });
+      const fail = (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        request.destroy();
+        reject(error);
+      };
+      const signal = options.signal;
+      const onAbort = () => fail(abortError());
+      signal?.addEventListener('abort', onAbort, { once: true });
       request.once('error', fail);
       request.once('close', () => signal?.removeEventListener('abort', onAbort));
       if (requestBody) request.write(requestBody);

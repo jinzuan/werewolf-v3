@@ -2,7 +2,7 @@ export * from './deterministicProvider';
 export * from './contextProjector';
 export * from './experienceLibrary';
 export * from './httpProvider';
-export * from './legacyAIProvider';
+export * from './config';
 export * from './orchestrator';
 export * from './outputParser';
 export * from './promptBuilder';

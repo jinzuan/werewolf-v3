@@ -12,7 +12,6 @@ const SERVER_URL_KEY = 'wolf-server-url';
 const clientEnv: Record<string, unknown> = (import.meta as ImportMeta & {
   env?: Record<string, unknown>;
 }).env ?? {};
-
 const buildMode = String(clientEnv.MODE ?? 'development');
 const explicitEnvironment = clientEnv.VITE_WW_ENV;
 const configuredServerUrl = clientEnv.VITE_V3_SERVER_URL;
@@ -120,3 +119,10 @@ export function setServerUrl(url: string): void {
     /* Storage is a diagnostic cache, never the connection authority. */
   }
 }
+
+// Compatibility names retained for callers from the cleanup branch. They use
+// the same production-safe policy as the V3 names above.
+export const ServerEndpointError = SocketConfigurationError;
+export const validateServerEndpoint = validateSocketUrl;
+export const getServerEndpoint = getServerUrl;
+export const setServerEndpoint = setServerUrl;

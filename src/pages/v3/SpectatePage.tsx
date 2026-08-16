@@ -19,8 +19,8 @@ import {
   stageProgress,
   type ServerClockSample,
 } from '../../v3/serverClock';
-import { formatCountdown } from '../../utils/countdown';
 import { MAX_EVENT_WINDOW } from '../../v3/eventStream';
+import { formatCountdown } from '../../v3/countdown';
 
 export function SpectatePage() {
   const connected = useV3Store((state) => state.connected);

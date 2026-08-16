@@ -33,11 +33,6 @@ export default defineConfig({
   },
   plugins: [
     react({
-      babel: {
-        plugins: [
-          'react-dev-locator',
-        ],
-      },
     }),
     tsconfigPaths()
   ],

@@ -48,6 +48,7 @@ const STABLE_CODES = new Set<ProtocolErrorCode>([
   'ACTOR_NOT_FOUND',
   'ACTOR_DEAD',
   'INVALID_COMMAND',
+  'UNSUPPORTED_PROTOCOL_VERSION',
   'INVALID_GAME_META',
   'IDENTITY_ALREADY_BOUND',
   'IDENTITY_ALREADY_EXISTS',
@@ -362,18 +363,23 @@ export function bindSocketTransport(
               createRequestId?: unknown;
               options?: unknown;
             };
-            const optionsPayload =
-              payload.options && typeof payload.options === 'object'
-                ? payload.options
-                : command.payload;
-            const createRequestId =
-              typeof payload.createRequestId === 'string' && payload.createRequestId.trim()
-                ? payload.createRequestId
-                : meta.commandId;
+            if (
+              typeof payload.createRequestId !== 'string' ||
+              !payload.createRequestId.trim() ||
+              !payload.options ||
+              typeof payload.options !== 'object' ||
+              Array.isArray(payload.options) ||
+              typeof (payload.options as { catalogVersion?: unknown }).catalogVersion !== 'string'
+            ) {
+              throw new RoomServiceError({
+                code: 'UNSUPPORTED_PROTOCOL_VERSION',
+                messageKey: 'room.error.unsupported_protocol_version',
+              });
+            }
             const access = await rooms.create({
               actorId: meta.actorId,
-              createRequestId,
-              options: optionsPayload as Parameters<RoomService['create']>[0]['options'],
+              createRequestId: payload.createRequestId,
+              options: payload.options as Parameters<RoomService['create']>[0]['options'],
             });
             await bind(access, meta.actorId);
             if (dropCreateAck) {

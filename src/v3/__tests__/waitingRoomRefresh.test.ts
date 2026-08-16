@@ -72,8 +72,8 @@ test('waiting room summary probes recover member joins and disconnects', async (
   const serverUrl = `http://127.0.0.1:${address.port}`;
   globalThis.localStorage.setItem('wolf-server-url', serverUrl);
 
-  const { setServerUrl } = await import('../../net/socket');
-  setServerUrl(serverUrl);
+  const { setServerEndpoint } = await import('../../net/serverEndpoint');
+  setServerEndpoint(serverUrl);
   const { useV3Store } = await import('../../stores/v3Store');
   let guest: Socket | null = null;
 

@@ -146,7 +146,7 @@ export class SessionCoordinator {
           ? state.dayFlow.voteRound
           : state.gameState.phase === 'night'
             ? state.gameState.wolfDiscussionRound
-            : state.gameState.dayPhase?.discussionRounds || 1,
+            : state.dayFlow.voteRound,
       players,
       visibleEvents: events,
       allowedActions: [task.actionClass as GameAction],

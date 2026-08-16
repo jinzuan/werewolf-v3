@@ -32,7 +32,7 @@ import type {
   SpectatorCommand,
   V3Command,
 } from '../../shared/protocol';
-import { getServerUrl } from './serverEndpoint';
+import { getServerEndpoint } from './serverEndpoint';
 
 /**
  * The V3 socket adapter is deliberately the only place that knows socket.io
@@ -197,7 +197,7 @@ const attachRoomListeners = (active: Socket): void => {
 
 const openPublicConnection = (): Socket => {
   if (publicSocket) return publicSocket;
-  publicSocket = io(getServerUrl(), {
+  publicSocket = io(getServerEndpoint(), {
     auth: {},
     transports: ['websocket', 'polling'],
     reconnection: true,
@@ -235,7 +235,7 @@ const openRoomConnection = (auth?: SocketAuth, forceFresh = false): Socket => {
   }
   roomAuthKey = nextKey;
   currentAuth = { ...nextAuth };
-  roomSocket = io(getServerUrl(), {
+  roomSocket = io(getServerEndpoint(), {
     auth: nextAuth,
     transports: ['websocket', 'polling'],
     reconnection: true,
@@ -263,6 +263,17 @@ export const resetRoomTransport = (): void => {
   roomSocket = null;
   roomAuthKey = '';
   currentAuth = {};
+  notifyConnection();
+};
+
+/** Dispose every V3 socket and listener owned by the browser runtime. */
+export const resetV3Transport = (): void => {
+  resetRoomTransport();
+  if (publicSocket) {
+    publicSocket.removeAllListeners();
+    publicSocket.disconnect();
+  }
+  publicSocket = null;
   notifyConnection();
 };
 

@@ -3,8 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { AI_DEFAULTS } from '../../shared/config/aiDefaults';
-import type { AIConfig } from '../../shared/types';
+import { SERVER_AI_DEFAULTS, type ServerAIConfig } from '../ai/config';
 import { dispatch, createPlayers } from './fixtures';
 import { projectAIContext } from '../ai/contextProjector';
 import { loadExperienceLibrary } from '../ai/experienceLibrary';
@@ -14,8 +13,8 @@ import type { AIRequestContext } from '../ai/types';
 import { InMemoryEventStore } from '../events/store';
 import { GameSession } from '../session/gameSession';
 
-const providerConfig = (): AIConfig => {
-  const config = structuredClone(AI_DEFAULTS);
+const providerConfig = (): ServerAIConfig => {
+  const config = structuredClone(SERVER_AI_DEFAULTS);
   config.apiType = 'local';
   config.local = {
     ...config.local,

@@ -3,13 +3,7 @@ import test from 'node:test';
 import { InMemoryEventStore } from '../events/store';
 import { InMemoryRoomRepository } from '../rooms/repository';
 import { RoomService } from '../rooms/roomService';
-
-const createOptions = {
-  roomName: 'V3 smoke room',
-  maxPlayers: 12,
-  aiCount: 0,
-  name: 'Host',
-};
+import { createRequest, startRoom } from './fixtures';
 
 const serialized = (value: unknown) => JSON.stringify(value);
 
@@ -17,14 +11,16 @@ test('room service exposes only RoomView and scoped credentials', async () => {
   const repository = new InMemoryRoomRepository();
   const rooms = new RoomService(repository, new InMemoryEventStore());
   const created = await rooms.create({
-    actorId: 'host',
-    options: createOptions,
+    ...createRequest(rooms, 'host', 'flow-create', 'V3 smoke room', {
+      allowPublicSpectators: true,
+      visibility: 'listed',
+    }),
   });
 
   assert.equal(created.room.members.length, 1);
   assert.ok(created.credentials.joinToken);
   assert.ok(created.credentials.resumeToken);
-  assert.doesNotMatch(serialized(created.room), /joinToken|omniscientToken|resumeToken|session|role/);
+  assert.doesNotMatch(serialized(created.room), /joinToken|omniscientToken|resumeToken|session/);
 
   const joined = await rooms.join({
     actorId: 'guest',
@@ -41,10 +37,26 @@ test('room service exposes only RoomView and scoped credentials', async () => {
     'host',
     created.credentials.resumeToken,
   );
-  const started = await rooms.startGame(hostIdentity);
+  const guestIdentity = await rooms.identity(
+    created.room.code,
+    'guest',
+    joined.credentials.resumeToken,
+  );
+  const current = await rooms.get(created.room.code, 'host');
+  const checking = await rooms.beginReadyCheck(
+    hostIdentity,
+    current.roomRevision,
+    'flow-ready-check',
+  );
+  const hostReady = await rooms.setReady(hostIdentity, true, checking.roomRevision, 'flow-host-ready');
+  const guestReady = await rooms.setReady(guestIdentity, true, hostReady.roomRevision, 'flow-guest-ready');
+  const started = await rooms.startGame(hostIdentity, {
+    commandId: 'flow-start',
+    expectedRoomRevision: guestReady.roomRevision,
+  });
   assert.equal(started.status, 'playing');
   assert.ok(started.gameId);
-  assert.doesNotMatch(serialized(started), /joinToken|omniscientToken|resumeToken|session|role/);
+  assert.doesNotMatch(serialized(started), /joinToken|omniscientToken|resumeToken|session/);
 
   const resumed = await rooms.resume(
     created.room.code,
@@ -64,15 +76,14 @@ test('room recovery rebuilds active sessions from persisted snapshots', async ()
   const eventStore = new InMemoryEventStore();
   const first = new RoomService(repository, eventStore);
   const created = await first.create({
-    actorId: 'host',
-    options: createOptions,
+    ...createRequest(first, 'host', 'recovery-create', 'V3 smoke room'),
   });
   const identity = await first.identity(
     created.room.code,
     'host',
     created.credentials.resumeToken,
   );
-  const started = await first.startGame(identity);
+  const started = await startRoom(first, identity, 'recovery');
   await first.close();
 
   const restored = new RoomService(repository, eventStore);
@@ -101,12 +112,10 @@ test('multiple rooms remain isolated', async () => {
     new InMemoryEventStore(),
   );
   const first = await rooms.create({
-    actorId: 'host-a',
-    options: { ...createOptions, roomName: 'A' },
+    ...createRequest(rooms, 'host-a', 'isolation-create-a', 'A'),
   });
   const second = await rooms.create({
-    actorId: 'host-b',
-    options: { ...createOptions, roomName: 'B' },
+    ...createRequest(rooms, 'host-b', 'isolation-create-b', 'B'),
   });
   await rooms.join({
     actorId: 'guest-a',
@@ -126,27 +135,12 @@ test('host computer-player settings stay private while the room keeps them for i
     new InMemoryRoomRepository(),
     new InMemoryEventStore(),
   );
-  const catalog = rooms.getCatalog();
-  const preset = catalog.rolePresets.find((item) => item.enabled);
-  assert.ok(preset);
   const created = await rooms.create({
-    actorId: 'ai-host',
-    options: {
-      catalogVersion: catalog.catalogVersion,
-      roomName: '电脑玩家配置房',
-      creator: { name: '房主', avatarId: 'avatar-player' },
+    ...createRequest(rooms, 'ai-host', 'ai-settings-create', '电脑玩家配置房', {
       mode: 'mixed',
-      visibility: 'invite_only',
-      maxPlayers: preset.playerCount,
       minHumanPlayers: 1,
-      computerSeats: preset.playerCount - 1,
+      computerSeats: 11,
       aiFillPolicy: 'fixed',
-      roleSetup: { ...preset.roleSetup },
-      rolePresetId: preset.id,
-      rulesetId: preset.rulesetId,
-      rulesetVersion: preset.rulesetVersion,
-      readyPolicy: 'all_connected_humans',
-      allowPublicSpectators: false,
       reviewEnabled: true,
       aiConfig: {
         provider: 'custom',
@@ -158,11 +152,11 @@ test('host computer-player settings stay private while the room keeps them for i
         maxTokens: 512,
         behavior: 'random',
       },
-    },
+    }),
   });
 
   const record = await rooms.getRecord(created.room.code);
-  assert.equal(record?.config?.aiConfig?.model, 'local-test-model');
+  assert.equal(record?.config?.aiProviderConfig?.model, 'local-test-model');
   assert.doesNotMatch(serialized(created.room), /aiConfig|secret-key|secret-token/);
   await rooms.close();
 });

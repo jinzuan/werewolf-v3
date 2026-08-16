@@ -157,17 +157,6 @@ const gameState = (
   lastWordsPlayer: null,
   hunterShootTarget: null,
   witchAntidoteUsed: false,
-  dayPhase: {
-    phase: 'round1',
-    queue: [],
-    interjectQueue: [],
-    usedCount: {},
-    discussionRounds: 0,
-    allSkipped: true,
-    interjectedThisRound: [],
-    sorterId: null,
-  },
-  lastSorterId: null,
   stageStartedAt: null,
   ...overrides,
 });

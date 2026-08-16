@@ -60,6 +60,7 @@ test('RoomService persists only tuning/ref, restores with the same key, and dele
   const preset = catalog.rolePresets.find((item) => item.enabled)!;
   const created = await first.create({
     actorId: 'host',
+    createRequestId: 'secret-room-create',
     options: {
       catalogVersion: catalog.catalogVersion,
       roomName: 'secret room', creator: { name: 'host', avatarId: 'avatar-player' },

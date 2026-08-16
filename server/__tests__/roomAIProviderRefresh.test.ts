@@ -18,6 +18,7 @@ test('AI provider cache is invalidated after a waiting-room AI patch', async () 
   const preset = catalog.rolePresets.find((item) => item.enabled)!;
   const created = await rooms.create({
     actorId: 'host',
+    createRequestId: 'provider-refresh-create',
     options: {
       catalogVersion: catalog.catalogVersion,
       roomName: 'provider refresh',

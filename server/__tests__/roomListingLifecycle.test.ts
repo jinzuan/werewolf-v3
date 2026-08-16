@@ -46,22 +46,27 @@ test('public listing filters namespace, visibility, lifecycle and TTL', async ()
 
   const listed = await rooms.create({
     actorId: 'listed-host',
+    createRequestId: 'listing-listed',
     options: optionsFor(rooms, 'listed'),
   });
   const inviteOnly = await rooms.create({
     actorId: 'private-host',
+    createRequestId: 'listing-private',
     options: optionsFor(rooms, 'private', { visibility: 'invite_only' }),
   });
   const starting = await rooms.create({
     actorId: 'starting-host',
+    createRequestId: 'listing-starting',
     options: optionsFor(rooms, 'starting'),
   });
   const playing = await rooms.create({
     actorId: 'playing-host',
+    createRequestId: 'listing-playing',
     options: optionsFor(rooms, 'playing', { allowPublicSpectators: true }),
   });
   const expired = await rooms.create({
     actorId: 'expired-host',
+    createRequestId: 'listing-expired',
     options: optionsFor(rooms, 'expired'),
   });
 
@@ -131,10 +136,12 @@ test('online waiting and playing rooms are never swept by waiting TTL', async ()
   });
   const online = await rooms.create({
     actorId: 'online-host',
+    createRequestId: 'ttl-online',
     options: optionsFor(rooms, 'online'),
   });
   const playing = await rooms.create({
     actorId: 'playing-host',
+    createRequestId: 'ttl-playing',
     options: optionsFor(rooms, 'playing', { allowPublicSpectators: true }),
   });
   await repository.mutate(playing.room.code, (room) => {

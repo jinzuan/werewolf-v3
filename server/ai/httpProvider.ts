@@ -1,6 +1,6 @@
 import type { GameCommand } from '../../shared/protocol';
-import type { AIConfig, GameAction } from '../../shared/types';
-import { AI_TIMEOUT_MS } from '../../shared/config/aiDefaults';
+import type { GameAction } from '../../shared/types';
+import { AI_TIMEOUT_MS, type ServerAIConfig } from './config';
 import { loadAIConfig } from '../config';
 import { EndpointPolicy } from '../security/endpointPolicy';
 import { SafeHttpClient, type SafeHttpTransport } from '../security/safeHttpClient';
@@ -56,7 +56,7 @@ interface ResponseEnvelope {
   data?: unknown;
 }
 
-const endpointFor = (config: AIConfig): string => {
+const endpointFor = (config: ServerAIConfig): string => {
   if (config.apiType === 'siliconflow') {
     return 'https://api.siliconflow.cn/v1/chat/completions';
   }
@@ -66,7 +66,7 @@ const endpointFor = (config: AIConfig): string => {
   return config.local.apiUrl;
 };
 
-const settingsFor = (config: AIConfig, endpointOverride?: string): ProviderSettings => {
+const settingsFor = (config: ServerAIConfig, endpointOverride?: string): ProviderSettings => {
   const endpoint = endpointOverride ?? endpointFor(config);
   const selected =
     config.apiType === 'siliconflow'
@@ -259,7 +259,7 @@ export class HttpAIProvider implements AIProvider {
   private readonly promptBudget: { maxChars?: number; maxEvents?: number };
 
   constructor(
-    config: AIConfig = loadAIConfig(),
+    config: ServerAIConfig = loadAIConfig(),
     options: HttpAIProviderOptions = {},
   ) {
     this.settings = settingsFor(config, options.endpoint);

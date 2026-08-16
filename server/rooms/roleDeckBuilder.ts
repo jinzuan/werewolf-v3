@@ -121,7 +121,7 @@ export const secureShuffle = <T>(
 /**
  * Build and securely shuffle the only executable deck for a room start.
  * FINDINGS P0 #3 / protocol-state-machine review: the starter must consume
- * persisted roleSetup and must never fall back to the legacy fixed ROLE_DECK.
+ * persisted roleSetup and must never fall back to a fixed role list.
  */
 export const buildRoleDeck = (
   roleSetup: RoleSetup,
