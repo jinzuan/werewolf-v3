@@ -81,7 +81,7 @@ const defaultEndpoint = (): string => {
   const pageOrigin = typeof window === 'undefined' ? '' : window.location.origin;
   if (pageProtocol === 'https:' && pageOrigin) return pageOrigin;
   const hostname = typeof window === 'undefined' ? 'localhost' : window.location.hostname || 'localhost';
-  return `http://${isLoopback(hostname) ? hostname : '127.0.0.1'}:3001`;
+  return `http://${hostname}:3001`;
 };
 
 const configuredEndpoint = (): string | null =>
