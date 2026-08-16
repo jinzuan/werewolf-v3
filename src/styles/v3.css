@@ -1550,11 +1550,13 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
     height: 100%;
     border: 0;
     background: var(--ww-overlay);
+    visibility: hidden;
     opacity: 0;
     pointer-events: none;
   }
 
   .v3-side-nav__backdrop.is-visible {
+    visibility: visible;
     opacity: 1;
     pointer-events: auto;
   }
