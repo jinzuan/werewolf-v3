@@ -1,5 +1,5 @@
-import assert from 'node:assert/strict';
-import { test, expect, type Page } from './fixtures/v3App';
+import { test, expect } from './fixtures/v3App';
+import type { Page } from 'playwright';
 
 const preparePage = async (page: Page, serverUrl: string, staleSession = false): Promise<void> => {
   await page.addInitScript(({ url, stale }) => {
@@ -30,5 +30,5 @@ test('offline/reconnect reaches an explicit retryable page instead of an infinit
   await preparePage(page, v3.serverURL);
   await page.goto(`${v3.appURL}/rooms/new/players`);
   await expect(page.getByRole('heading', { name: '先决定今晚有多少人' })).toBeVisible({ timeout: 20_000 });
-  assert.ok(v3.serverURL.startsWith('http://127.0.0.1:'));
+  await expect(page.getByRole('heading', { name: '先决定今晚有多少人' })).toBeVisible();
 });

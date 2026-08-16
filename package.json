@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "engines": {
-    "node": ">=18.19.0"
+    "node": ">=22.0.0 <23.0.0"
   },
   "scripts": {
     "dev": "vite",
@@ -14,6 +14,8 @@
     "test:server": "tsx --import ./test/setup.mjs --test --test-concurrency=1 server/__tests__/*.test.ts",
     "test:integration": "tsx --import ./test/setup.mjs --test --test-concurrency=1 server/__tests__/connectionLease.test.ts server/__tests__/createIdempotency.test.ts server/__tests__/dataIsolation.integration.test.ts server/__tests__/dissolveBroadcast.test.ts server/__tests__/startingRecovery.test.ts",
     "test:e2e": "VITE_WW_ENV=test npm run build -- --mode test && playwright test",
+    "ruleset:check": "node scripts/ruleset-check.mjs",
+    "ruleset:generate": "node scripts/ruleset-check.mjs",
     "test:core:typecheck": "tsc --noEmit -p tsconfig.core-test.json",
     "build": "tsc -b && vite build",
     "check-bundle-budget": "node scripts/check-bundle-budget.mjs",
@@ -33,7 +35,7 @@
     "qc:real": "tsx test-drive.ts",
     "qc:check": "python qc.py",
     "verify:v3-visibility": "tsx scripts/verify-v3-visibility.ts",
-    "test:all": "npm test && npm run test:integration && npm run test:e2e && npm run test:core:typecheck && npm run server:typecheck && npm run typecheck && npm run lint && npm run build"
+    "test:all": "npm run ruleset:check && node scripts/check-font-coverage.mjs && npm test && npm run test:integration && npm run test:e2e && npm run test:core:typecheck && npm run server:typecheck && npm run typecheck && npm run lint -- --max-warnings=0 && npm run build && node scripts/check-bundle-budget.mjs && node scripts/check-no-focused-tests.mjs && node scripts/release-gate.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

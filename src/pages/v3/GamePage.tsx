@@ -88,7 +88,7 @@ export function GamePage() {
     if (snapshot) {
       clockRef.current = sampleServerClock(snapshot);
     }
-  }, [snapshot?.serverTime]);
+  }, [snapshot, snapshot?.serverTime]);
   useEffect(() => {
     if (typeof state?.deadlineTs !== 'number') return;
     const timer = window.setInterval(() => setNow(Date.now()), 250);
@@ -136,7 +136,7 @@ export function GamePage() {
       selectedTarget: null,
       message: '',
     });
-  }, [draftScopeKey]);
+  }, [allowedActions, draftScopeKey]);
 
   const definition = activeAction
     ? ACTION_DEFINITIONS[activeAction]

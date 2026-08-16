@@ -32,7 +32,7 @@ export function SpectatePage() {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     if (snapshot) clockRef.current = sampleServerClock(snapshot);
-  }, [snapshot?.serverTime]);
+  }, [snapshot, snapshot?.serverTime]);
   useEffect(() => {
     if (typeof snapshot?.gameState.deadlineTs !== 'number') return;
     const timer = window.setInterval(() => setNow(Date.now()), 250);

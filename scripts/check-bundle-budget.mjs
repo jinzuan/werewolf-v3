@@ -75,15 +75,22 @@ const largestChunk = jsChunks.reduce(
   (largest, file) => rawBytes(file) > largest.bytes ? { file, bytes: rawBytes(file) } : largest,
   { file: '(none)', bytes: 0 },
 );
+const allAssetBytes = jsChunks
+  .concat(existsSync(assetsDir)
+    ? readdirSync(assetsDir).filter((file) => file.endsWith('.css')).map((file) => `assets/${file}`)
+    : [])
+  .reduce((total, file) => total + rawBytes(file), 0);
 
 const kib = (bytes) => `${(bytes / 1024).toFixed(2)} KiB`;
 console.log(`[bundle-budget] initial JS gzip: ${kib(initialJsGzip)} / 110 KiB`);
 console.log(`[bundle-budget] lobby JS+CSS gzip: ${kib(lobbyGzip)} / 135 KiB`);
 console.log(`[bundle-budget] largest JS chunk: ${largestChunk.file} ${kib(largestChunk.bytes)} / 150 KiB raw`);
+console.log(`[bundle-budget] all JS+CSS raw: ${kib(allAssetBytes)} / 4096 KiB`);
 
 if (initialJsGzip > 110 * 1024) fail('initial HTML JavaScript gzip budget exceeded');
 if (lobbyGzip > 135 * 1024) fail('lobby route JavaScript + CSS gzip budget exceeded');
 if (largestChunk.bytes > 150 * 1024) fail('single JavaScript chunk raw budget exceeded');
+if (allAssetBytes > 4 * 1024 * 1024) fail('all JavaScript and CSS assets raw budget exceeded');
 
 if (process.exitCode) process.exit();
 console.log('[bundle-budget] all budgets pass');
