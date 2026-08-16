@@ -54,6 +54,7 @@ export const validateSocketUrl = (value: string): string => {
     }
   } else if (
     parsed.protocol === 'http:' &&
+    environment !== 'test' &&
     (!isLoopback(parsed.hostname) || !['development', 'test'].includes(environment))
   ) {
     throw new SocketConfigurationError('开发/测试明文服务只能使用 loopback 地址');

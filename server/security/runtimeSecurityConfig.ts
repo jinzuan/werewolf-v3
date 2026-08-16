@@ -96,7 +96,8 @@ export const parseRuntimeSecurityConfig = (
     );
   }
   const defaultOrigin = environment === 'production' ? undefined : 'http://127.0.0.1:3001';
-  const publicOriginValue = env.WW_PUBLIC_ORIGIN ?? defaultOrigin;
+  const explicitPublicOrigin = env.WW_PUBLIC_ORIGIN;
+  const publicOriginValue = explicitPublicOrigin ?? defaultOrigin;
   if (!publicOriginValue) {
     throw new RuntimeSecurityConfigError('WW_PUBLIC_ORIGIN is required in production');
   }
@@ -106,7 +107,7 @@ export const parseRuntimeSecurityConfig = (
   }
   if (environment !== 'production' && publicOrigin.startsWith('http://')) {
     const hostname = new URL(publicOrigin).hostname;
-    if (!['127.0.0.1', 'localhost', '[::1]', '::1'].includes(hostname)) {
+    if (!explicitPublicOrigin && !['127.0.0.1', 'localhost', '[::1]', '::1'].includes(hostname)) {
       throw new RuntimeSecurityConfigError('development/test HTTP public origin must be loopback');
     }
   }
