@@ -20,6 +20,23 @@ export interface V3Session {
   lastSeenSeq: number;
 }
 
+/** Fields whose change must be durable before the next browser turn. */
+export const sessionIdentityChanged = (
+  previous: V3Session | null,
+  next: V3Session | null,
+): boolean => {
+  if (!previous || !next) return previous !== next;
+  return previous.actorId !== next.actorId ||
+    previous.actorName !== next.actorName ||
+    previous.roomCode !== next.roomCode ||
+    previous.roomId !== next.roomId ||
+    previous.mode !== next.mode ||
+    previous.gameId !== next.gameId ||
+    previous.credentials.resumeToken !== next.credentials.resumeToken ||
+    previous.credentials.joinToken !== next.credentials.joinToken ||
+    previous.credentials.omniscientToken !== next.credentials.omniscientToken;
+};
+
 export interface V3AuthorityState {
   room: RoomView | null;
   session: V3Session | null;

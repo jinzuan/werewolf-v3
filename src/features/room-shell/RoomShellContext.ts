@@ -1,5 +1,14 @@
 import { createContext, useContext } from 'react';
+import type { RoomScene } from './scene';
 
-export const RoomShellContext = createContext(false);
+export interface RoomShellContextValue {
+  inRoom: boolean;
+  scene: RoomScene;
+}
 
-export const useRoomShell = (): boolean => useContext(RoomShellContext);
+export const RoomShellContext = createContext<RoomShellContextValue>({
+  inRoom: false,
+  scene: 'lobby',
+});
+
+export const useRoomShell = (): RoomShellContextValue => useContext(RoomShellContext);

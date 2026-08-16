@@ -15,6 +15,7 @@ import type {
   RoomAccess,
   RoomAIConfigPatch,
   RoomAIConfigSummary,
+  AllowedRoomAction,
 } from '../../../shared/protocol';
 import type { PostGameReviewView } from '../../../shared/reviewContract';
 import {
@@ -60,9 +61,10 @@ import {
   readV3Session,
   roomViewMatchesSession,
   snapshotMatchesSession,
-  writeV3Session,
+  sessionIdentityChanged,
   type V3Session,
 } from '../../v3/session';
+import { getSessionPersistence } from '../../runtime/sessionPersistence';
 
 const storage = (): Storage | null =>
   typeof localStorage === 'undefined' ? null : localStorage;
@@ -72,14 +74,14 @@ const loadSession = (): V3Session | null => {
   return target ? readV3Session(target) : null;
 };
 
-const persistSession = (session: V3Session | null): void => {
-  const target = storage();
-  if (!target) return;
-  try {
-    writeV3Session(target, session);
-  } catch {
-    // Storage is a cache for recovery credentials, never the authority.
-  }
+const sessionPersistence = getSessionPersistence();
+
+const persistSessionIdentity = (session: V3Session | null): void => {
+  sessionPersistence.persistIdentity(session);
+};
+
+const scheduleSessionCursor = (session: V3Session): void => {
+  sessionPersistence.scheduleCursor(session);
 };
 
 const newActorId = (): string => crypto.randomUUID();
@@ -131,6 +133,22 @@ const isRoomStatusWithGame = (status: RoomView['status']): boolean =>
 
 const roomActions = (room: RoomView): string[] => {
   return room.viewer.allowedRoomActions;
+};
+
+const roomActionForCommand = (
+  command: RoomMutationCommand,
+): AllowedRoomAction | undefined => {
+  switch (command.type) {
+    case 'room.update_config': return 'update_config';
+    case 'room.update_ai_config': return 'update_ai_config';
+    case 'room.begin_ready_check': return 'begin_ready_check';
+    case 'room.cancel_ready_check': return 'cancel_ready_check';
+    case 'room.ready': return 'set_ready';
+    case 'room.start_game': return 'start_game';
+    case 'room.leave': return 'leave';
+    case 'room.transfer_host': return 'transfer_host';
+    case 'room.dissolve': return 'dissolve';
+  }
 };
 
 const buildDefaultOptions = (
@@ -218,6 +236,10 @@ export interface V3Store {
   cancelReadyCheck: () => Promise<boolean>;
   setReady: (ready: boolean) => Promise<boolean>;
   startGame: () => Promise<boolean>;
+  updateRoomConfig: (config: RoomView['config']) => Promise<boolean>;
+  transferHost: (targetMemberId: string) => Promise<boolean>;
+  leaveRoomMutation: () => Promise<boolean>;
+  dissolveRoom: () => Promise<boolean>;
   mutateRoom: (command: RoomMutationCommand) => Promise<boolean>;
   reconcileCommand: (commandId: string) => Promise<CommandOutcome | null>;
   dispatch: (command: GameCommand) => Promise<boolean>;
@@ -248,7 +270,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
   const clearAuthority = (reason: string | null = null): void => {
     resetV3Connection();
     bufferedGameMessages = [];
-    persistSession(null);
+    persistSessionIdentity(null);
     set({
       ...createEmptyAuthorityState(),
       connected: get().connected,
@@ -306,7 +328,15 @@ export const useV3Store = create<V3Store>()((set, get) => {
       : null;
 
     if (gameChanged) bufferedGameMessages = [];
-    persistSession(nextSession);
+    if (sessionIdentityChanged(previousSession, nextSession)) {
+      persistSessionIdentity(nextSession);
+    } else if (
+      nextSession &&
+      previousSession &&
+      nextSession.lastSeenSeq !== previousSession.lastSeenSeq
+    ) {
+      scheduleSessionCursor(nextSession);
+    }
     set({
       room,
       session: nextSession,
@@ -327,7 +357,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
     const session = createV3Session(room, credentials, actorName);
     adoptV3Identity(session.credentials.resumeToken);
     bufferedGameMessages = [];
-    persistSession(session);
+    persistSessionIdentity(session);
     set({
       room,
       session,
@@ -385,7 +415,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
       result.gameId,
       result.lastSeenSeq,
     );
-    persistSession(nextSession);
+    scheduleSessionCursor(nextSession);
     set({ session: nextSession, events: result.events, error: null });
     return true;
   };
@@ -413,7 +443,11 @@ export const useV3Store = create<V3Store>()((set, get) => {
         ? session.lastSeenSeq
         : Math.max(session.lastSeenSeq, incoming.lastSequence),
     );
-    persistSession(nextSession);
+    if (sessionIdentityChanged(session, nextSession)) {
+      persistSessionIdentity(nextSession);
+    } else {
+      scheduleSessionCursor(nextSession);
+    }
     set({
       session: nextSession,
       snapshot: incoming,
@@ -512,7 +546,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
           }
         : createV3Session(response.room, credentials, before.actorName);
       adoptV3Identity(nextSession.credentials.resumeToken);
-      persistSession(nextSession);
+      persistSessionIdentity(nextSession);
       set({
         room: response.room,
         session: nextSession,
@@ -648,15 +682,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
   ): Promise<boolean> => {
     const current = get();
     if (!current.session || !current.room) return false;
-    const action = command.type === 'room.ready'
-      ? 'set_ready'
-      : command.type === 'room.start_game'
-        ? 'start_game'
-        : command.type === 'room.begin_ready_check'
-          ? 'begin_ready_check'
-          : command.type === 'room.cancel_ready_check'
-            ? 'cancel_ready_check'
-            : undefined;
+    const action = roomActionForCommand(command);
     if (action && !roomActions(current.room).includes(action)) return false;
     const commandId = crypto.randomUUID();
     commandRequests.set(commandId, {
@@ -1004,6 +1030,36 @@ export const useV3Store = create<V3Store>()((set, get) => {
         type: 'room.start_game',
         payload: {},
       });
+    },
+
+    updateRoomConfig: (config) =>
+      runRoomMutation({
+        type: 'room.update_config',
+        payload: { config },
+      }),
+
+    transferHost: (targetMemberId) =>
+      runRoomMutation({
+        type: 'room.transfer_host',
+        payload: { targetMemberId },
+      }),
+
+    leaveRoomMutation: async () => {
+      const success = await runRoomMutation({
+        type: 'room.leave',
+        payload: {},
+      });
+      if (success) clearAuthority();
+      return success;
+    },
+
+    dissolveRoom: async () => {
+      const success = await runRoomMutation({
+        type: 'room.dissolve',
+        payload: { confirm: true },
+      });
+      if (success) clearAuthority();
+      return success;
     },
 
     mutateRoom: runRoomMutation,
