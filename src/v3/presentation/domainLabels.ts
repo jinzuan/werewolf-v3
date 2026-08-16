@@ -89,6 +89,7 @@ export const READY_STATUS_LABELS = {
 } satisfies Record<ReadyStatus, string>;
 
 export const GAME_ACTION_LABELS = {
+  confirm_role: '确认身份',
   guard: '守护',
   check: '查验',
   wolf_speak: '狼人讨论',
@@ -126,6 +127,7 @@ export const VISIBILITY_LABELS = EVENT_VISIBILITY_LABELS;
 export type GamePhase =
   | 'waiting'
   | 'roleSelect'
+  | 'role_confirm'
   | 'night'
   | 'day'
   | 'vote'
@@ -137,6 +139,7 @@ export type GamePhase =
 export const GAME_PHASE_LABELS = {
   waiting: '等待开局',
   roleSelect: '身份确认',
+  role_confirm: '身份确认',
   night: '夜间',
   day: '发言',
   vote: '投票',

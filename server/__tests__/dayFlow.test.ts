@@ -5,6 +5,7 @@ import { InMemoryEventStore } from '../events/store';
 import { GameSession } from '../session/gameSession';
 import type { SessionSnapshot } from '../session/types';
 import { createPlayers, dispatch } from './fixtures';
+import { FakeClock } from './fakeClock';
 
 const createDaySession = async (
   configure: (snapshot: SessionSnapshot, players: Player[]) => void,
@@ -26,20 +27,29 @@ const createDaySession = async (
     voteRound: 1,
     voteCandidates: [],
     votes: {},
+    voteReasons: {},
     speechQueue: [],
+    speechDirection: null,
+    speechStartPlayerId: null,
     lastWordsPlayerId: null,
     lastWordsRemaining: 0,
     pendingHunterId: null,
+    pendingExile: null,
   };
   configure(snapshot, players);
   const store = new InMemoryEventStore();
-  const session = new GameSession('room-1', players, store, snapshot);
+  const clock = new FakeClock();
+  const session = new GameSession('room-1', players, store, snapshot, {
+    now: clock.now,
+    scheduler: clock,
+    stageDurationMs: 100,
+  });
   await session.initialize();
-  return { session, players };
+  return { session, players, clock };
 };
 
 test('day vote ties once, revotes without abstention, then advances with no exile', async () => {
-  const { session, players } = await createDaySession(() => undefined);
+  const { session, players, clock } = await createDaySession(() => undefined);
   const alive = players.filter((player) => player.isAlive);
   const first = alive[0];
   const second = alive[1];
@@ -77,6 +87,8 @@ test('day vote ties once, revotes without abstention, then advances with no exil
       payload: { targetId: index % 2 === 0 ? first.id : second.id },
     });
   }
+  await clock.advance(100);
+  await clock.advance(100);
   const state = session.serialize().state;
   assert.equal(state.gameState.phase, 'night');
   assert.equal(state.gameState.day, 2);
@@ -84,7 +96,7 @@ test('day vote ties once, revotes without abstention, then advances with no exil
 });
 
 test('exiled hunter gets two last words rounds and one validated shot', async () => {
-  const { session, players } = await createDaySession(() => undefined);
+  const { session, players, clock } = await createDaySession(() => undefined);
   const hunter = players.find((player) => player.role === 'hunter')!;
   const wolf = players.find((player) => player.role === 'wolf')!;
   for (const voter of players.filter((player) => player.id !== hunter.id)) {
@@ -97,6 +109,7 @@ test('exiled hunter gets two last words rounds and one validated shot', async ()
     type: 'game.vote',
     payload: { targetId: wolf.id },
   });
+  await clock.advance(100);
   assert.equal(session.serialize().state.dayFlow.stage, 'last_words');
   assert.equal(session.serialize().state.dayFlow.lastWordsRemaining, 2);
 
@@ -112,6 +125,7 @@ test('exiled hunter gets two last words rounds and one validated shot', async ()
     type: 'game.hunter_shoot',
     payload: { targetId: wolf.id },
   });
+  await clock.advance(100);
   assert.equal(shot.ok, true);
   assert.equal(
     session.players.find((player) => player.id === wolf.id)?.isAlive,
@@ -133,6 +147,7 @@ test('exiled hunter gets two last words rounds and one validated shot', async ()
     type: 'game.vote',
     payload: { targetId: skippedWolf.id },
   });
+  await skippedCase.clock.advance(100);
   await dispatch(skippedCase.session, skippedHunter.id, {
     type: 'game.skip_speech',
     payload: { reason: '不想补充' },
@@ -150,7 +165,7 @@ test('exiled hunter gets two last words rounds and one validated shot', async ()
 });
 
 test('atomic exile victory ends the game before the next night', async () => {
-  const { session } = await createDaySession((snapshot, allPlayers) => {
+  const { session, clock } = await createDaySession((snapshot, allPlayers) => {
     const wolf = allPlayers.find((player) => player.role === 'wolf')!;
     for (const player of snapshot.state.players) {
       if (player.role === 'wolf' && player.id !== wolf.id) player.isAlive = false;
@@ -171,6 +186,7 @@ test('atomic exile victory ends the game before the next night', async () => {
       },
     });
   }
+  await clock.advance(100);
   for (let round = 0; round < 2; round += 1) {
     const lastWords = await dispatch(session, wolf.id, {
       type: 'game.skip_speech',
@@ -185,12 +201,13 @@ test('atomic exile victory ends the game before the next night', async () => {
       true,
     );
   }
+  await clock.advance(100);
   assert.equal(session.serialize().state.gameState.phase, 'ended');
   assert.equal(session.serialize().state.gameState.winner, 'good');
 });
 
 test('last words skip requires a reason and records a reasoned skip', async () => {
-  const { session, players } = await createDaySession(() => undefined);
+  const { session, players, clock } = await createDaySession(() => undefined);
   const exiled = players.find((player) => player.role === 'villager')!;
   for (const voter of players.filter((player) => player.id !== exiled.id)) {
     await dispatch(session, voter.id, {
@@ -202,6 +219,7 @@ test('last words skip requires a reason and records a reasoned skip', async () =
     type: 'game.vote',
     payload: { targetId: players.find((player) => player.id !== exiled.id)!.id },
   });
+  await clock.advance(100);
   assert.equal(session.serialize().state.dayFlow.stage, 'last_words');
 
   const missingReason = await dispatch(session, exiled.id, {
@@ -225,7 +243,7 @@ test('last words skip requires a reason and records a reasoned skip', async () =
 });
 
 test('normal last words speech remains a public event', async () => {
-  const { session, players } = await createDaySession(() => undefined);
+  const { session, players, clock } = await createDaySession(() => undefined);
   const exiled = players.find((player) => player.role === 'villager')!;
   for (const voter of players.filter((player) => player.id !== exiled.id)) {
     await dispatch(session, voter.id, {
@@ -237,6 +255,7 @@ test('normal last words speech remains a public event', async () => {
     type: 'game.vote',
     payload: { targetId: players.find((player) => player.id !== exiled.id)!.id },
   });
+  await clock.advance(100);
   const spoken = await dispatch(session, exiled.id, {
     type: 'game.speak',
     payload: { content: '我的判断基于第一天的票型。' },

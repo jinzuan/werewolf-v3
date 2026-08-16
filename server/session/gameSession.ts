@@ -63,14 +63,33 @@ import type {
 
 const DEFAULT_STAGE_DURATION_MS = 30_000;
 
-const defaultScheduler: SessionScheduler = {
+const TEXT_LIMITS = {
+  wolfMessage: 300,
+  speech: 100,
+  discussion: 150,
+  lastWords: 80,
+  voteReason: 40,
+} as const;
+
+const graphemeLength = (value: string): number => {
+  const Segmenter = (Intl as unknown as {
+    Segmenter?: new (locales?: string | string[], options?: { granularity: 'grapheme' }) => {
+      segment(input: string): Iterable<unknown>;
+    };
+  }).Segmenter;
+  return Segmenter
+    ? [...new Segmenter(undefined, { granularity: 'grapheme' }).segment(value)].length
+    : [...value].length;
+};
+
+const createDefaultScheduler = (keepTimersRefed = false): SessionScheduler => ({
   set: (delayMs, callback) => {
     const handle = setTimeout(callback, delayMs);
-    handle.unref();
+    if (!keepTimersRefed) handle.unref();
     return handle;
   },
   clear: (handle) => clearTimeout(handle as NodeJS.Timeout),
-};
+});
 
 const toCorePlayers = (players: readonly Player[]): CorePlayer[] =>
   players
@@ -86,16 +105,20 @@ const emptyDayFlow = (): DayFlowState => ({
   voteRound: 1,
   voteCandidates: [],
   votes: {},
+  voteReasons: {},
   speechQueue: [],
+  speechDirection: null,
+  speechStartPlayerId: null,
   lastWordsPlayerId: null,
   lastWordsRemaining: 0,
   pendingHunterId: null,
+  pendingExile: null,
 });
 
 const createGameState = (roomId: string): AuthorityGameState => ({
   roomId,
-  phase: 'night',
-  nightStage: 'guard_seer',
+  phase: 'role_confirm',
+  nightStage: null,
   stageRevision: 1,
   allowedActors: [],
   allowedActions: [],
@@ -151,7 +174,9 @@ export class GameSession {
       typeof options === 'function' ? { now: options } : options;
     this.now = resolvedOptions.now ?? Date.now;
     this.rng = resolvedOptions.rng ?? Math.random;
-    this.scheduler = resolvedOptions.scheduler ?? defaultScheduler;
+    this.scheduler = resolvedOptions.scheduler ?? createDefaultScheduler(
+      resolvedOptions.keepTimersRefed,
+    );
     this.stageDurationMs =
       resolvedOptions.stageDurationMs ?? DEFAULT_STAGE_DURATION_MS;
     this.onChanged = resolvedOptions.onChanged;
@@ -163,6 +188,9 @@ export class GameSession {
         gameState: createGameState(roomId),
         night: createNightState(),
         dayFlow: emptyDayFlow(),
+        roleConfirmations: Object.fromEntries(
+          players.map((player) => [player.id, false]),
+        ),
         witchInventory: { antidote: 1, poison: 1 },
         processedCommands: {},
         sequence: 0,
@@ -206,7 +234,14 @@ export class GameSession {
         await this.append([
           this.event(
             'game.started',
-            { day: 1, stage: 'guard_seer' },
+            {
+              day: 1,
+              stage: this.state.gameState.phase === 'role_confirm'
+                ? 'role_confirm'
+                : this.state.gameState.phase === 'night'
+                  ? this.state.night.stage
+                  : this.state.dayFlow.stage,
+            },
             'public_timeline',
             undefined,
             'system:game-start',
@@ -339,6 +374,9 @@ export class GameSession {
       return this.reject('REASON_REQUIRED');
     }
 
+    const contentError = this.validateTextCommand(command);
+    if (contentError) return this.reject(contentError);
+
     const actor = this.state.players.find((player) => player.id === meta.actorId);
     if (!actor) return this.reject('ACTOR_NOT_FOUND');
     if (!actor.isAlive && !this.deadActorMayAct(actor, command)) {
@@ -358,7 +396,8 @@ export class GameSession {
       this.advanceRevision();
     }
     this.syncAuthorityFields(false);
-    if (beforeRevision !== this.stageRevision) this.setDeadline();
+    const revisionChanged = beforeRevision !== this.stageRevision;
+    if (revisionChanged) this.setDeadline();
     const committed = [
       ...events,
       this.stateEvent(meta.commandId, meta.actorId, meta.commandId),
@@ -403,6 +442,9 @@ export class GameSession {
     command: GameCommand,
     correlationId: string,
   ): DomainEvent[] | null {
+    if (this.state.gameState.phase === 'role_confirm') {
+      return this.applyRoleConfirmation(actor, command, correlationId);
+    }
     if (this.state.gameState.phase === 'night') {
       return this.applyNightCommand(actor, command, correlationId);
     }
@@ -410,12 +452,76 @@ export class GameSession {
       return this.applySpeech(actor, command, correlationId);
     }
     if (command.type === 'game.vote') {
-      return this.applyDayVote(actor, command.payload.targetId, correlationId);
+      return this.applyDayVote(
+        actor,
+        command.payload.targetId,
+        command.payload.reason,
+        correlationId,
+      );
     }
     if (command.type === 'game.hunter_shoot') {
       return this.applyHunterShot(actor, command.payload.targetId, correlationId);
     }
     return null;
+  }
+
+  private validateTextCommand(command: GameCommand): CommandResult['code'] | null {
+    let value: string | undefined;
+    let limit: number | undefined;
+    if (command.type === 'game.wolf_speak') {
+      value = command.payload.content;
+      limit = TEXT_LIMITS.wolfMessage;
+    } else if (command.type === 'game.speak') {
+      value = command.payload.content;
+      limit = this.state.dayFlow.stage === 'discussion'
+        ? TEXT_LIMITS.discussion
+        : this.state.dayFlow.stage === 'last_words'
+          ? TEXT_LIMITS.lastWords
+          : TEXT_LIMITS.speech;
+    } else if (command.type === 'game.skip_speech' && command.payload.reason) {
+      value = command.payload.reason;
+      limit = TEXT_LIMITS.lastWords;
+    } else if (command.type === 'game.vote' && command.payload.reason) {
+      value = command.payload.reason;
+      limit = TEXT_LIMITS.voteReason;
+    }
+    return value !== undefined && limit !== undefined && graphemeLength(value) > limit
+      ? 'CONTENT_TOO_LONG'
+      : null;
+  }
+
+  private applyRoleConfirmation(
+    actor: Player,
+    command: GameCommand,
+    correlationId: string,
+  ): DomainEvent[] | null {
+    if (command.type !== 'game.confirm_role' || this.state.roleConfirmations[actor.id]) {
+      return null;
+    }
+    this.state.roleConfirmations[actor.id] = true;
+    const events: DomainEvent[] = [
+      this.event(
+        'role.confirmed',
+        { confirmed: true },
+        'role_private',
+        [actor.id],
+        correlationId,
+        actor.id,
+      ),
+    ];
+    if (this.state.players.every((player) => this.state.roleConfirmations[player.id] === true)) {
+      this.beginFirstNight();
+      events.push(
+        this.event(
+          'role.confirmation_completed',
+          { day: this.state.gameState.day },
+          'public_timeline',
+          undefined,
+          correlationId,
+        ),
+      );
+    }
+    return events;
   }
 
   private applyNightCommand(
@@ -437,7 +543,7 @@ export class GameSession {
           {
             actorId: actor.id,
             round: this.state.gameState.wolfDiscussionRound,
-            content: command.payload.content.slice(0, 300),
+            content: command.payload.content,
           },
           'wolf_private',
           undefined,
@@ -756,7 +862,12 @@ export class GameSession {
       ...events,
       this.event(
         'day.started',
-        { day: this.state.gameState.day },
+        {
+          day: this.state.gameState.day,
+          stage: 'dawn',
+          startPlayerId: this.state.dayFlow.speechStartPlayerId,
+          direction: this.state.dayFlow.speechDirection,
+        },
         'public_timeline',
         undefined,
         correlationId,
@@ -774,8 +885,9 @@ export class GameSession {
   ): DomainEvent[] | null {
     const flow = this.state.dayFlow;
     const isLastWords = flow.stage === 'last_words';
+    const isDiscussion = flow.stage === 'discussion';
     if (
-      (flow.stage !== 'speech' && !isLastWords) ||
+      (flow.stage !== 'speech' && !isDiscussion && !isLastWords) ||
       this.state.gameState.currentSpeaker !== actor.id
     ) {
       return null;
@@ -788,14 +900,15 @@ export class GameSession {
         command.type === 'game.speak'
           ? {
               actorId: actor.id,
-              content: command.payload.content.slice(0, 300),
+              content: command.payload.content,
               lastWords: isLastWords,
+              ...(isDiscussion ? { discussion: true } : {}),
             }
           : {
               actorId: actor.id,
               lastWords: isLastWords,
               ...(isLastWords && command.payload.reason?.trim()
-                ? { reason: command.payload.reason.trim().slice(0, 80) }
+                ? { reason: command.payload.reason.trim() }
                 : {}),
             },
         'public_timeline',
@@ -817,12 +930,23 @@ export class GameSession {
     if (flow.speechQueue.length > 0) {
       this.state.gameState.currentSpeaker = flow.speechQueue[0];
       this.advanceRevision();
-    } else {
+    } else if (isDiscussion) {
       this.beginVoting(1, []);
       events.push(
         this.event(
           'day.voting_started',
           { round: 1 },
+          'public_timeline',
+          undefined,
+          correlationId,
+        ),
+      );
+    } else {
+      this.beginDiscussion();
+      events.push(
+        this.event(
+          'day.discussion_started',
+          { day: this.state.gameState.day },
           'public_timeline',
           undefined,
           correlationId,
@@ -835,6 +959,7 @@ export class GameSession {
   private applyDayVote(
     actor: Player,
     targetId: string | null,
+    reason: string | undefined,
     correlationId: string,
   ): DomainEvent[] | null {
     const flow = this.state.dayFlow;
@@ -854,14 +979,14 @@ export class GameSession {
       return null;
     }
     flow.votes[actor.id] = targetId;
-    this.state.gameState.votes[actor.id] = targetId ?? '';
+    flow.voteReasons[actor.id] = reason?.trim() || null;
     if (eligibility.voterIds.some((id) => flow.votes[id] === undefined)) {
       return [
         this.event(
           'day.vote_cast',
-          { actorId: actor.id },
-          'public_timeline',
-          undefined,
+          { accepted: true },
+          'role_private',
+          [actor.id],
           correlationId,
           actor.id,
         ),
@@ -873,7 +998,11 @@ export class GameSession {
   private resolveDayVote(correlationId: string): DomainEvent[] {
     const flow = this.state.dayFlow;
     const ballots: VoteBallot[] = Object.entries(flow.votes).map(
-      ([voterId, targetId]) => ({ voterId, targetId }),
+      ([voterId, targetId]) => ({
+        voterId,
+        targetId,
+        reason: flow.voteReasons[voterId] ?? null,
+      }),
     );
     const result = resolveExileVote(
       toCorePlayers(this.state.players),
@@ -889,6 +1018,7 @@ export class GameSession {
           {
             candidates: result.candidates,
             eligibleVoterIds: result.eligibleVoterIds,
+            voteHistory: ballots,
           },
           'public_timeline',
           undefined,
@@ -896,41 +1026,22 @@ export class GameSession {
         ),
       ];
     }
-    if (result.status === 'no_exile') {
-      const events = [
-        this.event(
-          'day.no_exile',
-          { day: this.state.gameState.day, round: result.round, voteHistory: ballots },
-          'public_timeline',
-          undefined,
-          correlationId,
-        ),
-      ];
-      events.push(...this.finishDay(correlationId));
-      return events;
-    }
-
-    const exiled = this.state.players.find(
-      (player) => player.id === result.targetId,
+    const targetId = result.status === 'exiled' ? result.targetId : null;
+    this.beginExileResult(
+      result.status,
+      targetId,
+      result.round,
+      result.tally,
+      ballots,
     );
-    if (!exiled) return [];
-    exiled.isAlive = false;
-    const eligibility = getLastWordsEligibility('exile');
-    this.state.dayFlow.stage = 'last_words';
-    this.state.dayFlow.lastWordsPlayerId = exiled.id;
-    this.state.dayFlow.lastWordsRemaining = eligibility.maxRounds;
-    this.state.dayFlow.pendingHunterId =
-      exiled.role === 'hunter' ? exiled.id : null;
-    this.state.gameState.phase = 'lastWords';
-    this.state.gameState.lastWordsPlayer = exiled.id;
-    this.state.gameState.currentSpeaker = exiled.id;
-    this.advanceRevision();
     return [
       this.event(
-        'day.exiled',
+        'day.exile_result',
         {
           day: this.state.gameState.day,
-          playerId: exiled.id,
+          status: result.status,
+          ...(targetId ? { targetId } : {}),
+          tally: result.tally,
           voteHistory: ballots,
         },
         'public_timeline',
@@ -944,7 +1055,7 @@ export class GameSession {
     const hunterId = this.state.dayFlow.pendingHunterId;
     if (hunterId) {
       this.state.dayFlow.stage = 'hunter';
-      this.state.gameState.phase = 'hunterShoot';
+      this.state.gameState.phase = 'day';
       this.state.gameState.currentSpeaker = null;
       this.advanceRevision();
       return [
@@ -999,18 +1110,25 @@ export class GameSession {
   }
 
   private finishDay(correlationId: string): DomainEvent[] {
-    const victory = this.finishIfWon(correlationId);
-    if (victory.length > 0) return victory;
-    this.beginNextNight();
+    this.beginDayEnd();
     return [
       this.event(
-        'night.started',
+        'day.ended',
         { day: this.state.gameState.day },
         'public_timeline',
         undefined,
         correlationId,
       ),
     ];
+  }
+
+  private beginFirstNight(): void {
+    this.state.gameState.phase = 'night';
+    this.state.gameState.dayStage = null;
+    this.state.gameState.nightStage = this.state.night.stage;
+    this.state.gameState.currentSpeaker = null;
+    this.state.gameState.speakerOrder = [];
+    this.advanceRevision();
   }
 
   private finishIfWon(correlationId: string): DomainEvent[] {
@@ -1025,6 +1143,8 @@ export class GameSession {
     this.state.gameState.allowedActions = [];
     this.state.gameState.deadlineTs = null;
     this.state.dayFlow.stage = null;
+    this.state.gameState.dayStage = null;
+    this.state.dayFlow.pendingExile = null;
     this.advanceRevision();
     return [
       this.event(
@@ -1042,18 +1162,22 @@ export class GameSession {
       .filter((player) => player.isAlive)
       .sort((a, b) => a.order - b.order)
       .map((player) => player.id);
-    const start = alive[0];
-    const order = start
-      ? [...buildSpeechOrder(alive, start, 'clockwise')]
-      : [];
+    const randomStart = alive.length > 0
+      ? Math.min(alive.length - 1, Math.max(0, Math.floor(this.rng() * alive.length)))
+      : 0;
+    const start = alive[randomStart];
+    const direction = this.rng() < 0.5 ? 'clockwise' : 'counterclockwise';
+    const order = start ? [...buildSpeechOrder(alive, start, direction)] : [];
     this.state.dayFlow = {
       ...emptyDayFlow(),
-      stage: 'speech',
+      stage: 'dawn',
       speechQueue: order,
+      speechDirection: direction,
+      speechStartPlayerId: start ?? null,
     };
     this.state.gameState.phase = 'day';
-    this.state.gameState.dayStage = 'speech';
-    this.state.gameState.currentSpeaker = order[0] ?? null;
+    this.state.gameState.dayStage = 'dawn';
+    this.state.gameState.currentSpeaker = null;
     this.state.gameState.speakerOrder = order;
     this.state.gameState.nightStage = 'resolve';
     this.advanceRevision();
@@ -1064,11 +1188,131 @@ export class GameSession {
     this.state.dayFlow.voteRound = round;
     this.state.dayFlow.voteCandidates = candidates;
     this.state.dayFlow.votes = {};
-    this.state.gameState.phase = 'voting';
+    this.state.dayFlow.voteReasons = {};
+    this.state.gameState.phase = 'day';
     this.state.gameState.dayStage = 'voting';
     this.state.gameState.currentSpeaker = null;
     this.state.gameState.votes = {};
     this.advanceRevision();
+  }
+
+  private beginSpeech(): void {
+    this.state.dayFlow.stage = 'speech';
+    this.state.gameState.phase = 'day';
+    this.state.gameState.dayStage = 'speech';
+    this.state.gameState.currentSpeaker = this.state.dayFlow.speechQueue[0] ?? null;
+    this.advanceRevision();
+  }
+
+  private beginDiscussion(): void {
+    const alive = this.state.players
+      .filter((player) => player.isAlive)
+      .sort((a, b) => a.order - b.order)
+      .map((player) => player.id);
+    this.state.dayFlow.stage = 'discussion';
+    this.state.dayFlow.speechQueue = alive;
+    this.state.gameState.phase = 'day';
+    this.state.gameState.dayStage = 'discussion';
+    this.state.gameState.currentSpeaker = alive[0] ?? null;
+    this.advanceRevision();
+  }
+
+  private beginExileResult(
+    status: 'exiled' | 'no_exile',
+    targetId: PlayerId | null,
+    round: 1 | 2,
+    tally: { counts: Readonly<Record<PlayerId, number>>; leaders: readonly PlayerId[]; maxVotes: number },
+    ballots: VoteBallot[],
+  ): void {
+    this.state.dayFlow.stage = 'exile_result';
+    this.state.dayFlow.pendingExile = {
+      status,
+      targetId,
+      round,
+      tally,
+      ballots: structuredClone(ballots),
+    };
+    this.state.gameState.phase = 'day';
+    this.state.gameState.dayStage = 'exile_result';
+    this.state.gameState.currentSpeaker = null;
+    this.state.gameState.votes = Object.fromEntries(
+      ballots.map((ballot) => [ballot.voterId, ballot.targetId ?? '']),
+    );
+    this.advanceRevision();
+  }
+
+  private settleExileResult(correlationId: string): DomainEvent[] {
+    const pending = this.state.dayFlow.pendingExile;
+    if (!pending) return [];
+    this.state.dayFlow.pendingExile = null;
+    if (pending.status === 'no_exile') {
+      this.state.gameState.votes = {};
+      const noExile = this.event(
+        'day.no_exile',
+        {
+          day: this.state.gameState.day,
+          round: pending.round,
+          voteHistory: pending.ballots,
+        },
+        'public_timeline',
+        undefined,
+        correlationId,
+      );
+      const dayEnd = this.finishDay(correlationId);
+      return [noExile, ...dayEnd];
+    }
+    const exiled = this.state.players.find((player) => player.id === pending.targetId);
+    if (!exiled) return [];
+    exiled.isAlive = false;
+    const eligibility = getLastWordsEligibility('exile');
+    this.state.dayFlow.stage = 'last_words';
+    this.state.dayFlow.speechQueue = [exiled.id];
+    this.state.dayFlow.lastWordsPlayerId = exiled.id;
+    this.state.dayFlow.lastWordsRemaining = eligibility.maxRounds;
+    this.state.dayFlow.pendingHunterId = exiled.role === 'hunter' ? exiled.id : null;
+    this.state.gameState.phase = 'day';
+    this.state.gameState.dayStage = 'last_words';
+    this.state.gameState.lastWordsPlayer = exiled.id;
+    this.state.gameState.currentSpeaker = exiled.id;
+    this.state.gameState.votes = {};
+    this.advanceRevision();
+    return [
+      this.event(
+        'day.exiled',
+        {
+          day: this.state.gameState.day,
+          playerId: exiled.id,
+          voteHistory: pending.ballots,
+        },
+        'public_timeline',
+        undefined,
+        correlationId,
+      ),
+    ];
+  }
+
+  private beginDayEnd(): void {
+    this.state.dayFlow.stage = 'day_end';
+    this.state.dayFlow.speechQueue = [];
+    this.state.gameState.phase = 'day';
+    this.state.gameState.dayStage = 'day_end';
+    this.state.gameState.currentSpeaker = null;
+    this.advanceRevision();
+  }
+
+  private completeDayEnd(correlationId: string): DomainEvent[] {
+    const victory = this.finishIfWon(correlationId);
+    if (victory.length > 0) return victory;
+    this.beginNextNight();
+    return [
+      this.event(
+        'night.started',
+        { day: this.state.gameState.day },
+        'public_timeline',
+        undefined,
+        correlationId,
+      ),
+    ];
   }
 
   private beginNextNight(): void {
@@ -1111,6 +1355,10 @@ export class GameSession {
         }
       }
     }
+    if (this.state.gameState.phase === 'role_confirm') {
+      this.state.gameState.nightStage = null;
+      this.state.gameState.dayStage = null;
+    }
     const allowed = this.allowedActors();
     this.state.gameState.allowedActors = allowed;
     this.state.gameState.allowedActions = [
@@ -1120,6 +1368,14 @@ export class GameSession {
 
   private allowedActors(): NonNullable<GameState['allowedActors']> {
     if (this.state.gameState.phase === 'ended') return [];
+    if (this.state.gameState.phase === 'role_confirm') {
+      return this.state.players
+        .filter((player) => !this.state.roleConfirmations[player.id])
+        .map((player) => ({
+          playerId: player.id,
+          actions: ['confirm_role'] as GameAction[],
+        }));
+    }
     if (this.state.gameState.phase === 'night') {
       const alive = (role: Role) => this.alivePlayers(role);
       switch (this.state.night.stage) {
@@ -1176,6 +1432,7 @@ export class GameSession {
     }
     if (
       this.state.dayFlow.stage === 'speech' ||
+      this.state.dayFlow.stage === 'discussion' ||
       this.state.dayFlow.stage === 'last_words'
     ) {
       const playerId = this.state.gameState.currentSpeaker;
@@ -1288,6 +1545,34 @@ export class GameSession {
   }
 
   private applyTimeout(correlationId: string): DomainEvent[] {
+    if (this.state.gameState.phase === 'role_confirm') {
+      const events: DomainEvent[] = [];
+      for (const player of this.state.players) {
+        if (this.state.roleConfirmations[player.id]) continue;
+        this.state.roleConfirmations[player.id] = true;
+        events.push(
+          this.event(
+            'role.confirmed',
+            { confirmed: true, timedOut: true },
+            'role_private',
+            [player.id],
+            correlationId,
+            player.id,
+          ),
+        );
+      }
+      this.beginFirstNight();
+      events.push(
+        this.event(
+          'role.confirmation_completed',
+          { day: this.state.gameState.day, timedOut: true },
+          'public_timeline',
+          undefined,
+          correlationId,
+        ),
+      );
+      return events;
+    }
     if (this.state.gameState.phase === 'night') {
       if (this.state.night.stage === 'guard_seer') {
         if (!this.state.night.guardComplete) {
@@ -1352,8 +1637,21 @@ export class GameSession {
         );
       }
     }
+    if (this.state.dayFlow.stage === 'dawn') {
+      this.beginSpeech();
+      return [
+        this.event(
+          'day.started',
+          { day: this.state.gameState.day, stage: 'speech' },
+          'public_timeline',
+          undefined,
+          correlationId,
+        ),
+      ];
+    }
     if (
       this.state.dayFlow.stage === 'speech' ||
+      this.state.dayFlow.stage === 'discussion' ||
       this.state.dayFlow.stage === 'last_words'
     ) {
       const actor = this.state.players.find(
@@ -1390,6 +1688,12 @@ export class GameSession {
         }
       }
       return this.resolveDayVote(correlationId);
+    }
+    if (this.state.dayFlow.stage === 'exile_result') {
+      return this.settleExileResult(correlationId);
+    }
+    if (this.state.dayFlow.stage === 'day_end') {
+      return this.completeDayEnd(correlationId);
     }
     if (this.state.dayFlow.stage === 'hunter') {
       const hunter = this.state.players.find(
@@ -1639,10 +1943,23 @@ export class GameSession {
     legacy.processedCommands ??= {};
     delete legacy.processedCommandIds;
     legacy.dayFlow ??= emptyDayFlow();
+    legacy.dayFlow.voteReasons ??= {};
+    legacy.dayFlow.speechDirection ??= null;
+    legacy.dayFlow.speechStartPlayerId ??= null;
+    legacy.dayFlow.pendingExile ??= null;
     const gameState = legacy.gameState as AuthorityGameState;
     gameState.deadlineTs ??= null;
     gameState.stageStartedAt ??= null;
     gameState.dayStage ??= null;
+    legacy.roleConfirmations ??= Object.fromEntries(
+      this.state.players.map((player) => [player.id, true]),
+    );
+    // Older snapshots used top-level phases for day sub-stages. The runtime
+    // keeps one authoritative day stage and exposes the old phase only to
+    // readers that still understand the compatibility shape.
+    if (['voting', 'vote', 'lastWords', 'hunterShoot'].includes(gameState.phase)) {
+      gameState.phase = 'day';
+    }
   }
 
   private normalizeMissingNightActors(): void {

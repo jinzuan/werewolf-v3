@@ -4,6 +4,8 @@ import type {
   DayStage,
   NightState,
   PlayerId,
+  VoteTally,
+  VoteBallot,
   WitchInventory,
 } from '../../src/core';
 
@@ -17,10 +19,20 @@ export interface DayFlowState {
   voteRound: 1 | 2;
   voteCandidates: PlayerId[];
   votes: Record<PlayerId, PlayerId | null>;
+  voteReasons: Record<PlayerId, string | null>;
   speechQueue: PlayerId[];
+  speechDirection: 'clockwise' | 'counterclockwise' | null;
+  speechStartPlayerId: PlayerId | null;
   lastWordsPlayerId: PlayerId | null;
   lastWordsRemaining: number;
   pendingHunterId: PlayerId | null;
+  pendingExile: {
+    status: 'exiled' | 'no_exile';
+    targetId: PlayerId | null;
+    round: 1 | 2;
+    tally: VoteTally;
+    ballots: VoteBallot[];
+  } | null;
 }
 
 export interface SessionState {
@@ -30,6 +42,7 @@ export interface SessionState {
   gameState: AuthorityGameState;
   night: NightState;
   dayFlow: DayFlowState;
+  roleConfirmations: Record<PlayerId, boolean>;
   witchInventory: WitchInventory;
   processedCommands: Record<string, CommandResult>;
   sequence: number;
@@ -47,6 +60,7 @@ export interface CommandResult {
     | 'ACTION_NOT_ALLOWED'
     | 'REASON_REQUIRED'
     | 'INVALID_TARGET'
+    | 'CONTENT_TOO_LONG'
     | 'INVALID_COMMAND';
   events: DomainEvent[];
 }
@@ -64,6 +78,8 @@ export interface SessionOptions {
   now?: () => number;
   rng?: () => number;
   scheduler?: SessionScheduler;
+  /** Keep real-time stage timers referenced for self-driving computer rooms. */
+  keepTimersRefed?: boolean;
   stageDurationMs?: number;
   onChanged?: (session: import('./gameSession').GameSession) => void | Promise<void>;
 }

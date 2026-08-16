@@ -8,7 +8,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { GameAction } from '../../../shared/types';
+import type { GameAction, GameState } from '../../../shared/types';
 import { AppShell } from '../../components/shell/AppShell';
 import { MatchShell } from '../../components/shell/MatchShell';
 import { useV3Store } from '../../stores/v3Store';
@@ -41,6 +41,7 @@ import {
 import { formatCountdown } from '../../v3/countdown';
 
 const ACTION_HELP: Record<GameAction, string> = {
+  confirm_role: '确认已查看自己的身份牌。',
   guard: '可守自己，不能连续两晚守同一名玩家。',
   check: '选择一名其他存活玩家查验阵营。',
   wolf_speak: '消息仅对当前存活狼人可见。',
@@ -156,7 +157,8 @@ export function GamePage() {
   const message =
     actionDraft.activeAction === activeAction ? actionDraft.message : '';
   const lastWordsSkip =
-    activeAction === 'skip_speech' && state?.phase === 'lastWords';
+    activeAction === 'skip_speech' &&
+    (state?.phase === 'lastWords' || (state as GameState & { dayStage?: string | null } | null)?.dayStage === 'last_words');
   const showsTextInput = definition?.input === 'text' || lastWordsSkip;
   const notifiedHealTarget = healTargetId(events);
   const resolvedTarget =
@@ -166,7 +168,8 @@ export function GamePage() {
     ((definition?.input === 'immediate' && !lastWordsSkip) ||
       (lastWordsSkip && message.trim().length > 0) ||
       (definition?.input === 'text' && message.trim().length > 0) ||
-      (definition?.input === 'confirm' && resolvedTarget !== null) ||
+      (definition?.input === 'confirm' &&
+        (activeAction === 'confirm_role' || resolvedTarget !== null)) ||
       (definition?.input === 'target' &&
         (resolvedTarget !== null || definition.allowsEmptyTarget === true)));
 

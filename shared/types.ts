@@ -11,6 +11,7 @@ export const NIGHT_STAGES = [
 export type NightStage = (typeof NIGHT_STAGES)[number];
 
 export const GAME_ACTIONS = [
+  'confirm_role',
   'guard',
   'check',
   'wolf_speak',
@@ -69,7 +70,7 @@ export interface Player {
 
 export interface GameState {
   roomId: string;
-  phase: 'waiting' | 'roleSelect' | 'night' | 'day' | 'vote' | 'voting' | 'hunterShoot' | 'lastWords' | 'ended';
+  phase: 'waiting' | 'roleSelect' | 'role_confirm' | 'night' | 'day' | 'vote' | 'voting' | 'hunterShoot' | 'lastWords' | 'ended';
   /**
    * V3 authority fields. They remain optional while the legacy engine is
    * migrated; new engine and protocol code must publish them together.

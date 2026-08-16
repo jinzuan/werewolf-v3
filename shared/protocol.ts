@@ -148,6 +148,7 @@ export const STABLE_COMMAND_ERROR_CODES = [
   'EXPIRED_COMMAND',
   'ACTION_NOT_ALLOWED',
   'INVALID_TARGET',
+  'CONTENT_TOO_LONG',
 ] as const;
 
 export const PROTOCOL_ERROR_CODES = [
@@ -304,6 +305,7 @@ export interface SpectatorCommandMeta extends BaseCommandMeta {
 export type RoomCommand = RoomCommandV31;
 
 export type GameCommand =
+  | { type: 'game.confirm_role'; payload: Record<string, never> }
   | { type: 'game.speak'; payload: { content: string } }
   /** Daytime skips may omit a reason; last-words skips are validated server-side as reason-required. */
   | { type: 'game.skip_speech'; payload: { reason?: string } }

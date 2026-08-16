@@ -110,7 +110,7 @@ const parseSkipSpeech = (
     ok: true,
     command: {
       type: 'game.skip_speech',
-      payload: cleanReason ? { reason: cleanReason.slice(0, 80) } : {},
+      payload: cleanReason ? { reason: cleanReason } : {},
     },
     reason: cleanReason ? `parsed speech skip: ${cleanReason}` : 'parsed speech skip',
   };
@@ -177,6 +177,7 @@ const parseVote = (
   if (!allowed(context, commandType)) {
     return fail('ACTION_NOT_ALLOWED', `${commandType} is not allowed.`);
   }
+  const voteReason = cleanText(reason);
   const emptyTarget = target === null || target === undefined || isSkip(target);
   if (emptyTarget) {
     if (commandType === 'game.vote' && !context.promptContext?.abstainAllowed) {
@@ -189,14 +190,13 @@ const parseVote = (
       ok: true,
       command:
         commandType === 'game.vote'
-          ? { type: 'game.vote', payload: { targetId: null, reason: '弃票' } }
+          ? { type: 'game.vote', payload: { targetId: null, reason: voteReason || '弃票' } }
           : { type: 'game.wolf_vote', payload: { targetId: null } },
       reason: commandType === 'game.vote' ? 'parsed abstention' : 'parsed empty kill',
     };
   }
   const resolved = targetId(target, context);
   if (resolved.ok === false) return resolved.result;
-  const voteReason = cleanText(reason);
   if (commandType === 'game.vote' && !voteReason) {
     return fail('REASON_REQUIRED', 'A vote reason is required.');
   }
@@ -299,6 +299,15 @@ const parseObject = (
 ): ParsedAIOutput => {
   const action = cleanText(object.action).toLowerCase();
   switch (action) {
+    case 'confirm_role':
+    case 'confirm':
+      return allowed(context, 'game.confirm_role')
+        ? {
+            ok: true,
+            command: { type: 'game.confirm_role', payload: {} },
+            reason: 'parsed role confirmation',
+          }
+        : fail('ACTION_NOT_ALLOWED', 'Role confirmation is not allowed.');
     case 'speak':
       return parseSpeech(cleanText(object.content), context, 'game.speak');
     case 'wolf_speak':
@@ -336,6 +345,14 @@ const parsePlain = (raw: string, context: ParseContext): ParsedAIOutput => {
     .map((line) => line.trim())
     .filter(Boolean);
   if (lines.length === 0) return fail('EMPTY_OUTPUT', 'Output is empty.');
+
+  if (allowed(context, 'game.confirm_role')) {
+    return {
+      ok: true,
+      command: { type: 'game.confirm_role', payload: {} },
+      reason: 'parsed role confirmation',
+    };
+  }
 
   const first = lines[0];
   const voteLike =

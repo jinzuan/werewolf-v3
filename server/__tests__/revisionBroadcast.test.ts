@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { InMemoryEventStore } from '../events/store';
 import { GameSession } from '../session/gameSession';
-import { createPlayers, dispatch } from './fixtures';
+import { createPlayers, dispatch, initializeSession } from './fixtures';
 
 test('each stage transition publishes a newer revision and next actor actions', async () => {
   const players = createPlayers();
@@ -11,7 +11,7 @@ test('each stage transition publishes a newer revision and next actor actions', 
     players,
     new InMemoryEventStore(),
   );
-  await session.initialize();
+  await initializeSession(session, players);
   const guardian = players.find((player) => player.role === 'guardian')!;
   const seer = players.find((player) => player.role === 'seer')!;
   const wolf = players.find((player) => player.role === 'wolf')!;

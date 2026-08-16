@@ -24,6 +24,12 @@ export class DeterministicAIProvider implements AIProvider {
     if (!actor) throw new Error('AI actor not found.');
 
     const allowed = new Set(context.allowedCommandTypes);
+    if (allowed.has('game.confirm_role')) {
+      return {
+        command: { type: 'game.confirm_role', payload: {} },
+        reason: 'deterministic role confirmation',
+      };
+    }
     if (allowed.has('game.night_action') && actor.role === 'guardian') {
       return {
         command: {

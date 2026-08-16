@@ -4,7 +4,7 @@ import type { AIProvider } from '../ai/types';
 import { AIOrchestrator } from '../ai/orchestrator';
 import { InMemoryEventStore } from '../events/store';
 import { GameSession } from '../session/gameSession';
-import { createPlayers } from './fixtures';
+import { createPlayers, initializeSession } from './fixtures';
 
 test('invalid AI suggestions use a deterministic validated fallback', async () => {
   const players = createPlayers();
@@ -13,7 +13,7 @@ test('invalid AI suggestions use a deterministic validated fallback', async () =
     players,
     new InMemoryEventStore(),
   );
-  await session.initialize();
+  await initializeSession(session, players);
   const guardian = players.find((player) => player.role === 'guardian')!;
   const invalidProvider: AIProvider = {
     async suggest() {

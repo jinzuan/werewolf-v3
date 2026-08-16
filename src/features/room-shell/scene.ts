@@ -25,7 +25,7 @@ export const resolveRoomScene = ({
   if (roomStatus === 'ended' || phase === 'ended') return 'ended';
   if (roomStatus === 'starting') return 'dusk';
   if (!phase || phase === 'waiting') return roomStatus === 'ready_check' ? 'dusk' : 'lobby';
-  if (phase === 'roleSelect') return 'dusk';
+  if (phase === 'roleSelect' || phase === 'role_confirm') return 'dusk';
   if (isNightPhase(phase)) return 'night';
   if (stage === 'dawn' || phase === 'dawn') return 'dawn';
   return 'day';

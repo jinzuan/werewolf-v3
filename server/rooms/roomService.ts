@@ -2374,6 +2374,9 @@ export class RoomService {
   ): GameSession {
     return new GameSession(room.id, players, eventStore, snapshot, {
       ...this.options.session,
+      ...(room.config?.mode === 'quick_computer'
+        ? { keepTimersRefed: true }
+        : {}),
       onChanged: async (session) => this.persistSession(room.code, session),
     });
   }

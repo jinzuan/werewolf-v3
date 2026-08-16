@@ -118,3 +118,24 @@ export const dispatch = (
   };
   return session.dispatch(meta, command);
 };
+
+export const confirmRoles = async (
+  session: GameSession,
+  players: readonly Player[] = session.players,
+): Promise<void> => {
+  if (session.serialize().state.gameState.phase !== 'role_confirm') return;
+  for (const player of players) {
+    await dispatch(session, player.id, {
+      type: 'game.confirm_role',
+      payload: {},
+    });
+  }
+};
+
+export const initializeSession = async (
+  session: GameSession,
+  players: readonly Player[] = session.players,
+): Promise<void> => {
+  await session.initialize();
+  await confirmRoles(session, players);
+};
