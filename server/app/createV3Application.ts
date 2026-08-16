@@ -2,7 +2,7 @@ import { createServer, type Server as HttpServer } from 'node:http';
 import { writeFile as writeFilePromise } from 'node:fs/promises';
 import path from 'node:path';
 import { Server as SocketIOServer } from 'socket.io';
-import type { AIConfig } from '../../shared/types';
+import type { ServerAIConfig as AIConfig } from '../ai/config';
 import type { AsyncAtomicFileOperations } from '../filePersistence';
 import { FileEventStore } from '../events/fileStore';
 import { InMemoryEventStore } from '../events/store';
@@ -408,5 +408,5 @@ export function createV3Application(
   if (runtimeOrOptions && 'environment' in runtimeOrOptions) {
     return createLegacyApplication(runtimeOrOptions, ports);
   }
-  return createModernApplication(runtimeOrOptions ?? {});
+  return createModernApplication((runtimeOrOptions ?? {}) as V3ApplicationOptions);
 }

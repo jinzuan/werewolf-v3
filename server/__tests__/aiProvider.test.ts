@@ -4,7 +4,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { SERVER_AI_DEFAULTS, type ServerAIConfig } from '../ai/config';
-import { dispatch, createPlayers } from './fixtures';
+import { dispatch, createPlayers, initializeSession } from './fixtures';
 import { projectAIContext } from '../ai/contextProjector';
 import { loadExperienceLibrary } from '../ai/experienceLibrary';
 import { HttpAIProvider } from '../ai/httpProvider';
@@ -74,7 +74,7 @@ const createGuardianSession = async () => {
     players,
     new InMemoryEventStore(),
   );
-  await session.initialize();
+  await initializeSession(session, players);
   const guardian = players.find((player) => player.role === 'guardian')!;
   return { players, session, guardian };
 };
@@ -156,7 +156,7 @@ test('429 exhaustion uses one deterministic fallback and keeps the stage moving'
   assert.equal(telemetry.errorClass, 'rate_limited');
   assert.equal(
     Object.keys(session.serialize().state.processedCommands).length,
-    1,
+    13,
   );
 });
 
@@ -234,7 +234,7 @@ test('role projection keeps private facts scoped and excludes omniscient secrets
     players,
     new InMemoryEventStore(),
   );
-  await session.initialize();
+  await initializeSession(session, players);
   await dispatch(session, guardian.id, {
     type: 'game.night_action',
     payload: {

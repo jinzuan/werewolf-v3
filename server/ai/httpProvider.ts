@@ -108,6 +108,8 @@ const actionForCommand = (
   command: GameCommand,
 ): GameAction | undefined => {
   switch (command.type) {
+    case 'game.confirm_role':
+      return 'confirm_role';
     case 'game.night_action':
       return command.payload.action === 'kill'
         ? undefined
@@ -140,6 +142,8 @@ const validCommandPayload = (
 ): boolean => {
   if (!isRecord(command.payload)) return false;
   switch (command.type) {
+    case 'game.confirm_role':
+      return true;
     case 'game.speak':
     case 'game.wolf_speak':
       return typeof command.payload.content === 'string';
@@ -152,6 +156,10 @@ const validCommandPayload = (
         (typeof command.payload.reason === 'string' && command.payload.reason.trim().length > 0)
       );
     case 'game.vote':
+      return (
+        validTarget(command.payload.targetId) &&
+        (command.payload.reason === undefined || typeof command.payload.reason === 'string')
+      );
     case 'game.wolf_vote':
     case 'game.hunter_shoot':
       return validTarget(command.payload.targetId);

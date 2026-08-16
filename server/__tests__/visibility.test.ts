@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { InMemoryEventStore } from '../events/store';
 import { GameSession } from '../session/gameSession';
-import { createPlayers, dispatch } from './fixtures';
+import { createPlayers, dispatch, initializeSession } from './fixtures';
 
 const serialized = (value: unknown) => JSON.stringify(value);
 
@@ -13,7 +13,7 @@ test('private night facts never leak to villagers or public spectators', async (
     players,
     new InMemoryEventStore(),
   );
-  await session.initialize();
+  await initializeSession(session, players);
   const guardian = players.find((player) => player.role === 'guardian')!;
   const seer = players.find((player) => player.role === 'seer')!;
   const wolf = players.find((player) => player.role === 'wolf')!;
@@ -93,7 +93,7 @@ test('wolves see teammate roles and wolf events but not role-private events', as
     players,
     new InMemoryEventStore(),
   );
-  await session.initialize();
+  await initializeSession(session, players);
   const guardian = players.find((player) => player.role === 'guardian')!;
   const wolf = players.find((player) => player.role === 'wolf')!;
   const villager = players.find((player) => player.role === 'villager')!;
@@ -136,7 +136,7 @@ test('dead wolves do not receive new wolf-private events', async () => {
     players,
     new InMemoryEventStore(),
   );
-  await session.initialize();
+  await initializeSession(session, players);
 
   const guardian = players.find((player) => player.role === 'guardian')!;
   const seer = players.find((player) => player.role === 'seer')!;

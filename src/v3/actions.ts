@@ -19,6 +19,7 @@ export interface ActionDefinition {
 }
 
 export const ACTION_DEFINITIONS: Record<GameAction, ActionDefinition> = {
+  confirm_role: { action: 'confirm_role', input: 'confirm' },
   guard: { action: 'guard', input: 'target' },
   check: { action: 'check', input: 'target' },
   wolf_speak: { action: 'wolf_speak', input: 'text' },
@@ -217,6 +218,7 @@ interface BuildCommandInput {
   allowedActions: readonly GameAction[];
   targetId?: string | null;
   content?: string;
+  reason?: string;
 }
 
 export const buildGameCommand = ({
@@ -226,9 +228,12 @@ export const buildGameCommand = ({
   allowedActions,
   targetId = null,
   content = '',
+  reason = '',
 }: BuildCommandInput): GameCommand | null => {
   if (!allowedActions.includes(action)) return null;
   switch (action) {
+    case 'confirm_role':
+      return { type: 'game.confirm_role', payload: {} };
     case 'guard':
     case 'check':
     case 'heal':
@@ -274,14 +279,20 @@ export const buildGameCommand = ({
         : null;
     case 'skip_speech':
       return content.trim()
-        ? { type: 'game.skip_speech', payload: { reason: content.trim().slice(0, 80) } }
+        ? { type: 'game.skip_speech', payload: { reason: content.trim() } }
         : { type: 'game.skip_speech', payload: {} };
     case 'vote':
       return targetId
-        ? { type: 'game.vote', payload: { targetId } }
+        ? {
+            type: 'game.vote',
+            payload: { targetId, ...(reason?.trim() ? { reason: reason.trim() } : {}) },
+          }
         : null;
     case 'abstain':
-      return { type: 'game.vote', payload: { targetId: null } };
+      return {
+        type: 'game.vote',
+        payload: { targetId: null, ...(reason?.trim() ? { reason: reason.trim() } : {}) },
+      };
     case 'hunter_shoot':
       return targetId
         ? { type: 'game.hunter_shoot', payload: { targetId } }

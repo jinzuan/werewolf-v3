@@ -5,7 +5,7 @@ import type { Player } from '../../shared/types';
 import { InMemoryEventStore } from '../events/store';
 import { GameSession } from '../session/gameSession';
 import type { SessionSnapshot } from '../session/types';
-import { createPlayers } from './fixtures';
+import { confirmRoles, createPlayers } from './fixtures';
 import { FakeClock } from './fakeClock';
 
 const deferred = () => {
@@ -106,6 +106,7 @@ const createTimedSession = async (
     },
   );
   await session.initialize();
+  await confirmRoles(session, players);
 
   return {
     clock,
