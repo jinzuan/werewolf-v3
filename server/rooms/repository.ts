@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
-import { migrateRoomRecord } from './roomMigration';
+import { migrateRoomRecord, stripPersistedConnectionFacts } from './roomMigration';
 import type { RoomRecord } from './types';
 
 export interface RoomMutationOptions {
@@ -73,6 +73,15 @@ export interface RoomRepository {
     expectedRoomRevision: number,
     mutation: RoomMutation<T>,
   ): Promise<T>;
+
+  /**
+   * One-shot compatibility seam for direct in-memory legacy fixtures.  This
+   * is runtime metadata only; persistent repositories must not implement it.
+   */
+  takeLegacyConnectionFacts?(): ReadonlyArray<{
+    roomCode: string;
+    memberIds: readonly string[];
+  }>;
 }
 
 const roomKey = (code: string): string => code.toUpperCase();
@@ -176,9 +185,9 @@ const applyMutation = async <T>(
 
   const draft = clone(current);
   const returned = await parsed.mutation(draft);
-  const next = migrateRoomRecord(
+  const next = stripPersistedConnectionFacts(migrateRoomRecord(
     isRoomRecord(returned) ? returned : draft,
-  );
+  ));
   const changed = !isDeepStrictEqual(factsOf(current), factsOf(next));
 
   if (!changed) {
@@ -279,31 +288,52 @@ abstract class SerializedRoomRepository implements RoomRepository {
 
 export class InMemoryRoomRepository extends SerializedRoomRepository {
   private readonly rooms = new Map<string, RoomRecord>();
+  private readonly legacyConnectedMemberIds = new Map<string, Set<string>>();
 
   constructor(initialRooms: readonly RoomRecord[] = []) {
     super();
     for (const room of initialRooms) {
       const migrated = migrateRoomRecord(room);
-      this.rooms.set(roomKey(migrated.code), migrated);
+      const connected = new Set(
+        migrated.members
+          .filter((member) => member.connected === true)
+          .map((member) => member.id),
+      );
+      if (connected.size > 0) {
+        this.legacyConnectedMemberIds.set(roomKey(migrated.code), connected);
+      }
+      const persisted = stripPersistedConnectionFacts(migrated);
+      this.rooms.set(roomKey(persisted.code), persisted);
     }
+  }
+
+  takeLegacyConnectionFacts(): ReadonlyArray<{
+    roomCode: string;
+    memberIds: readonly string[];
+  }> {
+    const facts = [...this.legacyConnectedMemberIds.entries()].map(
+      ([roomCode, memberIds]) => ({ roomCode, memberIds: [...memberIds] }),
+    );
+    this.legacyConnectedMemberIds.clear();
+    return facts;
   }
 
   list(): Promise<RoomRecord[]> {
     return this.enqueue(async () =>
-      [...this.rooms.values()].map((room) => clone(migrateRoomRecord(room))),
+      [...this.rooms.values()].map((room) => clone(stripPersistedConnectionFacts(migrateRoomRecord(room)))),
     );
   }
 
   get(code: string): Promise<RoomRecord | undefined> {
     return this.enqueue(async () => {
       const room = this.rooms.get(roomKey(code));
-      return room ? clone(migrateRoomRecord(room)) : undefined;
+      return room ? clone(stripPersistedConnectionFacts(migrateRoomRecord(room))) : undefined;
     });
   }
 
   create(room: RoomRecord): Promise<RoomRecord> {
     return this.enqueue(async () => {
-      const migrated = migrateRoomRecord(room);
+      const migrated = stripPersistedConnectionFacts(migrateRoomRecord(room));
       const key = roomKey(migrated.code);
       if (this.rooms.has(key)) {
         throw new RoomRepositoryError(
@@ -338,7 +368,7 @@ export class InMemoryRoomRepository extends SerializedRoomRepository {
         }
         return { room: clone(existing), created: false };
       }
-      const room = migrateRoomRecord(factory());
+      const room = stripPersistedConnectionFacts(migrateRoomRecord(factory()));
       const key = roomKey(room.code);
       if (this.rooms.has(key)) {
         throw new RoomRepositoryError(
@@ -356,7 +386,7 @@ export class InMemoryRoomRepository extends SerializedRoomRepository {
 
   save(room: RoomRecord): Promise<void> {
     return this.enqueue(async () => {
-      const migrated = migrateRoomRecord(room);
+      const migrated = stripPersistedConnectionFacts(migrateRoomRecord(room));
       const key = roomKey(migrated.code);
       const current = this.rooms.get(key);
       const next = this.prepareSave(current, migrated);
@@ -366,17 +396,19 @@ export class InMemoryRoomRepository extends SerializedRoomRepository {
 
   remove(code: string): Promise<void> {
     return this.enqueue(async () => {
-      this.rooms.delete(roomKey(code));
+      const key = roomKey(code);
+      this.rooms.delete(key);
+      this.legacyConnectedMemberIds.delete(key);
     });
   }
 
   protected readForMutation(code: string): Promise<RoomRecord | undefined> {
     const room = this.rooms.get(roomKey(code));
-    return Promise.resolve(room ? clone(migrateRoomRecord(room)) : undefined);
+    return Promise.resolve(room ? clone(stripPersistedConnectionFacts(migrateRoomRecord(room))) : undefined);
   }
 
   protected writeMutation(room: RoomRecord): Promise<void> {
-    this.rooms.set(roomKey(room.code), clone(room));
+    this.rooms.set(roomKey(room.code), stripPersistedConnectionFacts(clone(room)));
     return Promise.resolve();
   }
 

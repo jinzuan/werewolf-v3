@@ -11,6 +11,7 @@ import {
 import {
   migrateRoomRecord,
   migrateRoomRecords,
+  stripPersistedConnectionFacts,
 } from './roomMigration';
 import {
   RoomRepositoryError,
@@ -378,7 +379,7 @@ export class FileRoomRepository implements RoomRepository {
       );
     }
     return {
-      ...migrateRoomRecord(room),
+      ...stripPersistedConnectionFacts(migrateRoomRecord(room)),
       environment: this.environment,
       deploymentNamespace: this.deploymentNamespace,
     };
@@ -415,7 +416,7 @@ export class FileRoomRepository implements RoomRepository {
 
     const source = this.parseDocument(parsed);
     const migrated = migrateRoomRecords(source).map((room) =>
-      this.normalizeRoom(room),
+      this.normalizeRoom(stripPersistedConnectionFacts(room)),
     );
     this.rooms = migrated;
     this.diskRevision = revision;

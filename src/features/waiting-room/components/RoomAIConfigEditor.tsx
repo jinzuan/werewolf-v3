@@ -55,17 +55,13 @@ export function RoomAIConfigEditor({
   const [temperature, setTemperature] = useState(AI_DEFAULTS.local.temperature);
   const [maxTokens, setMaxTokens] = useState(AI_DEFAULTS.local.maxTokens);
   const [behavior, setBehavior] = useState<RoomAIBehavior>(AI_DEFAULTS.defaultBehavior);
-  const [apiKey, setApiKey] = useState('');
-  const [token, setToken] = useState('');
-  const [clearApiKey, setClearApiKey] = useState(false);
-  const [clearToken, setClearToken] = useState(false);
+  const [credential, setCredential] = useState('');
+  const [clearCredential, setClearCredential] = useState(false);
 
   useEffect(() => {
     if (!open) {
-      setApiKey('');
-      setToken('');
-      setClearApiKey(false);
-      setClearToken(false);
+      setCredential('');
+      setClearCredential(false);
       return;
     }
     const nextProvider = summary?.provider ?? 'local';
@@ -77,10 +73,8 @@ export function RoomAIConfigEditor({
     setTemperature(summary?.temperature ?? AI_DEFAULTS.local.temperature);
     setMaxTokens(summary?.maxTokens ?? AI_DEFAULTS.local.maxTokens);
     setBehavior(summary?.behavior ?? AI_DEFAULTS.defaultBehavior);
-    setApiKey('');
-    setToken('');
-    setClearApiKey(false);
-    setClearToken(false);
+    setCredential('');
+    setClearCredential(false);
   }, [open, summary]);
 
   const submit = () => {
@@ -95,15 +89,12 @@ export function RoomAIConfigEditor({
       ...(capability.endpointMode === 'configurable' && endpoint.trim()
         ? { endpoint: endpoint.trim() }
         : {}),
-      ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
-      ...(token.trim() ? { token: token.trim() } : {}),
-      ...(clearApiKey ? { clearApiKey: true } : {}),
-      ...(clearToken ? { clearToken: true } : {}),
+      ...(credential.trim() ? { credential: credential.trim() } : {}),
+      ...(clearCredential ? { clearCredential: true } : {}),
     };
     // Secret inputs are cleared before the async command returns, including
     // validation failures. They never enter browser storage or the URL.
-    setApiKey('');
-    setToken('');
+    setCredential('');
     onSubmit(patch);
   };
 
@@ -180,34 +171,20 @@ export function RoomAIConfigEditor({
         </div>
 
         <fieldset className="waiting-room__editor-secrets">
-          <legend>凭据（仅本次编辑在内存中保留）</legend>
+          <legend>Bearer 凭据（仅本次编辑在内存中保留）</legend>
           <label className="waiting-room__editor-field">
-            <span>API Key {summary?.hasApiKey ? '· 已保存' : '· 未设置'}</span>
+            <span>Bearer 凭据 {summary?.hasCredential ? '· 已保存' : '· 未设置'}</span>
             <Input
               type="password"
-              value={apiKey}
-              placeholder={summary?.hasApiKey ? '已保存；留空保持不变' : '留空表示不设置'}
+              value={credential}
+              placeholder={summary?.hasCredential ? '已保存；留空保持不变' : '留空表示不设置'}
               autoComplete="new-password"
-              onChange={(event) => { setApiKey(event.target.value); setClearApiKey(false); }}
+              onChange={(event) => { setCredential(event.target.value); setClearCredential(false); }}
             />
           </label>
           <label className="waiting-room__editor-check">
-            <input type="checkbox" checked={clearApiKey} onChange={(event) => { setClearApiKey(event.target.checked); if (event.target.checked) setApiKey(''); }} />
-            <span>显式清除 API Key</span>
-          </label>
-          <label className="waiting-room__editor-field">
-            <span>令牌 {summary?.hasToken ? '· 已保存' : '· 未设置'}</span>
-            <Input
-              type="password"
-              value={token}
-              placeholder={summary?.hasToken ? '已保存；留空保持不变' : '留空表示不设置'}
-              autoComplete="new-password"
-              onChange={(event) => { setToken(event.target.value); setClearToken(false); }}
-            />
-          </label>
-          <label className="waiting-room__editor-check">
-            <input type="checkbox" checked={clearToken} onChange={(event) => { setClearToken(event.target.checked); if (event.target.checked) setToken(''); }} />
-            <span>显式清除令牌</span>
+            <input type="checkbox" checked={clearCredential} onChange={(event) => { setClearCredential(event.target.checked); if (event.target.checked) setCredential(''); }} />
+            <span>显式清除 Bearer 凭据</span>
           </label>
         </fieldset>
 

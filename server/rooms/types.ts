@@ -51,6 +51,8 @@ export interface RoomConfigRecord {
   aiProviderConfig?: RoomAIProviderConfig;
   /** Random reference into the room-scoped SecretStore. */
   credentialRef?: string;
+  /** Legacy migration could not prove which bearer value was intended. */
+  credentialSchemaAmbiguous?: boolean;
   [key: string]: unknown;
 }
 
@@ -58,7 +60,8 @@ export interface RoomMember {
   id: string;
   name: string;
   kind: 'player' | 'spectator';
-  connected: boolean;
+  /** @deprecated Online state is projected from ConnectionRegistry. */
+  connected?: boolean;
   omniscient: boolean;
   resumeToken: string;
   /** V3.1 seat data. Spectators have no seat. */
@@ -142,9 +145,24 @@ export interface RoomRecord {
   deploymentNamespace?: string;
   /** Activity/retention facts used by the repository lifecycle sweep. */
   lastActivityAt?: number;
+  lastSeenAt?: number;
   expiresAt?: number;
+  /** Terminal cleanup remains auditable until every side effect has settled. */
+  lifecycleTombstone?: RoomLifecycleTombstone;
   createdAt: number;
   updatedAt?: number;
+}
+
+export interface RoomLifecycleTombstone {
+  schemaVersion: number;
+  environment: RuntimeEnvironment;
+  deploymentNamespace: string;
+  operationId: string;
+  roomCode: string;
+  roomId: string;
+  kind: string;
+  closedAt: number;
+  credentialRef?: string;
 }
 
 export interface CreateRoomRequest {

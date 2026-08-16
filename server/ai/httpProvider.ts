@@ -2,7 +2,8 @@ import type { GameCommand } from '../../shared/protocol';
 import type { AIConfig, GameAction } from '../../shared/types';
 import { AI_TIMEOUT_MS } from '../../shared/config/aiDefaults';
 import { loadAIConfig } from '../config';
-import { EndpointPolicy, EndpointPolicyError } from '../security/endpointPolicy';
+import { EndpointPolicy } from '../security/endpointPolicy';
+import { SafeHttpClient, type SafeHttpTransport } from '../security/safeHttpClient';
 import { defaultAITelemetry, type AITelemetry } from './aiTelemetry';
 import {
   AIQueueError,
@@ -43,6 +44,7 @@ export interface HttpAIProviderOptions {
   circuitBreaker?: AICircuitBreaker;
   enqueueTimeoutMs?: number;
   telemetry?: AITelemetry;
+  safeHttpClient?: SafeHttpClient;
 }
 
 interface ResponseEnvelope {
@@ -308,7 +310,8 @@ export class HttpAIProvider implements AIProvider {
   private readonly circuitBreaker: AICircuitBreaker;
   private readonly enqueueTimeoutMs: number;
   private readonly telemetry: AITelemetry;
-  private readonly fetchImpl: typeof fetch;
+  private readonly safeHttpClient: SafeHttpClient;
+  private readonly testTransport: boolean;
   private readonly sleep: (delayMs: number) => Promise<void>;
   private readonly now: () => number;
   private readonly timeoutMs: number;
@@ -328,13 +331,19 @@ export class HttpAIProvider implements AIProvider {
     this.enqueueTimeoutMs = options.enqueueTimeoutMs ?? 5_000;
     this.telemetry = options.telemetry ?? defaultAITelemetry;
     this.telemetry.observeQueue(this.queue);
-    this.fetchImpl = options.fetch ?? globalThis.fetch;
+    this.testTransport = options.fetch !== undefined;
     this.sleep = options.sleep ?? defaultSleep;
     this.now = options.now ?? Date.now;
     this.timeoutMs = options.timeoutMs ?? AI_TIMEOUT_MS;
     this.maxRetries = options.maxRetries ?? 2;
     this.baseDelayMs = options.baseDelayMs ?? 250;
     this.endpointPolicy = options.endpointPolicy ?? new EndpointPolicy();
+    const testTransport: SafeHttpTransport | undefined = options.fetch
+      ? async ({ url, options: requestOptions }) => options.fetch!(url, requestOptions)
+      : undefined;
+    this.safeHttpClient = options.safeHttpClient ?? new SafeHttpClient(this.endpointPolicy, {
+      transport: testTransport,
+    });
   }
 
   async suggest(context: AIRequestContext): Promise<AISuggestion> {
@@ -409,18 +418,6 @@ export class HttpAIProvider implements AIProvider {
     prompt: { system: string; user: string },
     parentSignal: AbortSignal,
   ): Promise<ResponseEnvelope> {
-    let endpoint: string;
-    try {
-      endpoint = (await this.endpointPolicy.validate(this.settings.endpoint, {
-        provider: this.settings.provider,
-        allowReservedTestHost: this.fetchImpl !== globalThis.fetch,
-      })).url;
-    } catch (error) {
-      if (error instanceof EndpointPolicyError) {
-        throw new ProviderError('endpoint_policy', 0);
-      }
-      throw error;
-    }
     const controller = new AbortController();
     const abortFromParent = () => controller.abort();
     if (parentSignal.aborted) throw new ProviderError('cancelled', 0);
@@ -434,7 +431,7 @@ export class HttpAIProvider implements AIProvider {
     });
     try {
       const response = await Promise.race([
-        this.fetchImpl(endpoint, {
+        this.safeHttpClient.request(this.settings.endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -454,6 +451,10 @@ export class HttpAIProvider implements AIProvider {
           }),
           redirect: 'manual',
           signal: controller.signal,
+          endpointContext: {
+            provider: this.settings.provider,
+            allowReservedTestHost: this.testTransport,
+          },
         }),
         timeout,
       ]);

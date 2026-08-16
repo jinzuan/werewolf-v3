@@ -75,6 +75,7 @@ const CORE_ERROR_MESSAGES = {
   AI_PROVIDER_REQUIRED: '当前电脑玩家没有可用的服务配置，暂时不能开局。',
   INSECURE_TRANSPORT: '当前连接不安全，请使用 HTTPS/WSS 服务。',
   SECRET_STORE_UNAVAILABLE: '服务端凭据存储不可用，请联系管理员。',
+  CREDENTIAL_SCHEMA_AMBIGUOUS: '凭据格式存在歧义，请房主重新保存唯一 Bearer 凭据。',
   LEGACY_SECRET_DATA: '服务端发现旧版明文凭据，需要先完成离线迁移。',
   UNKNOWN_ERROR: '请求未完成，请稍后重试。',
 } satisfies Record<LegacyProtocolErrorCode, string>;
@@ -146,6 +147,7 @@ const RECOVERIES: Record<PresentationProtocolErrorCode, ErrorRecovery> = {
   AI_PROVIDER_REQUIRED: 'refresh_room',
   INSECURE_TRANSPORT: 'retry',
   SECRET_STORE_UNAVAILABLE: 'retry',
+  CREDENTIAL_SCHEMA_AMBIGUOUS: 'refresh_room',
   LEGACY_SECRET_DATA: 'return_lobby',
 };
 

@@ -5,9 +5,13 @@ import { EndpointPolicy, type EndpointPolicyOptions } from './endpointPolicy';
 import {
   hasLegacyPlaintextCredentials,
   migrateRoomRecord,
+  stripPersistedConnectionFacts,
 } from '../rooms/roomMigration';
 import type { RoomRecord } from '../rooms/types';
-import type { RoomCredentialStore } from './roomCredentialStore';
+import {
+  canonicalCredentialValues,
+  type RoomCredentialStore,
+} from './roomCredentialStore';
 
 export interface SecretMigrationOptions {
   inputPath: string;
@@ -50,7 +54,7 @@ export const migrateLegacySecrets = async (
   const policy = options.endpointPolicy ?? new EndpointPolicy(options.endpointPolicyOptions);
   const sourceRooms = raw as RoomRecord[];
   const legacyByCode = new Map(sourceRooms.map((room) => [room.code.toUpperCase(), legacyConfigOf(room)]));
-  const rooms = sourceRooms.map(migrateRoomRecord);
+  const rooms = sourceRooms.map((room) => stripPersistedConnectionFacts(migrateRoomRecord(room)));
   const refs: string[] = [];
   let migratedRooms = 0;
   for (const room of rooms) {
@@ -64,12 +68,14 @@ export const migrateLegacySecrets = async (
     await policy.validate(endpoint, {
       provider: provider as 'siliconflow' | 'deepseek' | 'local' | 'custom',
     });
+    const legacyKey = typeof legacy.apiKey === 'string' ? legacy.apiKey : undefined;
+    const legacyToken = typeof legacy.token === 'string' ? legacy.token : undefined;
+    const ambiguous = Boolean(legacyKey && legacyToken && legacyKey !== legacyToken);
     const ref = await options.store.put(
       { namespace: options.namespace, roomCode: room.code },
-      {
-        ...(typeof legacy.apiKey === 'string' ? { apiKey: legacy.apiKey } : {}),
-        ...(typeof legacy.token === 'string' ? { token: legacy.token } : {}),
-      },
+      ambiguous
+        ? { apiKey: legacyKey, token: legacyToken }
+        : canonicalCredentialValues({ apiKey: legacyKey, token: legacyToken }),
     );
     const providerConfig = {
       provider,
@@ -84,6 +90,7 @@ export const migrateLegacySecrets = async (
       ...room.config!,
       aiProviderConfig: providerConfig,
       credentialRef: ref,
+      ...(ambiguous ? { credentialSchemaAmbiguous: true } : {}),
     } as RoomRecord['config'];
     refs.push(ref);
     migratedRooms += 1;

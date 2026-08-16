@@ -3,6 +3,11 @@ import { FileEventStore } from '../../server/events/fileStore';
 import { FileRoomRepository } from '../../server/rooms/fileRepository';
 import { RoomService } from '../../server/rooms/roomService';
 import type { RuntimeEnvironment } from '../../server/runtimeConfig';
+import { FileLifecycleOutbox } from '../../server/rooms/lifecycleOutbox';
+import {
+  EncryptedFileCredentialStore,
+  InMemoryCredentialStore,
+} from '../../server/security';
 
 type Command = 'list-expired' | 'sweep' | 'remove';
 
@@ -39,6 +44,26 @@ const repository = new FileRoomRepository(path.join(dataDir, 'rooms.json'), {
   environment,
   deploymentNamespace: namespace,
 });
+const secretKey = process.env.WW_SECRET_KEY;
+if (environment === 'production' && !secretKey) {
+  fail('production room cleanup requires WW_SECRET_KEY.');
+}
+const credentialStore = secretKey
+  ? new EncryptedFileCredentialStore(
+      process.env.WW_SECRET_FILE ?? path.join(dataDir, 'secrets', 'credentials.json'),
+      {
+        masterKey: secretKey,
+        keyId: process.env.WW_SECRET_KEY_ID,
+        environment,
+        dataRoot: dataDir,
+      },
+    )
+  : new InMemoryCredentialStore();
+const lifecycleOutbox = new FileLifecycleOutbox(path.join(dataDir, 'outbox', 'room-lifecycle.json'), {
+  environment,
+  deploymentNamespace: namespace,
+  dataRoot: dataDir,
+});
 const service = new RoomService(
   repository,
   new FileEventStore(path.join(dataDir, 'events.json'), {
@@ -51,6 +76,9 @@ const service = new RoomService(
     waitingRoomTtlMs: Number(process.env.WW_WAITING_ROOM_TTL_MS ?? 30 * 60 * 1000),
     endedRoomTtlMs: Number(process.env.WW_ENDED_ROOM_TTL_MS ?? 24 * 60 * 60 * 1000),
     roomSweepIntervalMs: 0,
+    lifecycleOutbox,
+    credentialStore,
+    credentialNamespace: namespace,
   },
 );
 
@@ -72,8 +100,7 @@ try {
     }
     const room = await repository.get(roomCode);
     if (!room) fail(`room ${roomCode} was not found.`);
-    await repository.remove(roomCode);
-    console.log(JSON.stringify({ roomCode: room.code, removed: true }));
+    console.log(JSON.stringify({ roomCode: room.code, removed: await service.adminRemove(roomCode) }));
   }
 } finally {
   await service.close();

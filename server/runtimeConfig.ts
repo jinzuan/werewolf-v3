@@ -23,6 +23,7 @@ export interface RuntimeConfig {
   waitingRoomTtlMs: number;
   endedRoomTtlMs: number;
   roomSweepIntervalMs: number;
+  startupGraceMs: number;
 }
 
 export interface RuntimeConfigEnv {
@@ -32,12 +33,14 @@ export interface RuntimeConfigEnv {
   WW_WAITING_ROOM_TTL_MS?: string;
   WW_ENDED_ROOM_TTL_MS?: string;
   WW_ROOM_SWEEP_INTERVAL_MS?: string;
+  WW_ROOM_STARTUP_GRACE_MS?: string;
   WW_BIND_HOST?: string;
 }
 
 const DEFAULT_WAITING_ROOM_TTL_MS = 30 * 60 * 1000;
 const DEFAULT_ENDED_ROOM_TTL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_ROOM_SWEEP_INTERVAL_MS = 60 * 1000;
+const DEFAULT_ROOM_STARTUP_GRACE_MS = 5_000;
 const namespacePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 const fail = (message: string): never => {
@@ -143,6 +146,12 @@ export const resolveRuntimeConfig = (
       env.WW_ROOM_SWEEP_INTERVAL_MS,
       DEFAULT_ROOM_SWEEP_INTERVAL_MS,
       'WW_ROOM_SWEEP_INTERVAL_MS',
+    ),
+    startupGraceMs: durationOf(
+      env.WW_ROOM_STARTUP_GRACE_MS,
+      DEFAULT_ROOM_STARTUP_GRACE_MS,
+      'WW_ROOM_STARTUP_GRACE_MS',
+      true,
     ),
   };
 };

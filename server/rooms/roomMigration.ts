@@ -121,8 +121,10 @@ const normalizeMembers = (room: RoomRecord): RoomMember[] => {
     const kind = member.kind ?? 'player';
     const normalized: RoomMember = {
       ...member,
+      ...(Object.prototype.hasOwnProperty.call(member, 'connected')
+        ? { connected: Boolean(member.connected) }
+        : {}),
       kind,
-      connected: Boolean(member.connected),
       omniscient: Boolean(member.omniscient),
       resumeToken: member.resumeToken || resumeToken(),
       isAI,
@@ -150,7 +152,6 @@ const normalizeMembers = (room: RoomRecord): RoomMember[] => {
       id: player.id,
       name: player.name,
       kind: 'player',
-      connected: Boolean(player.isAI),
       omniscient: false,
       resumeToken: resumeToken(),
       avatarId: '',
@@ -160,7 +161,6 @@ const normalizeMembers = (room: RoomRecord): RoomMember[] => {
           id: player.id,
           name: player.name,
           kind: 'player',
-          connected: Boolean(player.isAI),
           omniscient: false,
           resumeToken: '',
         },
@@ -315,12 +315,23 @@ export const migrateRoomRecord = (input: RoomRecord): RoomRecord => {
     updatedAt: room.updatedAt ?? room.createdAt ?? Date.now(),
     lastActivityAt:
       room.lastActivityAt ?? room.updatedAt ?? room.createdAt ?? Date.now(),
+    ...(room.lastSeenAt !== undefined ? { lastSeenAt: room.lastSeenAt } : {}),
   };
   return migrated;
 };
 
 export const migrateRoomRecords = (rooms: readonly RoomRecord[]): RoomRecord[] =>
   rooms.map(migrateRoomRecord);
+
+/** Remove the legacy online fact before a normalized record is persisted. */
+export const stripPersistedConnectionFacts = (room: RoomRecord): RoomRecord => {
+  const next = clone(room);
+  next.members = next.members.map((member) => {
+    const { connected: _connected, ...withoutConnection } = member;
+    return withoutConnection;
+  });
+  return next;
+};
 
 /** Production startup must reject this shape instead of silently losing a key. */
 export const hasLegacyPlaintextCredentials = (value: unknown): boolean => {

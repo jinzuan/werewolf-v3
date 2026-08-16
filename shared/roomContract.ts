@@ -56,7 +56,11 @@ export interface RoomAIProviderConfig {
  * never be copied into RoomRecord, RoomView, events, or logs.
  */
 export interface RoomAIConfig extends RoomAIProviderConfig {
+  /** The only credential accepted by the V3 room contract. */
+  bearerCredential?: string;
+  /** @deprecated Accepted only by the migration boundary. */
   apiKey?: string;
+  /** @deprecated Accepted only by the migration boundary. */
   token?: string;
 }
 
