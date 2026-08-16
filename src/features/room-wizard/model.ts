@@ -11,15 +11,15 @@ export const ROOM_WIZARD_STORAGE_KEY = 'werewolf-v31-room-wizard-draft';
 export const ROOM_WIZARD_DRAFT_VERSION = 1 as const;
 
 export const WIZARD_STEPS = [
-  { id: 'players', label: '人数', title: '先决定今晚有多少人' },
-  { id: 'roles', label: '角色配置', title: '给村庄安排角色' },
-  { id: 'rules', label: '规则', title: '约定这局怎么玩' },
-  { id: 'confirm', label: '确认', title: '确认无误，点亮村庄' },
+  { id: 'players', label: '人数与规则', title: '先决定今晚有多少人，约定怎么玩' },
+  { id: 'roles', label: '角色与确认', title: '安排角色，确认后点亮村庄' },
 ] as const;
 
 export type WizardStep = (typeof WIZARD_STEPS)[number]['id'];
+/** Old deep links and callers remain readable while routing uses two pages. */
+export type LegacyWizardStep = WizardStep | 'rules' | 'confirm';
 
-export const WIZARD_STEP_PATHS: Record<WizardStep, string> = {
+export const WIZARD_STEP_PATHS: Record<LegacyWizardStep, string> = {
   players: '/rooms/new/players',
   roles: '/rooms/new/roles',
   rules: '/rooms/new/rules',
@@ -33,11 +33,11 @@ const WIZARD_STEP_ALIASES: Record<string, WizardStep> = {
   players: 'players',
   '2': 'roles',
   roles: 'roles',
-  '3': 'rules',
-  rules: 'rules',
-  '4': 'confirm',
-  confirm: 'confirm',
-  review: 'confirm',
+  '3': 'players',
+  rules: 'players',
+  '4': 'roles',
+  confirm: 'roles',
+  review: 'roles',
 };
 
 export const normalizeWizardStep = (value: string | undefined): WizardStep | null =>
@@ -94,7 +94,7 @@ export interface WizardIssue {
   path: string;
   message: string;
   errorCode?: string;
-  step: WizardStep;
+  step: LegacyWizardStep;
 }
 
 export const roleSetupTotal = (roleSetup: RoleSetup): number =>
@@ -207,7 +207,7 @@ export const clearWizardDraft = (
 const issue = (
   path: string,
   message: string,
-  step: WizardStep,
+  step: LegacyWizardStep,
   errorCode?: string,
 ): WizardIssue => ({ path, message, step, ...(errorCode ? { errorCode } : {}) });
 
@@ -353,7 +353,7 @@ const validateRules = (draft: WizardDraft): WizardIssue[] => {
 
 export const validateWizardStep = (
   draft: WizardDraft,
-  step: WizardStep,
+  step: LegacyWizardStep,
   catalog: RoomCreationCatalog,
 ): WizardIssue[] => {
   if (step === 'players') return validatePlayers(draft, catalog);
@@ -362,19 +362,26 @@ export const validateWizardStep = (
   return [...validatePlayers(draft, catalog), ...validateRoles(draft, catalog), ...validateRules(draft)];
 };
 
+const uiStepForIssue = (step: LegacyWizardStep): WizardStep =>
+  step === 'players' || step === 'rules' ? 'players' : 'roles';
+
 export const issuesForStep = (
   draft: WizardDraft,
   step: WizardStep,
   catalog: RoomCreationCatalog,
-): WizardIssue[] => validateWizardStep(draft, step, catalog).filter((item) => item.step === step);
+): WizardIssue[] => validateWizardStep(draft, 'confirm', catalog)
+  .filter((item) => uiStepForIssue(item.step) === step);
 
-export const stepIndex = (step: WizardStep): number =>
-  WIZARD_STEPS.findIndex((item) => item.id === step);
+export const stepIndex = (step: LegacyWizardStep): number =>
+  WIZARD_STEPS.findIndex((item) => item.id === normalizeWizardStep(step));
+
+export const wizardPathForStep = (step: LegacyWizardStep): string =>
+  WIZARD_STEP_PATHS[uiStepForIssue(step)];
 
 /** Back navigation is always allowed; forward jumps require every prior step to be complete. */
 export const canNavigateToStep = (
-  current: WizardStep,
-  target: WizardStep,
+  current: LegacyWizardStep,
+  target: LegacyWizardStep,
   draft: WizardDraft,
   catalog: RoomCreationCatalog,
 ): boolean =>
@@ -383,7 +390,7 @@ export const canNavigateToStep = (
     (item) => validateWizardStep(draft, item.id, catalog).length === 0,
   );
 
-export const stepForIssuePath = (path: string): WizardStep => {
+export const stepForIssuePath = (path: string): LegacyWizardStep => {
   if (path.startsWith('roleSetup')) return 'roles';
   if (path === 'visibility' || path === 'readyPolicy' || path === 'allowPublicSpectators' || path === 'reviewEnabled' || path.startsWith('ruleset')) return 'rules';
   return 'players';
