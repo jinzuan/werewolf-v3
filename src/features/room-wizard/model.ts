@@ -2,7 +2,6 @@ import type {
   CreateRoomOptionsV31,
   RoomConfigIssue,
   RoomCreationCatalog,
-  RoomAIConfig,
   RoomMode,
   RoleSetup,
 } from '../../../shared/roomContract';
@@ -10,23 +9,6 @@ import type { Role } from '../../../shared/types';
 
 export const ROOM_WIZARD_STORAGE_KEY = 'werewolf-v31-room-wizard-draft';
 export const ROOM_WIZARD_DRAFT_VERSION = 1 as const;
-export const DEFAULT_AI_ENDPOINT = 'http://127.0.0.1:1234/v1/chat/completions';
-
-/** Safe defaults live in the player form; secrets are never put in the draft. */
-export const createInitialAIConfig = (): RoomAIConfig => ({
-  provider: 'custom',
-  model: '',
-  apiKey: '',
-  token: '',
-  endpoint: DEFAULT_AI_ENDPOINT,
-  temperature: .7,
-  maxTokens: 512,
-  behavior: 'random',
-});
-
-export const isAIConfigConfigured = (config: RoomAIConfig): boolean => (
-  config.model.trim().length > 0 && config.endpoint.trim().length > 0
-);
 
 export const WIZARD_STEPS = [
   { id: 'players', label: '人数', title: '先决定今晚有多少人' },
@@ -417,10 +399,7 @@ export const serverIssuesToWizardIssues = (
     step: stepForIssuePath(item.path),
   }));
 
-export const optionsFromDraft = (
-  draft: WizardDraft,
-  aiConfig?: RoomAIConfig,
-): CreateRoomOptionsV31 => ({
+export const optionsFromDraft = (draft: WizardDraft): CreateRoomOptionsV31 => ({
   catalogVersion: draft.catalogVersion,
   roomName: draft.roomName.trim(),
   creator: { ...draft.creator, name: draft.creator.name.trim() },
@@ -437,9 +416,6 @@ export const optionsFromDraft = (
   readyPolicy: draft.readyPolicy,
   allowPublicSpectators: draft.allowPublicSpectators,
   reviewEnabled: draft.reviewEnabled,
-  ...(aiConfig && draft.mode !== 'human' && isAIConfigConfigured(aiConfig)
-    ? { aiConfig: { ...aiConfig } }
-    : {}),
 });
 
 export const cloneDraft = (draft: WizardDraft): WizardDraft => ({

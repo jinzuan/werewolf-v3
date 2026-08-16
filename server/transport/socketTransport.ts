@@ -171,6 +171,7 @@ export function bindSocketTransport(
       roomId: snapshot.roomId,
       gameId: snapshot.gameId,
       afterSequence,
+      lastSequence: snapshot.lastSequence,
       events,
     });
     target.emit('v3:snapshot', {
@@ -489,6 +490,40 @@ export function bindSocketTransport(
         ack?.(errorResponse(error));
       }
     });
+
+    // Recovery reads the same projected DomainEvent stream as live pushes.
+    // It is deliberately separate from debug:* and never returns legacy logs.
+    socket.on(
+      'v3:events',
+      async (
+        request: { roomCode?: string; actorId?: string; afterSequence?: number },
+        ack?: (response: unknown) => void,
+      ) => {
+        try {
+          const identity = state(socket).identity;
+          if (!identity) throw new RoomServiceError({ code: 'UNAUTHENTICATED', messageKey: 'room.error.unauthenticated' });
+          if (request.actorId && request.actorId !== identity.actorId) throw new RoomServiceError({ code: 'IDENTITY_MISMATCH', messageKey: 'room.error.identity_mismatch' });
+          if (request.roomCode && request.roomCode !== identity.roomCode) throw new RoomServiceError({ code: 'ROOM_MISMATCH', messageKey: 'room.error.room_mismatch' });
+          const afterSequence = request.afterSequence ?? 0;
+          if (!Number.isSafeInteger(afterSequence) || afterSequence < 0) {
+            throw new RoomServiceError({ code: 'INVALID_COMMAND', messageKey: 'room.error.invalid_command' });
+          }
+          const events = await rooms.events(identity, afterSequence);
+          const snapshot = await rooms.snapshot(identity);
+          state(socket).lastSequence = snapshot.lastSequence;
+          ack?.({
+            ok: true,
+            roomId: snapshot.roomId,
+            gameId: snapshot.gameId,
+            afterSequence,
+            lastSequence: snapshot.lastSequence,
+            events,
+          });
+        } catch (error) {
+          ack?.(errorResponse(error));
+        }
+      },
+    );
 
     socket.on(
       'v3:snapshot',

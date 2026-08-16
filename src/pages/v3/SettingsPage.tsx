@@ -1,6 +1,5 @@
-import { ArrowRight, Monitor, Save, Volume2 } from 'lucide-react';
+import { Monitor, Save, Volume2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { AppShell } from '../../components/shell/AppShell';
 import { getServerUrl, setServerUrl } from '../../net/socket';
 import { useV3Store } from '../../stores/v3Store';
@@ -99,8 +98,7 @@ export function SettingsPage() {
 
         <Card className="v3-settings-note">
           <Volume2 size={19} />
-            <div><strong>电脑玩家参数由房主掌握</strong><span>创建混合房或电脑局时，可以在开房向导填写模型、访问凭据和服务地址。</span></div>
-          <Link className="v3-button v3-button--quiet" to="/rooms/new/players">打开开房向导<ArrowRight size={16} /></Link>
+            <div><strong>电脑玩家参数由服务端管理</strong><span>玩家端只保留本地显示与辅助功能。进入等待房后，受权房主可在电脑玩家设置中管理模型服务；其他成员只能看到准备状态。</span></div>
         </Card>
       </div>
     </AppShell>

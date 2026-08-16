@@ -121,4 +121,5 @@ test('quick computer creation resumes into the omniscient monitor', async ({ pag
   await page.goto(`${v3.appURL}/rooms/${access.room.code}`);
   await expect(page).toHaveURL(/\/rooms\/[^/]+\/monitor/, { timeout: 60_000 });
   await expect(page.getByText('全知监控')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText('完整对局记录')).toBeVisible();
 });
