@@ -22,6 +22,7 @@ import type {
   RoomAIConfigPatch,
   RoomAIConfigUpdateAck,
   RoomListAck,
+  RoomListQuery,
   RoomMutationCommand,
   RoomReadCommand,
   RoomViewAck,
@@ -29,7 +30,7 @@ import type {
   SpectatorCommand,
   V3Command,
 } from '../../shared/protocol';
-import { getServerUrl } from './socket';
+import { getServerUrl } from './serverEndpoint';
 
 /**
  * The V3 socket adapter is deliberately the only place that knows socket.io
@@ -462,8 +463,10 @@ const publicRead = async <TAck extends object>(
   return response;
 };
 
-export const listV3Rooms = async (): Promise<ClientAck<{ rooms: RoomListAck extends ProtocolAck<infer P> ? P extends { rooms: infer R } ? R : never : never }>> =>
-  publicRead('v3:rooms', {});
+export const listV3Rooms = async (
+  query: RoomListQuery = {},
+): Promise<ClientAck<RoomListAck extends ProtocolAck<infer P> ? P : never>> =>
+  publicRead('v3:rooms', query);
 
 export const getV3Catalog = async (): Promise<ClientAck<{ catalog: import('../../shared/roomContract').RoomCreationCatalog }>> =>
   publicRead('v3:command', {

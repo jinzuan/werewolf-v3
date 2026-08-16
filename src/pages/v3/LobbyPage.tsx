@@ -34,6 +34,9 @@ export function LobbyPage() {
   const error = useV3Store((state) => state.error);
   const rooms = useV3Store((state) => state.rooms);
   const refreshRooms = useV3Store((state) => state.refreshRooms);
+  const loadMoreRooms = useV3Store((state) => state.loadMoreRooms);
+  const roomsNextCursor = useV3Store((state) => state.roomsNextCursor);
+  const roomsLoading = useV3Store((state) => state.roomsLoading);
 
   return (
     <AppShell title="大厅" eyebrow="狼人杀·月光森林" connected={connected}>
@@ -66,7 +69,7 @@ export function LobbyPage() {
             <Badge tone={connected ? 'success' : 'warning'}>
               <Radio size={13} />{connected ? '连接正常' : '正在连接'}
             </Badge>
-            <Button variant="quiet" onClick={() => void refreshRooms()}>刷新列表</Button>
+            <Button variant="quiet" disabled={roomsLoading} onClick={() => void refreshRooms()}>刷新列表</Button>
           </div>
         </header>
 
@@ -109,6 +112,13 @@ export function LobbyPage() {
             );
           })}
         </div>
+        {roomsNextCursor ? (
+          <div className="v3-section__footer">
+            <Button variant="secondary" disabled={roomsLoading} onClick={() => void loadMoreRooms()}>
+              {roomsLoading ? '正在载入……' : '载入下一页'}<ArrowRight size={17} />
+            </Button>
+          </div>
+        ) : null}
       </section>
     </AppShell>
   );

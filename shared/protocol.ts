@@ -238,6 +238,40 @@ export type RoomSummary = RoomSummaryV31;
 export type RoomMemberView = import('./roomContract').RoomMemberViewV31;
 export type RoomViewerView = import('./roomContract').RoomViewerViewV31;
 
+export const ROOM_LIST_DEFAULT_LIMIT = 50;
+export const ROOM_LIST_MAX_LIMIT = 100;
+
+export interface RoomListQuery {
+  /** Opaque cursor returned by the previous page. */
+  cursor?: string;
+  limit?: number;
+}
+
+export interface RoomListPage {
+  rooms: RoomSummary[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
+export const EVENT_HISTORY_DEFAULT_LIMIT = 100;
+export const EVENT_HISTORY_MAX_LIMIT = 200;
+
+export interface EventHistoryQuery {
+  afterSequence?: number;
+  beforeSequence?: number;
+  limit?: number;
+}
+
+export interface EventHistoryPage {
+  afterSequence: number;
+  beforeSequence?: number;
+  events: DomainEvent[];
+  limit: number;
+  hasMore: boolean;
+  nextAfterSequence: number | null;
+  nextBeforeSequence: number | null;
+}
+
 /** Public room projection. Credentials and authoritative session state are excluded. */
 export type RoomView = RoomViewV31;
 
@@ -375,7 +409,7 @@ export type RoomCreationCatalogAck = ProtocolAck<{
 }>;
 export type RoomViewAck = ProtocolAck<{ room: RoomView }>;
 export type GameCommandAck = ProtocolAck<{ events: DomainEvent[] }>;
-export type RoomListAck = ProtocolAck<{ rooms: RoomSummary[] }>;
+export type RoomListAck = ProtocolAck<RoomListPage>;
 export type SnapshotAck = ProtocolAck<{ snapshot: ProjectedSnapshot }>;
 export type ReviewViewAck = ProtocolAck<{ review: PostGameReviewView }>;
 export type RoomAIConfigAck = ProtocolAck<{
@@ -503,6 +537,12 @@ export interface GameEventsMessage {
   gameId: string;
   afterSequence: number;
   events: DomainEvent[];
+  /** History page metadata. Older clients may ignore these optional fields. */
+  beforeSequence?: number;
+  limit?: number;
+  hasMore?: boolean;
+  nextAfterSequence?: number | null;
+  nextBeforeSequence?: number | null;
 }
 
 export interface RoomClosedMessage {

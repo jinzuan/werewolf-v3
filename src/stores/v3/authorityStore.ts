@@ -15,6 +15,7 @@ import type {
   RoomAccess,
   RoomAIConfigPatch,
   RoomAIConfigSummary,
+  RoomListQuery,
 } from '../../../shared/protocol';
 import type { PostGameReviewView } from '../../../shared/reviewContract';
 import {
@@ -176,6 +177,8 @@ export interface V3Store {
   commandOutcomes: Record<string, CommandOutcome>;
   lastCommandOutcome: CommandOutcome | null;
   rooms: RoomSummary[];
+  roomsNextCursor: string | null;
+  roomsLoading: boolean;
   catalog: RoomCreationCatalog | null;
   room: RoomView | null;
   session: V3Session | null;
@@ -189,6 +192,8 @@ export interface V3Store {
   initialize: () => () => void;
   refreshCatalog: (options?: { force?: boolean }) => Promise<boolean>;
   refreshRooms: () => Promise<void>;
+  /** Fetch the next bounded page; the current page is replaced to cap DOM. */
+  loadMoreRooms: () => Promise<void>;
   refreshRoom: () => Promise<boolean>;
   createRoom: (
     name: string,
@@ -260,6 +265,8 @@ export const useV3Store = create<V3Store>()((set, get) => {
       // A room list is a separate lobby projection. Never carry it across
       // identity changes, otherwise a new room can render stale room cards.
       rooms: [],
+      roomsNextCursor: null,
+      roomsLoading: false,
       catalog: get().catalog,
       review: null,
       aiConfigSummary: null,
@@ -406,12 +413,20 @@ export const useV3Store = create<V3Store>()((set, get) => {
     if (session.gameId !== undefined && incoming.gameId !== session.gameId) {
       return false;
     }
+    const pending = bufferedGameMessages.filter((message) =>
+      message.roomId === incoming.roomId && message.gameId === incoming.gameId,
+    );
+    const pendingStart = pending.length > 0
+      ? Math.min(...pending.map((message) => message.afterSequence))
+      : undefined;
     const nextSession = setCursor(
       session,
       incoming.gameId,
       preserveCursor
         ? session.lastSeenSeq
-        : Math.max(session.lastSeenSeq, incoming.lastSequence),
+        : pendingStart === undefined
+          ? Math.max(session.lastSeenSeq, incoming.lastSequence)
+          : Math.max(session.lastSeenSeq, pendingStart),
     );
     persistSession(nextSession);
     set({
@@ -421,7 +436,6 @@ export const useV3Store = create<V3Store>()((set, get) => {
       authorityStatus: 'authorized',
     });
 
-    const pending = bufferedGameMessages;
     bufferedGameMessages = [];
     for (const message of pending) acceptEnvelope(message);
     return true;
@@ -765,6 +779,8 @@ export const useV3Store = create<V3Store>()((set, get) => {
     commandOutcomes: commandOutcomeRegistry.all(),
     lastCommandOutcome: null,
     rooms: [],
+    roomsNextCursor: null,
+    roomsLoading: false,
     catalog: null,
     room: null,
     session: loadSession(),
@@ -807,15 +823,49 @@ export const useV3Store = create<V3Store>()((set, get) => {
 
     refreshRooms: async () => {
       if (roomRefreshPromise) return roomRefreshPromise;
+      set({ roomsLoading: true });
       roomRefreshPromise = (async () => {
-        const response = await listV3Rooms();
+        const query: RoomListQuery = {};
+        const response = await listV3Rooms(query);
         if (response.ok === false) {
           set({ error: responseMessage(response) });
           return;
         }
-        set({ rooms: response.rooms, error: null });
+        set({
+          rooms: response.rooms,
+          roomsNextCursor: response.nextCursor,
+          roomsLoading: false,
+          error: null,
+        });
       })().finally(() => {
         roomRefreshPromise = null;
+        if (get().roomsLoading) set({ roomsLoading: false });
+      });
+      return roomRefreshPromise;
+    },
+
+    loadMoreRooms: async () => {
+      if (roomRefreshPromise) return roomRefreshPromise;
+      const cursor = get().roomsNextCursor;
+      if (!cursor) return;
+      set({ roomsLoading: true });
+      roomRefreshPromise = (async () => {
+        const response = await listV3Rooms({ cursor });
+        if (response.ok === false) {
+          set({ error: responseMessage(response) });
+          return;
+        }
+        // Keep one server-sized page in memory/DOM. This is intentionally
+        // pagination rather than unbounded "load all" accumulation.
+        set({
+          rooms: response.rooms,
+          roomsNextCursor: response.nextCursor,
+          roomsLoading: false,
+          error: null,
+        });
+      })().finally(() => {
+        roomRefreshPromise = null;
+        if (get().roomsLoading) set({ roomsLoading: false });
       });
       return roomRefreshPromise;
     },

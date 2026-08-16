@@ -5,8 +5,9 @@ import tsconfigPaths from "vite-tsconfig-paths";
 // https://vite.dev/config/
 export default defineConfig({
   build: {
+    manifest: true,
     sourcemap: 'hidden',
-    chunkSizeWarningLimit: 500,
+    chunkSizeWarningLimit: 150,
     rollupOptions: {
       output: {
         manualChunks(id) {

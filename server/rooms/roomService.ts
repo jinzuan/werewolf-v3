@@ -1,17 +1,25 @@
 import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
-import type { EventStore, ViewerContext } from '../../shared/events';
+import type { DomainEvent, EventStore, ViewerContext } from '../../shared/events';
 import type {
   CommandReceipt,
   CreateRoomOptionsV31,
   GameCommand,
   GameCommandMeta,
   RoomMutationCommand,
+  RoomListPage,
+  RoomListQuery,
+  EventHistoryPage,
+  EventHistoryQuery,
   ProtocolErrorCode,
   RoomConfigIssue,
   RoomConfigView,
   RoomSnapshotReason,
   RoomSummary,
   RoomView,
+} from '../../shared/protocol';
+import {
+  ROOM_LIST_DEFAULT_LIMIT,
+  ROOM_LIST_MAX_LIMIT,
 } from '../../shared/protocol';
 import { AI_DEFAULTS } from '../../shared/config/aiDefaults';
 import type {
@@ -81,6 +89,19 @@ const code = () =>
   Array.from({ length: 6 }, () => CODE_CHARS[randomInt(CODE_CHARS.length)]).join('');
 
 const clone = <T>(value: T): T => structuredClone(value);
+
+const encodeRoomListCursor = (roomCode: string): string =>
+  Buffer.from(roomCode, 'utf8').toString('base64url');
+
+const decodeRoomListCursor = (cursor: string | undefined): string | null => {
+  if (!cursor) return null;
+  try {
+    const decoded = Buffer.from(cursor, 'base64url').toString('utf8').toUpperCase();
+    return decoded || null;
+  } catch {
+    return null;
+  }
+};
 
 interface RoomAIConfigCommandOutcome {
   summary: RoomAIConfigSummary | null;
@@ -815,26 +836,57 @@ export class RoomService {
     );
   }
 
-  async listPublicRooms(): Promise<RoomSummary[]> {
-    return (await this.repository.list())
+  async listPublicRooms(): Promise<RoomSummary[]>;
+  async listPublicRooms(options: RoomListQuery): Promise<RoomListPage>;
+  async listPublicRooms(options?: RoomListQuery): Promise<RoomSummary[] | RoomListPage> {
+    const publicRecords = (await this.repository.list())
       .filter((room) => this.isPubliclyVisible(room))
-      .map((room) => {
-      const config = room.config;
-      const counts = this.policy.counts(room);
-      return {
-        roomCode: room.code,
-        roomName: room.name,
-        status: room.status,
-        mode: config?.mode ?? 'human',
-        minHumanPlayers: config?.minHumanPlayers ?? 0,
-        playerCount: counts.playerSeats,
-        maxPlayers: config?.maxPlayers ?? room.maxPlayers,
-        onlinePlayers: counts.onlineHumanPlayers,
-        onlineCount: counts.onlineHumanPlayers,
-        readyCount: counts.readyHumanPlayers,
-        spectatorCount: counts.spectators,
-      };
+      // createdAt is durable and gives the public catalogue a stable order;
+      // modern JS sort is stable, so same-millisecond creations retain the
+      // repository's durable order as their deterministic tie-breaker.
+      .sort((left, right) => left.createdAt - right.createdAt);
+    const rooms = publicRecords.map((room) => {
+        const config = room.config;
+        const counts = this.policy.counts(room);
+        return {
+          roomCode: room.code,
+          roomName: room.name,
+          status: room.status,
+          mode: config?.mode ?? 'human',
+          minHumanPlayers: config?.minHumanPlayers ?? 0,
+          playerCount: counts.playerSeats,
+          maxPlayers: config?.maxPlayers ?? room.maxPlayers,
+          onlinePlayers: counts.onlineHumanPlayers,
+          onlineCount: counts.onlineHumanPlayers,
+          readyCount: counts.readyHumanPlayers,
+          spectatorCount: counts.spectators,
+        };
       });
+
+    if (!options) return rooms;
+
+    const limit = Number.isSafeInteger(options.limit) && (options.limit ?? 0) > 0
+      ? Math.min(options.limit!, ROOM_LIST_MAX_LIMIT)
+      : ROOM_LIST_DEFAULT_LIMIT;
+    const cursor = decodeRoomListCursor(options.cursor);
+    const cursorIndex = cursor
+      ? rooms.findIndex((room) => room.roomCode === cursor)
+      : -1;
+    const pageStart = cursorIndex < 0 ? 0 : cursorIndex + 1;
+    if (cursor && cursorIndex < 0) {
+      return { rooms: [], hasMore: false, nextCursor: null };
+    }
+    const page = rooms.slice(pageStart, pageStart + limit);
+    const hasMore = pageStart + page.length < rooms.length;
+    return {
+      rooms: page,
+      hasMore,
+      nextCursor: hasMore ? encodeRoomListCursor(page.at(-1)!.roomCode) : null,
+    };
+  }
+
+  async listPublicRoomsPage(options: RoomListQuery = {}): Promise<RoomListPage> {
+    return this.listPublicRooms(options);
   }
 
   async list(): Promise<RoomSummary[]> {
@@ -1554,12 +1606,27 @@ export class RoomService {
     return session.snapshotFor(await this.viewerForIdentity(identity));
   }
 
-  async events(identity: SocketIdentity, afterSequence = 0) {
+  async events(identity: SocketIdentity, afterSequence?: number): Promise<DomainEvent[]>;
+  async events(identity: SocketIdentity, query: EventHistoryQuery): Promise<EventHistoryPage>;
+  async events(
+    identity: SocketIdentity,
+    afterOrQuery: number | EventHistoryQuery = 0,
+  ): Promise<DomainEvent[] | EventHistoryPage> {
     const room = await this.requireRoom(identity.roomCode);
     assertIdentityRoom(identity, room);
     const session = this.sessions.get(room.code);
     if (!session) throw this.error('GAME_NOT_STARTED', 'room.error.game_not_started');
-    return session.eventsFor(await this.viewerForIdentity(identity), afterSequence);
+    const viewer = await this.viewerForIdentity(identity);
+    if (typeof afterOrQuery === 'number') return session.eventsFor(viewer, afterOrQuery);
+    return session.eventPageFor(viewer, afterOrQuery);
+  }
+
+  async eventsPage(
+    identity: SocketIdentity,
+    query: EventHistoryQuery = {},
+  ): Promise<EventHistoryPage> {
+    const result = await this.events(identity, query);
+    return result as EventHistoryPage;
   }
 
   async review(identity: SocketIdentity) {

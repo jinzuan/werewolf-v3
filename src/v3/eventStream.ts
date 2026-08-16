@@ -6,6 +6,8 @@ import type { GameEventsMessage } from '../../shared/protocol';
 import { containsSensitiveKeys } from './session';
 import { filterVisibleEvents } from './visibility';
 
+export const MAX_EVENT_WINDOW = 200;
+
 export interface EventStreamState {
   roomId: string;
   gameId: string;
@@ -49,11 +51,12 @@ export const mergeEventEnvelope = (
     lastSeenSeq: Math.max(
       state.lastSeenSeq,
       envelope.afterSequence,
+      envelope.nextAfterSequence ?? state.lastSeenSeq,
       ...scoped.map((event) => event.sequence),
     ),
     events: [...merged.values()]
       .sort((left, right) => left.sequence - right.sequence)
-      .slice(-300),
+      .slice(-MAX_EVENT_WINDOW),
     accepted: true,
   };
 };

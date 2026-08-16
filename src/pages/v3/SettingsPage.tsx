@@ -1,26 +1,12 @@
-import { ArrowRight, Monitor, Save, Volume2 } from 'lucide-react';
+import { ArrowRight, Monitor, Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AppShell } from '../../components/shell/AppShell';
-import { getServerUrl, setServerUrl } from '../../net/socket';
+import { endpointDiagnosticsEnabled, getServerUrl, setServerUrl } from '../../net/serverEndpoint';
 import { useV3Store } from '../../stores/v3Store';
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { Input } from '../../ui/Input';
-
-function Toggle({ checked, onChange, label }: { checked: boolean; onChange: () => void; label: string }) {
-  return (
-    <button
-      className={`v3-toggle ${checked ? 'is-on' : ''}`}
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={onChange}
-    >
-      <span />
-    </button>
-  );
-}
 
 type MotionPreference = 'system' | 'reduced' | 'full';
 
@@ -33,9 +19,8 @@ const readMotionPreference = (): MotionPreference => {
 export function SettingsPage() {
   const connected = useV3Store((state) => state.connected);
   const [motionPreference, setMotionPreference] = useState<MotionPreference>(readMotionPreference);
-  const [captions, setCaptions] = useState(true);
-  const [notifications, setNotifications] = useState(false);
-  const [serverUrl, updateServerUrl] = useState(getServerUrl());
+  const diagnosticsEnabled = endpointDiagnosticsEnabled();
+  const [serverUrl, updateServerUrl] = useState(() => getServerUrl());
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -43,10 +28,8 @@ export function SettingsPage() {
   }, [motionPreference]);
 
   const save = () => {
-    setServerUrl(serverUrl.trim());
     localStorage.setItem('werewolf-v3-motion-mode', motionPreference);
-    localStorage.setItem('werewolf-v3-captions', String(captions));
-    localStorage.setItem('werewolf-v3-notifications', String(notifications));
+    if (diagnosticsEnabled) setServerUrl(serverUrl.trim());
     setSaved(true);
   };
 
@@ -58,13 +41,15 @@ export function SettingsPage() {
       </div>
 
       <div className="v3-settings-layout">
-        <Card>
-          <div className="v3-panel-heading"><div><span>实时服务连接</span><h2>服务连接</h2></div></div>
-          <label className="v3-setting-row">
-            <div><strong>服务端地址</strong><span>保存后刷新页面以建立新连接。</span></div>
-            <Input value={serverUrl} onChange={(event) => updateServerUrl(event.target.value)} />
-          </label>
-        </Card>
+        {diagnosticsEnabled ? (
+          <Card>
+            <div className="v3-panel-heading"><div><span>开发诊断</span><h2>服务连接</h2></div></div>
+            <label className="v3-setting-row">
+              <div><strong>服务端地址</strong><span>仅开发/测试诊断使用；保存后刷新页面以建立新连接。</span></div>
+              <Input value={serverUrl} onChange={(event) => updateServerUrl(event.target.value)} />
+            </label>
+          </Card>
+        ) : null}
         <Card>
           <div className="v3-panel-heading"><div><span>月光森林视觉</span><h2>显示</h2></div><Monitor size={18} aria-hidden="true" /></div>
           <div className="v3-setting-row">
@@ -81,25 +66,9 @@ export function SettingsPage() {
           </div>
         </Card>
 
-        <Card>
-          <div className="v3-panel-heading"><div><span>提示强度</span><h2>声音与通知</h2></div></div>
-          <label className="v3-setting-row">
-            <div><strong>主音量</strong><span>语音、提示音和阶段音效。</span></div>
-            <input type="range" min="0" max="100" defaultValue="64" aria-label="主音量" />
-          </label>
-          <div className="v3-setting-row">
-            <div><strong>字幕与系统提示</strong><span>显示关键语音和阶段变化文字。</span></div>
-            <Toggle checked={captions} onChange={() => setCaptions((value) => !value)} label="字幕与系统提示" />
-          </div>
-          <div className="v3-setting-row">
-            <div><strong>桌面通知</strong><span>仅在轮到你行动时通知。</span></div>
-            <Toggle checked={notifications} onChange={() => setNotifications((value) => !value)} label="桌面通知" />
-          </div>
-        </Card>
-
         <Card className="v3-settings-note">
-          <Volume2 size={19} />
-            <div><strong>电脑玩家参数由房主掌握</strong><span>创建混合房或电脑局时，可以在开房向导填写模型、访问凭据和服务地址。</span></div>
+          <Monitor size={19} />
+          <div><strong>电脑玩家参数由房主掌握</strong><span>创建混合房或电脑局时，可以在开房向导填写模型、访问凭据和服务地址。</span></div>
           <Link className="v3-button v3-button--quiet" to="/rooms/new/players">打开开房向导<ArrowRight size={16} /></Link>
         </Card>
       </div>
