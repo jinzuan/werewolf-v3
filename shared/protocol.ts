@@ -256,6 +256,33 @@ export interface RoomAccess {
   credentials: IdentityCredentials;
 }
 
+/** Durable answer for a room mutation. The client derives unknown/not_sent
+ * from transport evidence; the server persists committed/rejected only. */
+export type CommandReceiptStatus = 'committed' | 'rejected';
+export type CommandOutcomeStatus =
+  | CommandReceiptStatus
+  | 'unknown'
+  | 'not_sent';
+
+export interface CommandReceipt {
+  schemaVersion: 1;
+  environment: string;
+  deploymentNamespace: string;
+  revision: number;
+  commandId: string;
+  commandType: string;
+  actorId: string;
+  roomId: string;
+  roomCode: string;
+  status: CommandReceiptStatus;
+  createdAt: number;
+  roomRevision?: number;
+  errorCode?: ProtocolErrorCode;
+  messageKey?: string;
+  /** Small replay payloads only; never credentials or private room state. */
+  result?: Record<string, unknown>;
+}
+
 export const STABLE_COMMAND_ERROR_CODES = [
   'UNAUTHENTICATED',
   'IDENTITY_MISMATCH',
@@ -321,6 +348,8 @@ export interface ProtocolAckError {
   issues?: RoomConfigIssue[];
   /** Present on ROOM_REVISION_CONFLICT so clients can converge immediately. */
   room?: RoomView;
+  /** Present when the server durably recorded a rejected mutation. */
+  receipt?: CommandReceipt;
 }
 
 export type ProtocolAckSuccess<
@@ -350,6 +379,15 @@ export type RoomAIConfigAck = ProtocolAck<{
 export type RoomAIConfigUpdateAck = ProtocolAck<{
   summary: RoomAIConfigSummary | null;
   roomRevision: number;
+}>;
+export type RoomMutationAck = ProtocolAck<{
+  room?: RoomView;
+  receipt: CommandReceipt;
+  summary?: RoomAIConfigSummary | null;
+  roomRevision?: number;
+}>;
+export type CommandReceiptAck = ProtocolAck<{
+  receipt: CommandReceipt | null;
 }>;
 
 export type { RoomAIConfigPatch, RoomAIConfigSummary } from './aiRoomConfigContract';
@@ -467,6 +505,7 @@ export interface RoomClosedMessage {
   roomCode: string;
   roomId: string;
   reason: 'dissolved';
+  causeCommandId?: string;
 }
 
 export interface SpectatorViewMessage {

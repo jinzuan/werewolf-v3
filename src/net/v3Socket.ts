@@ -1,5 +1,7 @@
 import { io, type Socket } from 'socket.io-client';
 import type {
+  CommandReceipt,
+  CommandReceiptAck,
   GameEventsMessage,
   GameSnapshotMessage,
   RoomSnapshotMessage,
@@ -45,7 +47,12 @@ type ClientCommand = V3Command & {
   avatarId?: string;
 };
 
-type RoomCommandAck = ProtocolAck<{ room?: RoomSnapshotMessage['room'] }>;
+type RoomCommandAck = ProtocolAck<{
+  room?: RoomSnapshotMessage['room'];
+  receipt: CommandReceipt;
+  summary?: import('../../shared/roomContract').RoomAIConfigSummary | null;
+  roomRevision?: number;
+}>;
 
 export type TransportFailureCode =
   | 'TRANSPORT_REPLACED'
@@ -59,6 +66,8 @@ export interface TransportFailure {
   kind: 'transport';
   code: TransportFailureCode;
   message: string;
+  /** True once Socket.IO accepted the command for transmission. */
+  sent?: boolean;
 }
 
 export type ClientAck<TPayload extends object = Record<string, never>> =
@@ -274,7 +283,8 @@ const commandMeta = (actorId: string, roomId?: string) => ({
 const transportFailure = (
   code: TransportFailureCode,
   message: string,
-): TransportFailure => ({ ok: false, kind: 'transport', code, message });
+  sent = false,
+): TransportFailure => ({ ok: false, kind: 'transport', code, message, sent });
 
 const isAck = (value: unknown): value is { ok: boolean } =>
   isRecord(value) && typeof value.ok === 'boolean';
@@ -308,25 +318,26 @@ const emitAck = <TAck extends object>(
       resolve(response);
     };
 
-    const cancel = (failure: TransportFailure): void => finish(failure);
+    const cancel = (failure: TransportFailure): void =>
+      finish({ ...failure, sent: failure.sent ?? requestSent });
 
     const onDisconnect = (): void =>
-      finish(transportFailure('TRANSPORT_UNAVAILABLE', 'Socket disconnected.'));
+      finish(transportFailure('TRANSPORT_UNAVAILABLE', 'Socket disconnected.', requestSent));
     const onConnectError = (error: Error): void =>
-      finish(transportFailure('TRANSPORT_UNAVAILABLE', error.message));
+      finish(transportFailure('TRANSPORT_UNAVAILABLE', error.message, requestSent));
 
     const send = (): void => {
       if (settled || requestSent) return;
       requestSent = true;
       requestTimer = setTimeout(
-        () => finish(transportFailure('ACK_TIMEOUT', 'The server did not acknowledge the request.')),
+        () => finish(transportFailure('ACK_TIMEOUT', 'The server did not acknowledge the request.', true)),
         ACK_TIMEOUT_MS,
       );
       active.emit(event, payload, (response: TAck) => {
         finish(
           isAck(response)
             ? (response as ClientAck<TAck>)
-            : transportFailure('TRANSPORT_UNAVAILABLE', 'Invalid server acknowledgement.'),
+            : transportFailure('TRANSPORT_UNAVAILABLE', 'Invalid server acknowledgement.', true),
         );
       });
     };
@@ -349,7 +360,7 @@ const emitAck = <TAck extends object>(
 
     active.once('connect', onConnect);
     connectTimer.value = setTimeout(
-      () => finish(transportFailure('CONNECT_TIMEOUT', 'The server connection timed out.')),
+      () => finish(transportFailure('CONNECT_TIMEOUT', 'The server connection timed out.', requestSent)),
       ACK_TIMEOUT_MS,
     );
     // A socket that was just created auto-connects. Calling connect here also
@@ -372,9 +383,11 @@ const roomMutationRequest = (
   roomId: string,
   expectedRoomRevision: number,
   command: RoomMutationCommand,
+  commandId?: string,
 ): ClientCommand => ({
   meta: {
     ...commandMeta(actorId, roomId),
+    ...(commandId ? { commandId } : {}),
     expectedRoomRevision,
   },
   command,
@@ -583,6 +596,7 @@ export const sendV3RoomCommand = (
   roomId: string,
   expectedRoomRevision: number,
   command: RoomMutationCommand,
+  commandId?: string,
 ): Promise<ClientAck<RoomCommandAck extends ProtocolAck<infer P> ? P : never>> =>
   emitAck(
     openRoomConnection(),
@@ -592,7 +606,22 @@ export const sendV3RoomCommand = (
       roomId,
       expectedRoomRevision,
       command,
+      commandId,
     ),
+  );
+
+export const getV3CommandReceipt = (
+  actorId: string,
+  roomId: string,
+  commandId: string,
+): Promise<ClientAck<CommandReceiptAck extends ProtocolAck<infer P> ? P : never>> =>
+  emitAck(
+    openRoomConnection(),
+    'v3:command',
+    {
+      meta: commandMeta(actorId, roomId),
+      command: { type: 'room.command_receipt', payload: { commandId } },
+    } satisfies ClientCommand,
   );
 
 export const updateV3AIConfig = (
