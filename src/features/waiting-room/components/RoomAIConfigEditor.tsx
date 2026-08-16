@@ -61,6 +61,15 @@ export function RoomAIConfigEditor({
   const [credential, setCredential] = useState('');
   const [clearCredential, setClearCredential] = useState(false);
 
+  const applyDefaults = (nextProvider: RoomAIProvider = provider) => {
+    const defaults = defaultsFor(nextProvider);
+    setModel(defaults.model);
+    setEndpoint(endpointFor(nextProvider));
+    setTemperature(defaults.temperature);
+    setMaxTokens(defaults.maxTokens);
+    setBehavior(ROOM_AI_DEFAULTS.defaultBehavior);
+  };
+
   useEffect(() => {
     if (!open) {
       setCredential('');
@@ -103,8 +112,7 @@ export function RoomAIConfigEditor({
 
   const changeProvider = (next: RoomAIProvider) => {
     setProvider(next);
-    const capability = getAIProviderCapability(next);
-    setEndpoint(summary && next === summary.provider ? '' : capability.defaultEndpoint);
+    applyDefaults(next);
   };
 
   const capability = (summary?.provider === provider ? summary.capability : undefined) ??
@@ -114,7 +122,7 @@ export function RoomAIConfigEditor({
     <Modal
       open={open}
       title="修改电脑玩家设置"
-      context="密钥留空表示保持原值；只有勾选清除才会删除已保存凭据。"
+      context="凭据留空表示保持原值；只有勾选清除才会删除已保存凭据。"
       onClose={onClose}
       size="wide"
       footer={(
@@ -145,43 +153,60 @@ export function RoomAIConfigEditor({
             <span>模型名称</span>
             <Input value={model} onChange={(event) => setModel(event.target.value)} autoComplete="off" />
           </label>
-          {capability.endpointMode === 'configurable' ? (
-            <label className="waiting-room__editor-field">
-              <span>接口地址</span>
-              <Input
-                value={endpoint}
-                placeholder={summary ? '已保存；留空保持不变' : '请输入安全接口地址'}
-                onChange={(event) => setEndpoint(event.target.value)}
-                autoComplete="off"
-              />
-              {summary ? <small>当前接口来源：{summary.endpointOrigin}</small> : null}
-            </label>
-          ) : (
-            <div className="waiting-room__editor-field">
-              <span>接口地址</span>
-              <p className="waiting-room__empty-copy">固定官方安全接口：{capability.defaultEndpoint}</p>
-            </div>
-          )}
           <label className="waiting-room__editor-field">
             <span>温度（0–2）</span>
             <Input type="number" min={0} max={2} step={0.1} value={temperature} onChange={(event) => setTemperature(Number(event.target.value))} />
           </label>
-          <label className="waiting-room__editor-field">
-            <span>最大输出长度</span>
-            <Input type="number" min={128} max={4096} step={1} value={maxTokens} onChange={(event) => setMaxTokens(Number.parseInt(event.target.value, 10))} />
-          </label>
-          <label className="waiting-room__editor-field">
-            <span>行动风格</span>
-            <select value={behavior} onChange={(event) => setBehavior(event.target.value as RoomAIBehavior)}>
-              {BEHAVIORS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-            </select>
-          </label>
         </div>
 
+        <div className="waiting-room__ai-presets">
+          <Button
+            variant="quiet"
+            disabled={pending || status === 'loading'}
+            onClick={() => applyDefaults()}
+          >
+            一键填入推荐默认值
+          </Button>
+          <span>模型、接口、温度和行动风格会按当前服务自动填写；凭据不会自动填充。</span>
+        </div>
+
+        <details className="waiting-room__editor-advanced">
+          <summary>高级参数：接口地址、输出长度、行动风格</summary>
+          <div className="waiting-room__editor-grid">
+            {capability.endpointMode === 'configurable' ? (
+              <label className="waiting-room__editor-field">
+                <span>接口地址</span>
+                <Input
+                  value={endpoint}
+                  placeholder={summary ? '已保存；留空保持不变' : '请输入安全接口地址'}
+                  onChange={(event) => setEndpoint(event.target.value)}
+                  autoComplete="off"
+                />
+                {summary ? <small>当前接口来源：{summary.endpointOrigin}</small> : null}
+              </label>
+            ) : (
+              <div className="waiting-room__editor-field">
+                <span>接口地址</span>
+                <p className="waiting-room__empty-copy">固定官方安全接口：{capability.defaultEndpoint}</p>
+              </div>
+            )}
+            <label className="waiting-room__editor-field">
+              <span>最大输出长度</span>
+              <Input type="number" min={128} max={4096} step={1} value={maxTokens} onChange={(event) => setMaxTokens(Number.parseInt(event.target.value, 10))} />
+            </label>
+            <label className="waiting-room__editor-field">
+              <span>行动风格</span>
+              <select value={behavior} onChange={(event) => setBehavior(event.target.value as RoomAIBehavior)}>
+                {BEHAVIORS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+              </select>
+            </label>
+          </div>
+        </details>
+
         <fieldset className="waiting-room__editor-secrets">
-          <legend>Bearer 凭据（仅本次编辑在内存中保留）</legend>
+          <legend>访问凭据（仅本次编辑在内存中保留）</legend>
           <label className="waiting-room__editor-field">
-            <span>Bearer 凭据 {summary?.hasCredential ? '· 已保存' : '· 未设置'}</span>
+            <span>API 密钥 / Token {summary?.hasCredential ? '· 已保存' : '· 未设置'}</span>
             <Input
               type="password"
               value={credential}

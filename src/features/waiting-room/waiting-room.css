@@ -283,6 +283,12 @@
 .waiting-room__editor-secrets legend { padding-inline: 5px; color: var(--ww-text-muted); font-size: var(--ww-text-caption-size); }
 .waiting-room__editor-field small { color: var(--ww-text-muted); font-size: var(--ww-text-caption-size); overflow-wrap: anywhere; }
 .waiting-room__ai-editor { min-width: 0; }
+.waiting-room__ai-presets { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ww-space-3); color: var(--ww-text-muted); font-size: var(--ww-text-caption-size); }
+.waiting-room__ai-presets span { flex: 1 1 240px; }
+.waiting-room__editor-advanced { border: 1.5px solid var(--ww-border-default); border-radius: var(--ww-radius-control); }
+.waiting-room__editor-advanced summary { padding: var(--ww-space-3) var(--ww-space-4); color: var(--ww-text-muted); cursor: pointer; }
+.waiting-room__editor-advanced[open] summary { border-bottom: 1.5px solid var(--ww-border-default); }
+.waiting-room__editor-advanced .waiting-room__editor-grid { padding: var(--ww-space-4); }
 
 .waiting-room__action-list { align-items: stretch; flex-wrap: wrap; }
 .waiting-room__action-list .v3-button { flex: 0 1 auto; }

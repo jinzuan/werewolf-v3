@@ -227,8 +227,20 @@ export class GameSession {
 
   async initialize(): Promise<void> {
     await this.reconcileFromEventStream();
+    const beforeInitialization = structuredClone(this.state);
+    const computerRolesConfirmed = this.confirmComputerRoles();
+    const roleConfirmationCompleted =
+      this.state.gameState.phase === 'role_confirm' &&
+      this.state.players.every(
+        (player) => this.state.roleConfirmations[player.id] === true,
+      );
+    if (roleConfirmationCompleted) {
+      this.beginFirstNight();
+      this.syncAuthorityFields(false);
+      this.setDeadline();
+    }
     if (this.state.streamVersion === 0) {
-      const before = structuredClone(this.state);
+      const before = beforeInitialization;
       this.setDeadline();
       try {
         await this.append([
@@ -256,6 +268,31 @@ export class GameSession {
         await this.changed();
       } catch (error) {
         this.scheduleDeadline();
+        throw error;
+      }
+    } else if (computerRolesConfirmed || roleConfirmationCompleted) {
+      // AI seats do not need a client-side identity confirmation. Persist the
+      // normalization after recovery as well, so a room cannot regress to a
+      // role-confirmation gate after a process restart.
+      const before = beforeInitialization;
+      try {
+        const events: DomainEvent[] = [];
+        if (roleConfirmationCompleted) {
+          events.push(
+            this.event(
+              'role.confirmation_completed',
+              { day: this.state.gameState.day, automated: true },
+              'public_timeline',
+              undefined,
+              'system:ai-role-confirmation',
+            ),
+          );
+        }
+        events.push(this.stateEvent('system:ai-role-confirmation'));
+        await this.append(events);
+        await this.changed();
+      } catch (error) {
+        this.state = before;
         throw error;
       }
     }
@@ -1960,6 +1997,20 @@ export class GameSession {
     if (['voting', 'vote', 'lastWords', 'hunterShoot'].includes(gameState.phase)) {
       gameState.phase = 'day';
     }
+  }
+
+  /** AI roles are assigned by the server and never need a human confirmation. */
+  private confirmComputerRoles(): boolean {
+    let changed = false;
+    for (const player of this.state.players) {
+      if (player.isAI !== true || this.state.roleConfirmations[player.id] === true) {
+        continue;
+      }
+      this.state.roleConfirmations[player.id] = true;
+      changed = true;
+    }
+    if (changed) this.syncAuthorityFields(false);
+    return changed;
   }
 
   private normalizeMissingNightActors(): void {
