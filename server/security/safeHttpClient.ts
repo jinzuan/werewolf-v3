@@ -1,4 +1,4 @@
-import { request as httpRequest, type ClientRequest } from 'node:http';
+import { request as httpRequest } from 'node:http';
 import { connect as tcpConnect, type Socket } from 'node:net';
 import { connect as tlsConnect, type TLSSocket } from 'node:tls';
 import { URL } from 'node:url';
@@ -203,18 +203,17 @@ export class SafeHttpClient {
       requestHeaders['content-length'] = String(requestBody.byteLength);
     }
     return new Promise((resolve, reject) => {
-      let request: ClientRequest | undefined;
       let settled = false;
       const fail = (error: unknown) => {
         if (settled) return;
         settled = true;
-        request?.destroy();
+        request.destroy();
         reject(error);
       };
       const signal = options.signal;
       const onAbort = () => fail(abortError());
       signal?.addEventListener('abort', onAbort, { once: true });
-      request = httpRequest({
+      const request = httpRequest({
         hostname: endpoint.hostname,
         port: endpoint.port,
         method: options.method ?? 'GET',

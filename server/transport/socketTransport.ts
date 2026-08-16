@@ -82,6 +82,18 @@ export interface SocketTransportOptions {
   security?: RuntimeSecurityConfig;
 }
 
+export type TestFault =
+  | 'create_ack'
+  | 'mutation_ack'
+  | 'mutation_push'
+  | 'provider'
+  | 'write';
+
+export interface SocketTransportController {
+  setFault(fault: TestFault, enabled: boolean): void;
+  clearFaults(): void;
+}
+
 const errorResponse = (error: unknown): ProtocolAckError => {
   if (error instanceof RoomServiceError) {
     return {
@@ -145,7 +157,7 @@ export function bindSocketTransport(
   io: Server,
   rooms: RoomService,
   options: SocketTransportOptions = {},
-): void {
+): SocketTransportController {
   let dropCreateAck =
     (process.env.NODE_ENV === 'test' || process.env.WW_ENV === 'test') &&
     (options.dropCreateAckOnce === true || process.env.WW_TEST_DROP_CREATE_ACK_ONCE === '1');
@@ -518,4 +530,19 @@ export function bindSocketTransport(
         .catch(() => undefined);
     });
   });
+
+  return {
+    setFault: (fault, enabled) => {
+      if (fault === 'create_ack') dropCreateAck = enabled;
+      if (fault === 'mutation_ack') dropMutationAck = enabled;
+      if (fault === 'mutation_push') dropMutationPush = enabled;
+    },
+    clearFaults: () => {
+      dropCreateAck = false;
+      dropMutationAck = false;
+      dropMutationPush = false;
+      mutationPushBlocked.clear();
+      deferredRoomPushes.clear();
+    },
+  };
 }

@@ -11,6 +11,11 @@ node_modules
 dist
 dist-ssr
 artifacts/
+!artifacts/
+artifacts/*
+!artifacts/release/
+artifacts/release/*
+!artifacts/release/README.md
 test-results/
 .learnings/
 *.local
