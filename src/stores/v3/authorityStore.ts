@@ -125,6 +125,11 @@ const responseMessage = (response: ClientAck): string =>
     ? response.message || '连接暂时不可用，请重试。'
     : getErrorMessage(response.code);
 
+const recoveryExceptionMessage = (error: unknown): string =>
+  error instanceof Error && error.message
+    ? `房间恢复失败：${error.message}`
+    : getErrorMessage('UNKNOWN_ERROR');
+
 const commandOutcomeRegistry = new CommandOutcomeRegistry();
 const commandRequests = new Map<string, {
   roomId: string;
@@ -537,74 +542,80 @@ export const useV3Store = create<V3Store>()((set, get) => {
         return false;
       }
       set({ recovering: true, authorityStatus: 'resolving', error: null });
-      resetV3Connection();
-      const response = await resumeV3Room(
-        before.actorId,
-        before.actorName,
-        before.roomCode,
-        before.roomId,
-        before.credentials.resumeToken,
-        before.lastSeenSeq,
-      );
-      if (response.ok === false) {
-        const message = responseMessage(response);
-        if (
-          response.code === 'UNAUTHENTICATED' ||
-          response.code === 'IDENTITY_MISMATCH' ||
-          response.code === 'ROOM_NOT_FOUND'
-        ) {
-          clearAuthority(message);
-        } else {
-          set({ recovering: false, authorityStatus: 'error', error: message });
-        }
-        return false;
-      }
-      if (!acceptRoom(response.room)) {
-        clearAuthority('房间响应未通过安全校验，已拒绝载入。');
-        return false;
-      }
-
-      // Apply the room revision through the same path used by broadcasts.
-      if (!applyRoomView(response.room)) {
-        set({ recovering: false, authorityStatus: 'error' });
-        return false;
-      }
-      const current = get();
-      const credentials = {
-        ...before.credentials,
-        ...response.credentials,
-      };
-      const nextSession = current.session
-        ? {
-            ...current.session,
-            credentials,
-            actorName: before.actorName,
-            mode: response.room.viewer.kind,
-            gameId: response.room.gameId,
-            ...(current.session.gameId === response.room.gameId
-              ? {}
-              : { lastSeenSeq: 0 }),
+      try {
+        resetV3Connection();
+        const response = await resumeV3Room(
+          before.actorId,
+          before.actorName,
+          before.roomCode,
+          before.roomId,
+          before.credentials.resumeToken,
+          before.lastSeenSeq,
+        );
+        if (response.ok === false) {
+          const message = responseMessage(response);
+          if (
+            response.code === 'UNAUTHENTICATED' ||
+            response.code === 'IDENTITY_MISMATCH' ||
+            response.code === 'ROOM_NOT_FOUND'
+          ) {
+            clearAuthority(message);
+          } else {
+            set({ recovering: false, authorityStatus: 'error', error: message });
           }
-        : createV3Session(response.room, credentials, before.actorName);
-      adoptV3Identity(nextSession.credentials.resumeToken);
-      persistSessionIdentity(nextSession);
-      set({
-        room: response.room,
-        session: nextSession,
-        snapshot: null,
-        events:
-          before.gameId && before.gameId === response.room.gameId
-            ? current.events
-            : [],
-      });
+          return false;
+        }
+        if (!acceptRoom(response.room)) {
+          clearAuthority('房间响应未通过安全校验，已拒绝载入。');
+          return false;
+        }
 
-      const projected = await recoverGameProjection();
-      set({
-        recovering: false,
-        authorityStatus: projected ? 'authorized' : 'error',
-        error: projected ? null : get().error,
-      });
-      return projected;
+        // Apply the room revision through the same path used by broadcasts.
+        if (!applyRoomView(response.room)) {
+          clearAuthority('恢复返回的房间身份与本地会话不一致，请重新输入房间口令。');
+          return false;
+        }
+        const current = get();
+        const credentials = {
+          ...before.credentials,
+          ...response.credentials,
+        };
+        const nextSession = current.session
+          ? {
+              ...current.session,
+              credentials,
+              actorName: before.actorName,
+              mode: response.room.viewer.kind,
+              gameId: response.room.gameId,
+              ...(current.session.gameId === response.room.gameId
+                ? {}
+                : { lastSeenSeq: 0 }),
+            }
+          : createV3Session(response.room, credentials, before.actorName);
+        adoptV3Identity(nextSession.credentials.resumeToken);
+        persistSessionIdentity(nextSession);
+        set({
+          room: response.room,
+          session: nextSession,
+          snapshot: null,
+          events:
+            before.gameId && before.gameId === response.room.gameId
+              ? current.events
+              : [],
+        });
+
+        const projected = await recoverGameProjection();
+        set({
+          recovering: false,
+          authorityStatus: projected ? 'authorized' : 'error',
+          error: projected ? null : get().error,
+        });
+        return projected;
+      } catch (error) {
+        const message = recoveryExceptionMessage(error);
+        set({ recovering: false, authorityStatus: 'error', error: message });
+        return false;
+      }
     })().finally(() => {
       recoveryPromise = null;
     });

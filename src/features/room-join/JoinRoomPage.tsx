@@ -70,7 +70,11 @@ export function JoinRoomPage() {
             </div>
           </div>
 
-          {error ? <div className="v3-alert v3-alert--error" role="alert">{error}</div> : null}
+          {/* Keep this node mounted. A changing store error must not replace the
+              form sibling and make mobile browsers blur the active input. */}
+          <div className="v3-alert v3-alert--error" role="alert" hidden={!error}>
+            {error}
+          </div>
 
           <form className="v3-join-form" onSubmit={(event) => { event.preventDefault(); void enter(intent); }}>
             <label className="v3-field">

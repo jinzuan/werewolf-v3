@@ -154,6 +154,12 @@ const errorResponse = (error: unknown): ProtocolAckError => {
 };
 
 const joinDeniedResponse = (error: unknown): ProtocolAckError => {
+  // Keep rate-limit failures deliberately generic, but preserve the stable
+  // domain reason for a real room rejection.  Collapsing ROOM_NOT_FOUND,
+  // ROOM_TOKEN_INVALID, ROOM_FULL, and GAME_ALREADY_STARTED into one code
+  // made a failed re-entry impossible to diagnose from the join page.
+  const detailed = errorResponse(error);
+  if (detailed.code !== 'UNKNOWN_ERROR') return detailed;
   const candidate = error as { retryAfterMs?: unknown };
   return {
     ok: false,
