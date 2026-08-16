@@ -1,5 +1,5 @@
 import { Bot, EyeOff, Radio } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '../../components/shell/AppShell';
 import { MatchShell } from '../../components/shell/MatchShell';
 import { useV3Store } from '../../stores/v3Store';
@@ -20,7 +20,7 @@ import {
   stageProgress,
   type ServerClockSample,
 } from '../../v3/serverClock';
-import { formatCountdown } from '../../utils/countdown';
+import { formatCountdown } from '../../v3/countdown';
 
 export function MonitorPage() {
   const connected = useV3Store((state) => state.connected);
@@ -32,7 +32,7 @@ export function MonitorPage() {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     if (snapshot) clockRef.current = sampleServerClock(snapshot);
-  }, [snapshot?.serverTime]);
+  }, [snapshot]);
   useEffect(() => {
     if (typeof snapshot?.gameState.deadlineTs !== 'number') return;
     const timer = window.setInterval(() => setNow(Date.now()), 250);
@@ -46,16 +46,18 @@ export function MonitorPage() {
     room.viewer.omniscient === true &&
     snapshot?.viewer.kind === 'spectator' &&
     snapshot.viewer.omniscient === true;
-  const players = snapshot?.players ?? [];
-  const playerName = (id: string | null) =>
-    players.find((player) => player.id === id)?.name ?? '未知目标';
+  const players = useMemo(() => snapshot?.players ?? [], [snapshot?.players]);
+  const playerName = useCallback(
+    (id: string | null) => players.find((player) => player.id === id)?.name ?? '未知目标',
+    [players],
+  );
   const filteredEvents = useMemo(() => events
     .filter((event) => event.eventType !== 'game.state_updated')
     .filter((event) => visibility === 'all' || event.visibility === visibility)
     .filter((event) =>
       !query.trim() ||
       describeEvent(event, playerName).toLowerCase().includes(query.trim().toLowerCase()),
-    ), [events, visibility, query, players]);
+    ), [events, visibility, query, playerName]);
 
   if (!omniscient) {
     return (

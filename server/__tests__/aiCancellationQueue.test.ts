@@ -7,9 +7,9 @@ import { HttpAIProvider } from '../ai/httpProvider';
 import { InMemoryEventStore } from '../events/store';
 import { GameSession } from '../session/gameSession';
 import { createPlayers } from './fixtures';
-import type { AIConfig } from '../../shared/types';
+import type { ServerAIConfig } from '../ai/config';
 
-const config = (): AIConfig => ({
+const config = (): ServerAIConfig => ({
   apiType: 'local',
   siliconflow: { apiKey: '', model: 'model', temperature: 0.2, maxTokens: 128 },
   deepseek: { apiKey: '', model: 'model', temperature: 0.2, maxTokens: 128 },

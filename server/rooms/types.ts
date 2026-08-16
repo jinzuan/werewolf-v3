@@ -171,7 +171,7 @@ export interface RoomLifecycleTombstone {
 export interface CreateRoomRequest {
   actorId: string;
   options: CreateRoomOptionsV31;
-  createRequestId?: string;
+  createRequestId: string;
 }
 
 export interface JoinRoomRequest {
@@ -195,22 +195,3 @@ export interface SocketIdentity {
   resumeToken: string;
   gameId?: string;
 }
-
-/**
- * Legacy export kept until the M4 starter switches to persisted roleSetup.
- * It is not used by the M2 repository or migration code.
- */
-export const ROLE_DECK: readonly Role[] = [
-  'wolf',
-  'wolf',
-  'wolf',
-  'wolf',
-  'seer',
-  'witch',
-  'hunter',
-  'guardian',
-  'villager',
-  'villager',
-  'villager',
-  'villager',
-];

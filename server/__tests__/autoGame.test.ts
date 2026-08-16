@@ -3,6 +3,7 @@ import test from 'node:test';
 import { InMemoryEventStore } from '../events/store';
 import { InMemoryRoomRepository } from '../rooms/repository';
 import { RoomService } from '../rooms/roomService';
+import { createRequest } from './fixtures';
 
 test('a 12 AI room advances without human commands to an ended game', async () => {
   const rooms = new RoomService(
@@ -11,15 +12,11 @@ test('a 12 AI room advances without human commands to an ended game', async () =
     { aiTimeoutMs: 100 },
   );
   const created = await rooms.create({
-    actorId: 'observer',
-    options: {
-      roomName: 'Auto game',
-      maxPlayers: 12,
-      aiCount: 12,
-      name: 'Observer',
-      spectator: true,
-      auto: true,
-    },
+    ...createRequest(rooms, 'observer', 'auto-game-create', 'Auto game', {
+      mode: 'quick_computer',
+      minHumanPlayers: 0,
+      aiFillPolicy: 'fill_to_max',
+    }),
   });
 
   const deadline = Date.now() + 5_000;

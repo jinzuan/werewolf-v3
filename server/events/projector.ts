@@ -51,7 +51,6 @@ const projectPlayers = (
       ...player,
       role: canSeeRole ? player.role : null,
     };
-    delete projected.aiConfig;
     return projected;
   });
 };

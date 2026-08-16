@@ -3,6 +3,7 @@ import test from 'node:test';
 import { InMemoryEventStore } from '../events/store';
 import { InMemoryRoomRepository } from '../rooms/repository';
 import { RoomService } from '../rooms/roomService';
+import { createRequest } from './fixtures';
 
 test('restart discards persisted online bits and startup grace permits resume', async () => {
   let now = 0;
@@ -16,8 +17,7 @@ test('restart discards persisted online bits and startup grace permits resume', 
     roomSweepIntervalMs: 0,
   });
   const created = await first.create({
-    actorId: 'host',
-    options: { roomName: 'restart', maxPlayers: 12, aiCount: 0, name: 'Host' },
+    ...createRequest(first, 'host', 'restart-create', 'restart'),
   });
   const stored = await repository.get(created.room.code);
   assert.equal('connected' in stored!.members[0], false);
@@ -45,8 +45,7 @@ test('restart discards persisted online bits and startup grace permits resume', 
 test('connection registry keeps a member online until the final tab closes', async () => {
   const rooms = new RoomService(new InMemoryRoomRepository(), new InMemoryEventStore());
   const created = await rooms.create({
-    actorId: 'host',
-    options: { roomName: 'tabs', maxPlayers: 12, aiCount: 0, name: 'Host' },
+    ...createRequest(rooms, 'host', 'tabs-create', 'tabs'),
   });
   const identity = await rooms.identity(created.room.code, 'host', created.credentials.resumeToken);
   await rooms.bindConnection(identity, 'tab-a');

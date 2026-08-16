@@ -10,6 +10,7 @@ const createRoom = async (rooms: RoomService) => {
   const preset = catalog.rolePresets.find((item) => item.enabled)!;
   return rooms.create({
     actorId: 'host',
+    createRequestId: 'receipt-create',
     options: {
       catalogVersion: catalog.catalogVersion,
       roomName: 'receipt room',

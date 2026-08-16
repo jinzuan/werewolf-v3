@@ -19,7 +19,7 @@ import {
   stageProgress,
   type ServerClockSample,
 } from '../../v3/serverClock';
-import { formatCountdown } from '../../utils/countdown';
+import { formatCountdown } from '../../v3/countdown';
 
 export function SpectatePage() {
   const connected = useV3Store((state) => state.connected);
@@ -31,7 +31,7 @@ export function SpectatePage() {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     if (snapshot) clockRef.current = sampleServerClock(snapshot);
-  }, [snapshot?.serverTime]);
+  }, [snapshot]);
   useEffect(() => {
     if (typeof snapshot?.gameState.deadlineTs !== 'number') return;
     const timer = window.setInterval(() => setNow(Date.now()), 250);

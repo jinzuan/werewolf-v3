@@ -3,6 +3,7 @@ import test from 'node:test';
 import { InMemoryEventStore } from '../events/store';
 import { InMemoryRoomRepository } from '../rooms/repository';
 import { RoomService } from '../rooms/roomService';
+import { createRequest, startRoom } from './fixtures';
 
 test('successful ACK and event replay use the same viewer projection', async () => {
   const rooms = new RoomService(
@@ -11,20 +12,14 @@ test('successful ACK and event replay use the same viewer projection', async () 
     { autoDrive: false },
   );
   const created = await rooms.create({
-    actorId: 'host',
-    options: {
-      roomName: 'ACK projection',
-      maxPlayers: 12,
-      aiCount: 0,
-      name: 'Host',
-    },
+    ...createRequest(rooms, 'host', 'ack-create', 'ACK projection'),
   });
   const identity = await rooms.identity(
     created.room.code,
     'host',
     created.credentials.resumeToken,
   );
-  const started = await rooms.startGame(identity);
+  const started = await startRoom(rooms, identity, 'ack');
   const rebound = await rooms.identity(
     created.room.code,
     'host',
@@ -62,11 +57,16 @@ test('successful ACK and event replay use the same viewer projection', async () 
     },
   );
   const actionable = await rooms.snapshot(rebound);
+  const wolf = (await rooms.getRecord(created.room.code))?.players.find((player) => player.role === 'wolf');
+  assert.ok(wolf);
+  const wolfMember = (await rooms.getRecord(created.room.code))?.members.find((member) => member.id === wolf.id);
+  assert.ok(wolfMember);
+  const wolfIdentity = await rooms.identity(created.room.code, wolf.id, wolfMember.resumeToken);
   const result = await rooms.dispatchGame(
-    rebound,
+    wolfIdentity,
     {
       commandId: 'ack-project',
-      actorId: 'host',
+      actorId: wolf.id,
       sentAt: Date.now(),
       roomId: created.room.id,
       gameId: started.gameId!,
@@ -78,7 +78,7 @@ test('successful ACK and event replay use the same viewer projection', async () 
     },
   );
   assert.equal(result.ok, true);
-  const replay = await rooms.events(rebound, actionable.lastSequence);
+  const replay = await rooms.events(wolfIdentity, actionable.lastSequence);
   assert.deepEqual(result.events, replay);
   const payload = JSON.stringify(result.events);
   assert.doesNotMatch(payload, /game\.state_updated/);

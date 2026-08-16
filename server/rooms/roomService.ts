@@ -13,7 +13,7 @@ import type {
   RoomSummary,
   RoomView,
 } from '../../shared/protocol';
-import { AI_DEFAULTS } from '../../shared/config/aiDefaults';
+import { SERVER_AI_DEFAULTS } from '../ai/config';
 import type {
   RoomAIConfig,
   RoomAIConfigPatch,
@@ -24,7 +24,8 @@ import {
   endpointMatchesCapability,
   getAIProviderCapability,
 } from '../../shared/aiProviderCapabilities';
-import type { AIConfig, GameAction, Player, Role } from '../../shared/types';
+import type { ServerAIConfig } from '../ai/config';
+import type { GameAction, Player, Role } from '../../shared/types';
 import { AIOrchestrator } from '../ai/orchestrator';
 import { AIFallbackRegistry, defaultAITelemetry, type AITelemetry } from '../ai/aiTelemetry';
 import { DeterministicAIProvider } from '../ai/deterministicProvider';
@@ -208,7 +209,7 @@ export interface RoomServiceOptions {
   endpointPolicy?: EndpointPolicy;
   /** Production composition root supplies the provider implementation. */
   aiProviderFactory?: (
-    config: AIConfig,
+    config: ServerAIConfig,
     options: HttpAIProviderOptions,
   ) => AIProvider;
   reviewPipeline?: ReviewPipeline;
@@ -223,7 +224,6 @@ export class RoomService {
   private readonly sessions = new Map<string, GameSession>();
   private readonly aiRuns = new Map<string, Promise<void>>();
   private readonly roomAIProviders = new Map<string, AIProvider>();
-  private readonly fastAutoRooms = new Set<string>();
   private readonly roomChangeListeners = new Set<
     (roomCode: string, reason: RoomSnapshotReason) => void | Promise<void>
   >();
@@ -246,9 +246,6 @@ export class RoomService {
   private readonly aiProviderFactory: NonNullable<RoomServiceOptions['aiProviderFactory']>;
   private readonly reviewPipeline?: ReviewPipeline;
   private readonly insightStore?: InsightStore;
-  private readonly legacyRoomCodes = new Set<string>();
-  private legacyCompatibility = false;
-  private legacyCreatePending = false;
   private closed = false;
   private readonly environment: RuntimeEnvironment;
   private readonly deploymentNamespace: string;
@@ -340,7 +337,6 @@ export class RoomService {
         session?.dispose();
         this.sessions.delete(intent.roomCode.toUpperCase());
         this.roomAIProviders.delete(intent.roomCode.toUpperCase());
-        this.fastAutoRooms.delete(intent.roomCode.toUpperCase());
         void room;
       },
     });
@@ -350,8 +346,7 @@ export class RoomService {
         eventStore,
         evaluateStartCheck: (room) => this.policy.evaluateStartCheck(room),
         sessionOptions: options.session,
-        randomIndex: (maxExclusive) =>
-          this.legacyCompatibility ? 0 : randomInt(maxExclusive),
+        randomIndex: (maxExclusive) => randomInt(maxExclusive),
         onRoomChange: (room, reason) => this.notifyRoomChange(room.code, reason),
         startLeaseMs: options.startLeaseMs,
         sessionFactory: ({ room, players, eventStore, snapshot }) =>
@@ -425,14 +420,23 @@ export class RoomService {
   }
 
   async create(request: CreateRoomRequest): Promise<RoomAccess> {
-    // One release of compatibility for callers compiled against the old
-    // socket adapter. V3.1-shaped input never enters this branch.
-    const options = this.normalizeCreateOptions(request.options);
-    const config = this.normalizeCreateConfig(options);
-    const createRequestId = request.createRequestId?.trim() || randomUUID();
-    if (!createRequestId || !request.actorId.trim()) {
-      throw this.error('INVALID_COMMAND', 'room.error.invalid_command');
+    const options = request.options;
+    if (
+      typeof request.actorId !== 'string' ||
+      !request.actorId.trim() ||
+      typeof request.createRequestId !== 'string' ||
+      !request.createRequestId.trim() ||
+      !options ||
+      typeof options.catalogVersion !== 'string' ||
+      !options.catalogVersion.trim()
+    ) {
+      throw this.error(
+        'UNSUPPORTED_PROTOCOL_VERSION',
+        'room.error.unsupported_protocol_version',
+      );
     }
+    const config = this.normalizeCreateConfig(options);
+    const createRequestId = request.createRequestId.trim();
     const fingerprint = createFingerprint(options);
     const roomId = randomUUID();
     const roomCode = await this.uniqueCode();
@@ -485,10 +489,6 @@ export class RoomService {
         }
         throw this.error('SECRET_STORE_UNAVAILABLE', 'room.error.secret_store_unavailable');
       }
-    }
-    if (this.legacyCreatePending) {
-      this.legacyRoomCodes.add(roomCode);
-      this.legacyCreatePending = false;
     }
     const creatorName = options.creator.name.trim();
     const resumeToken = token();
@@ -838,21 +838,7 @@ export class RoomService {
   }
 
   async list(): Promise<RoomSummary[]> {
-    const publicRooms = await this.listPublicRooms();
-    // Preserve the pre-V3.1 direct service compatibility surface. Socket
-    // callers use listPublicRooms(), so an old invite-only fixture cannot
-    // weaken the public catalogue policy.
-    const visibleCodes = new Set(publicRooms.map((room) => room.roomCode));
-    const legacyRooms = (await this.repository.list()).filter(
-      (room) =>
-        this.legacyRoomCodes.has(room.code) &&
-        !visibleCodes.has(room.code) &&
-        !this.isExpired(room),
-    );
-    return [
-      ...publicRooms,
-      ...legacyRooms.map((room) => this.toSummary(room)),
-    ];
+    return this.listPublicRooms();
   }
 
   /** Return expired records without changing repository state. */
@@ -976,24 +962,6 @@ export class RoomService {
     } else {
       delete room.expiresAt;
     }
-  }
-
-  private toSummary(room: RoomRecord): RoomSummary {
-    const config = room.config;
-    const counts = this.policy.counts(room);
-    return {
-      roomCode: room.code,
-      roomName: room.name,
-      status: room.status,
-      mode: config?.mode ?? 'human',
-      minHumanPlayers: config?.minHumanPlayers ?? 0,
-      playerCount: counts.playerSeats,
-      maxPlayers: config?.maxPlayers ?? room.maxPlayers,
-      onlinePlayers: counts.onlineHumanPlayers,
-      onlineCount: counts.onlineHumanPlayers,
-      readyCount: counts.readyHumanPlayers,
-      spectatorCount: counts.spectators,
-    };
   }
 
   getCatalog() {
@@ -1392,29 +1360,15 @@ export class RoomService {
 
   async startGame(
     identity: SocketIdentity,
-    command?: { commandId: string; expectedRoomRevision: number } | number,
+    command: { commandId: string; expectedRoomRevision: number },
   ): Promise<RoomView> {
     assertIdentityRoom(identity, await this.requireRoom(identity.roomCode));
-    const current = await this.requireRoom(identity.roomCode);
-    if (command === undefined) {
-      // Compatibility for the pre-V3.1 direct service API. Socket commands
-      // always provide the explicit CAS revision and use ready_check.
-      if (current.status === 'waiting') {
-        await this.beginReadyCheck(identity, current.roomRevision!);
-        const ready = await this.requireRoom(identity.roomCode);
-        await this.repository.mutate(identity.roomCode, ready.roomRevision!, (room) => {
-          room.members.forEach((member) => {
-            if (member.kind === 'player' && !member.isAI) member.ready = true;
-          });
-        });
-      }
-      const ready = await this.requireRoom(identity.roomCode);
-      return this.startWithRevision(identity.roomCode, identity.actorId, token(), ready.roomRevision!);
-    }
-    const expectedRoomRevision =
-      typeof command === 'number' ? command : command.expectedRoomRevision;
-    const commandId = typeof command === 'number' ? token() : command.commandId;
-    return this.startWithRevision(identity.roomCode, identity.actorId, commandId, expectedRoomRevision);
+    return this.startWithRevision(
+      identity.roomCode,
+      identity.actorId,
+      command.commandId,
+      command.expectedRoomRevision,
+    );
   }
 
   async leave(
@@ -1634,8 +1588,6 @@ export class RoomService {
     this.roomAIProviders.clear();
     this.connectionRegistry.clear();
     this.connectionLeases.clear();
-    this.fastAutoRooms.clear();
-    this.legacyRoomCodes.clear();
     this.roomChangeListeners.clear();
   }
 
@@ -1906,10 +1858,10 @@ export class RoomService {
     if (!existing && !hasMeaningfulCreateField) return undefined;
     const provider = patch.provider ?? existing?.provider ?? 'local';
     const defaults = provider === 'siliconflow'
-      ? AI_DEFAULTS.siliconflow
+      ? SERVER_AI_DEFAULTS.siliconflow
       : provider === 'deepseek'
-        ? AI_DEFAULTS.deepseek
-        : AI_DEFAULTS.local;
+        ? SERVER_AI_DEFAULTS.deepseek
+        : SERVER_AI_DEFAULTS.local;
     const model = patch.model ?? existing?.model ?? defaults.model;
     const capability = getAIProviderCapability(provider);
     const providerChanged = patch.provider !== undefined && patch.provider !== existing?.provider;
@@ -1922,7 +1874,7 @@ export class RoomService {
       endpoint,
       temperature: patch.temperature ?? existing?.temperature ?? defaults.temperature,
       maxTokens: patch.maxTokens ?? existing?.maxTokens ?? defaults.maxTokens,
-      behavior: patch.behavior ?? existing?.behavior ?? AI_DEFAULTS.defaultBehavior,
+      behavior: patch.behavior ?? existing?.behavior ?? SERVER_AI_DEFAULTS.defaultBehavior,
       ...(patch.credential ? { bearerCredential: patch.credential } : {}),
       ...(patch.apiKey ? { apiKey: patch.apiKey } : {}),
       ...(patch.token ? { token: patch.token } : {}),
@@ -2002,7 +1954,7 @@ export class RoomService {
     const existing = this.roomAIProviders.get(roomKey);
     if (existing) return existing;
 
-    const providerConfig = structuredClone(AI_DEFAULTS) as AIConfig;
+    const providerConfig = structuredClone(SERVER_AI_DEFAULTS) as ServerAIConfig;
     providerConfig.apiType = roomConfig.provider === 'custom' ? 'local' : roomConfig.provider;
     providerConfig.defaultBehavior = roomConfig.behavior;
     const selected = providerConfig.apiType === 'siliconflow'
@@ -2048,54 +2000,7 @@ export class RoomService {
     const projected = providerMode
       ? { ...view, computerPlayerMode: providerMode }
       : view;
-    if (!this.legacyRoomCodes.has(room.code)) return projected;
-    // The old test/client surface predates the V3.1 room config projection.
-    // Keep this compatibility response private to legacy-shaped create calls;
-    // all V3.1 callers receive the complete RoomView above.
-    const {
-      config: _config,
-      startCheck: _startCheck,
-      ...legacyView
-    } = projected;
-    return legacyView as RoomView;
-  }
-
-  private normalizeCreateOptions(options: CreateRoomOptionsV31): CreateRoomOptionsV31 {
-    const raw = options as unknown as Record<string, unknown>;
-    if (typeof raw.catalogVersion === 'string') return options;
-
-    this.legacyCompatibility = true;
-    this.legacyCreatePending = true;
-
-    const catalog = this.catalog.getCatalog();
-    const preset = catalog.rolePresets.find((item) => item.enabled);
-    if (!preset) throw this.error('RULESET_UNAVAILABLE', 'room.error.ruleset_unavailable');
-    const maxPlayers =
-      typeof raw.maxPlayers === 'number' && Number.isInteger(raw.maxPlayers)
-        ? raw.maxPlayers
-        : preset.playerCount;
-    const automatic = raw.auto === true;
-    return {
-      catalogVersion: catalog.catalogVersion,
-      roomName: typeof raw.roomName === 'string' ? raw.roomName : 'V3 房间',
-      creator: {
-        name: typeof raw.name === 'string' ? raw.name : '房主',
-        avatarId: 'avatar-default',
-      },
-      mode: automatic ? 'quick_computer' : 'mixed',
-      visibility: 'invite_only',
-      maxPlayers,
-      minHumanPlayers: automatic ? 0 : 1,
-      computerSeats: 0,
-      aiFillPolicy: 'fill_to_max',
-      roleSetup: clone(preset.roleSetup),
-      rolePresetId: preset.id,
-      rulesetId: preset.rulesetId,
-      rulesetVersion: preset.rulesetVersion,
-      readyPolicy: 'all_connected_humans',
-      allowPublicSpectators: false,
-      reviewEnabled: true,
-    };
+    return projected;
   }
 
   private validationError(result: Extract<ReturnType<RoomCatalogService['validateConfig']>, { ok: false }>): RoomServiceError {
@@ -2373,15 +2278,7 @@ export class RoomService {
   private async persistSession(
     roomCode: string,
     session: GameSession,
-    force = false,
   ): Promise<void> {
-    const normalizedRoomCode = roomCode.toUpperCase();
-    if (!force && this.fastAutoRooms.has(normalizedRoomCode)) {
-      // Fast legacy auto rooms intentionally batch disk writes, but their
-      // live monitor still needs every authoritative state transition.
-      await this.notifyRoomChange(roomCode, 'status_changed');
-      return;
-    }
     const snapshot = session.serialize();
     let status: RoomRecord['status'] | undefined;
     let endedGameId: string | undefined;
@@ -2438,14 +2335,7 @@ export class RoomService {
       (!autoRoom && this.options.autoDrive !== true)
     ) return;
     if (this.aiRuns.has(roomCode)) return;
-    const fastAuto = autoRoom && this.legacyRoomCodes.has(roomCode.toUpperCase());
-    if (fastAuto) this.fastAutoRooms.add(roomCode);
-    const run = this.driveAI(roomCode, autoRoom).finally(async () => {
-      if (fastAuto) {
-        this.fastAutoRooms.delete(roomCode);
-        const session = this.sessions.get(roomCode.toUpperCase());
-        if (session) await this.persistSession(roomCode, session, true);
-      }
+    const run = this.driveAI(roomCode, autoRoom).finally(() => {
       this.aiRuns.delete(roomCode);
     });
     this.aiRuns.set(roomCode, run);
@@ -2492,7 +2382,7 @@ export class RoomService {
                 ? state.dayFlow.voteRound
                 : state.gameState.phase === 'night'
                   ? state.gameState.wolfDiscussionRound
-                  : state.gameState.dayPhase?.discussionRounds || 1,
+                  : state.dayFlow.voteRound,
             players: projectedPlayers,
             visibleEvents,
             allowedActions: actorEntry.actions,
@@ -2544,7 +2434,6 @@ export class RoomService {
         player.id === actorId || (role === 'wolf' && player.role === 'wolf')
           ? player.role
           : null,
-      aiConfig: undefined,
     }));
   }
 

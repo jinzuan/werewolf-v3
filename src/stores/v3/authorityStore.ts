@@ -229,12 +229,13 @@ export interface V3Store {
 let recoveryPromise: Promise<boolean> | null = null;
 let roomRefreshPromise: Promise<void> | null = null;
 let catalogRefreshPromise: Promise<boolean> | null = null;
-let transportCleanup: (() => void) | null = null;
 
 /** Events can arrive before the matching snapshot during reconnect. */
 let bufferedGameMessages: GameEventsMessage[] = [];
 
 export const useV3Store = create<V3Store>()((set, get) => {
+  let subscriptionCleanup: (() => void) | null = null;
+
   const setCursor = (
     session: V3Session,
     gameId: string | undefined,
@@ -537,7 +538,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
   };
 
   const ensureTransportSubscriptions = (): void => {
-    if (transportCleanup) return;
+    if (subscriptionCleanup) return;
     const cleanups = [
       subscribeV3Connection((connected) => {
         set({ connected });
@@ -602,9 +603,9 @@ export const useV3Store = create<V3Store>()((set, get) => {
         }
       }),
     ];
-    transportCleanup = () => {
+    subscriptionCleanup = () => {
       for (const cleanup of cleanups) cleanup();
-      transportCleanup = null;
+      subscriptionCleanup = null;
     };
   };
 
@@ -781,10 +782,9 @@ export const useV3Store = create<V3Store>()((set, get) => {
       if (current.session) void recover();
       void get().refreshCatalog();
       void get().refreshRooms();
-      // Transport ownership is process-wide. StrictMode may call this cleanup
-      // between two mounts; leaving the shared subscriptions in place avoids
-      // cancelling a request another consumer is still awaiting.
-      return () => undefined;
+      return () => {
+        subscriptionCleanup?.();
+      };
     },
 
     refreshCatalog: async (refreshOptions = {}) => {

@@ -2,7 +2,7 @@ import { ArrowRight, Monitor, Save, Volume2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AppShell } from '../../components/shell/AppShell';
-import { getServerUrl, setServerUrl } from '../../net/socket';
+import { getServerEndpoint, setServerEndpoint } from '../../net/serverEndpoint';
 import { useV3Store } from '../../stores/v3Store';
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
@@ -35,7 +35,7 @@ export function SettingsPage() {
   const [motionPreference, setMotionPreference] = useState<MotionPreference>(readMotionPreference);
   const [captions, setCaptions] = useState(true);
   const [notifications, setNotifications] = useState(false);
-  const [serverUrl, updateServerUrl] = useState(getServerUrl());
+  const [serverUrl, updateServerUrl] = useState(getServerEndpoint());
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -43,7 +43,7 @@ export function SettingsPage() {
   }, [motionPreference]);
 
   const save = () => {
-    setServerUrl(serverUrl.trim());
+    setServerEndpoint(serverUrl.trim());
     localStorage.setItem('werewolf-v3-motion-mode', motionPreference);
     localStorage.setItem('werewolf-v3-captions', String(captions));
     localStorage.setItem('werewolf-v3-notifications', String(notifications));

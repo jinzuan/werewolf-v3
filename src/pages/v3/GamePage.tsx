@@ -38,7 +38,7 @@ import {
   stageProgress,
   type ServerClockSample,
 } from '../../v3/serverClock';
-import { formatCountdown } from '../../utils/countdown';
+import { formatCountdown } from '../../v3/countdown';
 
 const ACTION_HELP: Record<GameAction, string> = {
   guard: '可守自己，不能连续两晚守同一名玩家。',
@@ -88,7 +88,7 @@ export function GamePage() {
     if (snapshot) {
       clockRef.current = sampleServerClock(snapshot);
     }
-  }, [snapshot?.serverTime]);
+  }, [snapshot]);
   useEffect(() => {
     if (typeof state?.deadlineTs !== 'number') return;
     const timer = window.setInterval(() => setNow(Date.now()), 250);
@@ -128,15 +128,15 @@ export function GamePage() {
   );
   const playerName = (id: string | null) =>
     players.find((player) => player.id === id)?.name ?? '未知目标';
+  const firstAllowedAction = allowedActions[0] ?? null;
 
   useLayoutEffect(() => {
-    const first = allowedActions[0] ?? null;
     setActionDraft({
-      activeAction: first,
+      activeAction: firstAllowedAction,
       selectedTarget: null,
       message: '',
     });
-  }, [draftScopeKey]);
+  }, [draftScopeKey, firstAllowedAction]);
 
   const definition = activeAction
     ? ACTION_DEFINITIONS[activeAction]

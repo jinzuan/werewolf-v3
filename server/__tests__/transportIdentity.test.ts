@@ -3,20 +3,16 @@ import test from 'node:test';
 import { InMemoryEventStore } from '../events/store';
 import { InMemoryRoomRepository } from '../rooms/repository';
 import { RoomService } from '../rooms/roomService';
-
-const options = {
-  roomName: 'Identity room',
-  maxPlayers: 12,
-  aiCount: 0,
-  name: 'Host',
-};
+import { createRequest } from './fixtures';
 
 test('bound identity rejects impersonation, cross-room, cross-game, and spectator writes', async () => {
   const rooms = new RoomService(
     new InMemoryRoomRepository(),
     new InMemoryEventStore(),
   );
-  const created = await rooms.create({ actorId: 'host', options });
+  const created = await rooms.create({
+    ...createRequest(rooms, 'host', 'identity-create', 'Identity room'),
+  });
   const joined = await rooms.join({
     actorId: 'guest',
     name: 'Guest',
@@ -35,7 +31,6 @@ test('bound identity rejects impersonation, cross-room, cross-game, and spectato
     'host',
     created.credentials.resumeToken,
   );
-  await rooms.startGame(hostIdentity);
   const guestIdentity = await rooms.identity(
     created.room.code,
     'guest',
@@ -46,6 +41,14 @@ test('bound identity rejects impersonation, cross-room, cross-game, and spectato
     'spectator',
     spectator.credentials.resumeToken,
   );
+  const current = await rooms.get(created.room.code, 'host');
+  const checking = await rooms.beginReadyCheck(hostIdentity, current.roomRevision, 'identity-ready-check');
+  const hostReady = await rooms.setReady(hostIdentity, true, checking.roomRevision, 'identity-host-ready');
+  const guestReady = await rooms.setReady(guestIdentity, true, hostReady.roomRevision, 'identity-guest-ready');
+  await rooms.startGame(hostIdentity, {
+    commandId: 'identity-start',
+    expectedRoomRevision: guestReady.roomRevision,
+  });
   const session = rooms.session(created.room.code)!;
   const actor = session.players.find((player) => player.id === 'guest')!;
   const base = {
@@ -111,7 +114,9 @@ test('resume requires the server-issued member credential', async () => {
     new InMemoryRoomRepository(),
     new InMemoryEventStore(),
   );
-  const created = await rooms.create({ actorId: 'host', options });
+  const created = await rooms.create({
+    ...createRequest(rooms, 'host', 'resume-create', 'Identity room'),
+  });
   await assert.rejects(
     rooms.resume(created.room.code, 'host', created.credentials.joinToken),
     /UNAUTHENTICATED/,

@@ -42,7 +42,7 @@ const mixedOptions = (rooms: RoomService) => {
 
 test('host-only AI summary and independent patch preserve, rotate, and clear secrets', async () => {
   const rooms = makeService();
-  const created = await rooms.create({ actorId: 'host', options: mixedOptions(rooms) });
+  const created = await rooms.create({ actorId: 'host', createRequestId: 'ai-command-create-1', options: mixedOptions(rooms) });
   const guest = await rooms.join({
     actorId: 'guest',
     name: 'Guest',
@@ -109,7 +109,7 @@ test('host-only AI summary and independent patch preserve, rotate, and clear sec
 
 test('AI patch uses CAS and never overwrites a newer room revision', async () => {
   const rooms = makeService();
-  const created = await rooms.create({ actorId: 'host', options: mixedOptions(rooms) });
+  const created = await rooms.create({ actorId: 'host', createRequestId: 'ai-command-create-2', options: mixedOptions(rooms) });
   const host = await rooms.identity(created.room.code, 'host', created.credentials.resumeToken);
   const updated = await rooms.updateAIConfig(host, {
     provider: 'custom',

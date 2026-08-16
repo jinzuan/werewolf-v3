@@ -7,7 +7,7 @@ import { RoomService } from './rooms/roomService';
 import { HttpAIProvider } from './ai/httpProvider';
 import type { HttpAIProviderOptions } from './ai/httpProvider';
 import { defaultAITelemetry } from './ai/aiTelemetry';
-import type { AIConfig } from '../shared/types';
+import type { ServerAIConfig } from './ai/config';
 import { FileInsightStore } from './review/insightStore';
 import { FileReviewRepository } from './review/fileReviewRepository';
 import { ReviewPipeline } from './review/reviewPipeline';
@@ -106,7 +106,7 @@ const endpointPolicy = new EndpointPolicy({
   allowlist: security.aiEndpointAllowlist,
 });
 const safeHttpClient = new SafeHttpClient(endpointPolicy);
-const aiProviderFactory = (config: AIConfig, options: HttpAIProviderOptions) =>
+const aiProviderFactory = (config: ServerAIConfig, options: HttpAIProviderOptions) =>
   new HttpAIProvider(config, { ...options, safeHttpClient, telemetry: defaultAITelemetry });
 const lifecycleOutbox = new FileLifecycleOutbox(
   path.join(runtime.outboxDir, 'room-lifecycle.json'),

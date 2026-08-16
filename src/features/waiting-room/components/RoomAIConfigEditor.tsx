@@ -6,7 +6,7 @@ import type {
   RoomAIProvider,
   RoomViewV31,
 } from '../../../../shared/roomContract';
-import { AI_DEFAULTS } from '../../../../shared/config/aiDefaults';
+import { ROOM_AI_DEFAULTS } from '../../../../shared/roomContract';
 import { getAIProviderCapability } from '../../../../shared/aiProviderCapabilities';
 import { Button } from '../../../ui/Button';
 import { Input } from '../../../ui/Input';
@@ -27,6 +27,9 @@ const BEHAVIORS: Array<{ value: RoomAIBehavior; label: string }> = [
 
 const endpointFor = (provider: RoomAIProvider): string =>
   getAIProviderCapability(provider).defaultEndpoint;
+
+const defaultsFor = (provider: RoomAIProvider) =>
+  provider === 'custom' ? ROOM_AI_DEFAULTS.local : ROOM_AI_DEFAULTS[provider];
 
 interface RoomAIConfigEditorProps {
   room: RoomViewV31;
@@ -50,11 +53,11 @@ export function RoomAIConfigEditor({
   onSubmit,
 }: RoomAIConfigEditorProps) {
   const [provider, setProvider] = useState<RoomAIProvider>('local');
-  const [model, setModel] = useState(AI_DEFAULTS.local.model);
+  const [model, setModel] = useState<string>(ROOM_AI_DEFAULTS.local.model);
   const [endpoint, setEndpoint] = useState(endpointFor('local'));
-  const [temperature, setTemperature] = useState(AI_DEFAULTS.local.temperature);
-  const [maxTokens, setMaxTokens] = useState(AI_DEFAULTS.local.maxTokens);
-  const [behavior, setBehavior] = useState<RoomAIBehavior>(AI_DEFAULTS.defaultBehavior);
+  const [temperature, setTemperature] = useState<number>(ROOM_AI_DEFAULTS.local.temperature);
+  const [maxTokens, setMaxTokens] = useState<number>(ROOM_AI_DEFAULTS.local.maxTokens);
+  const [behavior, setBehavior] = useState<RoomAIBehavior>(ROOM_AI_DEFAULTS.defaultBehavior);
   const [credential, setCredential] = useState('');
   const [clearCredential, setClearCredential] = useState(false);
 
@@ -66,13 +69,13 @@ export function RoomAIConfigEditor({
     }
     const nextProvider = summary?.provider ?? 'local';
     setProvider(nextProvider);
-    setModel(summary?.model ?? (nextProvider === 'local' ? AI_DEFAULTS.local.model : AI_DEFAULTS[nextProvider === 'deepseek' ? 'deepseek' : 'siliconflow'].model));
+    setModel(summary?.model ?? defaultsFor(nextProvider).model);
     // The summary intentionally exposes only the origin. Leaving this blank
     // preserves a path configured previously; a new room gets a safe default.
     setEndpoint(summary ? '' : endpointFor(nextProvider));
-    setTemperature(summary?.temperature ?? AI_DEFAULTS.local.temperature);
-    setMaxTokens(summary?.maxTokens ?? AI_DEFAULTS.local.maxTokens);
-    setBehavior(summary?.behavior ?? AI_DEFAULTS.defaultBehavior);
+    setTemperature(summary?.temperature ?? defaultsFor(nextProvider).temperature);
+    setMaxTokens(summary?.maxTokens ?? defaultsFor(nextProvider).maxTokens);
+    setBehavior(summary?.behavior ?? ROOM_AI_DEFAULTS.defaultBehavior);
     setCredential('');
     setClearCredential(false);
   }, [open, summary]);

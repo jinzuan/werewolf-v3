@@ -27,6 +27,7 @@ test('provider capability and injected endpoint are the same runtime contract', 
   const endpoint = 'http://127.0.0.1:1234/v1/chat/completions';
   const created = await rooms.create({
     actorId: 'host',
+    createRequestId: 'endpoint-wiring-create',
     options: {
       catalogVersion: catalog.catalogVersion,
       roomName: 'endpoint wiring',
@@ -69,6 +70,7 @@ test('fixed providers reject a silently ignored endpoint override', async () => 
   await assert.rejects(
     () => rooms.create({
       actorId: 'host',
+      createRequestId: 'fixed-endpoint-create',
       options: {
         catalogVersion: catalog.catalogVersion,
         roomName: 'fixed endpoint',

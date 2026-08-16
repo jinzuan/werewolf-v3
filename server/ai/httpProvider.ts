@@ -1,6 +1,6 @@
 import type { GameCommand } from '../../shared/protocol';
-import type { AIConfig, GameAction } from '../../shared/types';
-import { AI_TIMEOUT_MS } from '../../shared/config/aiDefaults';
+import type { GameAction } from '../../shared/types';
+import { AI_TIMEOUT_MS, type ServerAIConfig } from './config';
 import { loadAIConfig } from '../config';
 import { EndpointPolicy } from '../security/endpointPolicy';
 import { SafeHttpClient, type SafeHttpTransport } from '../security/safeHttpClient';
@@ -53,7 +53,7 @@ interface ResponseEnvelope {
   data?: unknown;
 }
 
-const endpointFor = (config: AIConfig): string => {
+const endpointFor = (config: ServerAIConfig): string => {
   if (config.apiType === 'siliconflow') {
     return 'https://api.siliconflow.cn/v1/chat/completions';
   }
@@ -63,7 +63,7 @@ const endpointFor = (config: AIConfig): string => {
   return config.local.apiUrl;
 };
 
-const settingsFor = (config: AIConfig, endpointOverride?: string): ProviderSettings => {
+const settingsFor = (config: ServerAIConfig, endpointOverride?: string): ProviderSettings => {
   const endpoint = endpointOverride ?? endpointFor(config);
   const selected =
     config.apiType === 'siliconflow'
@@ -238,7 +238,7 @@ const normalizeError = (
   return new ProviderError('network', retryCount);
 };
 
-const behaviorInstruction: Record<AIConfig['defaultBehavior'], string> = {
+const behaviorInstruction: Record<ServerAIConfig['defaultBehavior'], string> = {
   aggressive: 'Prefer proactive pressure, clear commitments, and decisive legal actions.',
   conservative: 'Prefer information gathering, low-risk legal actions, and preserve optionality.',
   random: 'Keep decisions varied while remaining consistent with the supplied facts and legal actions.',
@@ -246,7 +246,7 @@ const behaviorInstruction: Record<AIConfig['defaultBehavior'], string> = {
 
 const promptFor = (
   context: AIRequestContext,
-  behavior: AIConfig['defaultBehavior'],
+  behavior: ServerAIConfig['defaultBehavior'],
 ) => {
   const projection = context.projectedContext;
   const snapshot = projection?.snapshot;
@@ -259,7 +259,6 @@ const promptFor = (
         (context.role === 'wolf' && player.role === 'wolf')
           ? player.role
           : null,
-      aiConfig: undefined,
     }));
   const gameState = snapshot?.gameState;
   const publicEvents = projection?.publicEvents ?? [];
@@ -317,11 +316,11 @@ export class HttpAIProvider implements AIProvider {
   private readonly timeoutMs: number;
   private readonly maxRetries: number;
   private readonly baseDelayMs: number;
-  private readonly behavior: AIConfig['defaultBehavior'];
+  private readonly behavior: ServerAIConfig['defaultBehavior'];
   private readonly endpointPolicy: EndpointPolicy;
 
   constructor(
-    config: AIConfig = loadAIConfig(),
+    config: ServerAIConfig = loadAIConfig(),
     options: HttpAIProviderOptions = {},
   ) {
     this.settings = settingsFor(config, options.endpoint);

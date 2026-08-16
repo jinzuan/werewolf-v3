@@ -372,9 +372,7 @@ const nextSeatIndex = (members: readonly RoomMember[]): number => {
 const waitingPlayerFor = (
   room: RoomRecord,
   member: RoomMember,
-  existing: Player | undefined,
 ): Player => ({
-  ...(existing?.aiConfig ? { aiConfig: clone(existing.aiConfig) } : {}),
   id: member.id,
   roomId: room.id,
   name: member.name,
@@ -391,7 +389,6 @@ const playersFromMembers = (room: RoomRecord): Player[] => {
     .filter(isPlayer)
     .sort((left, right) => (left.seatIndex ?? 0) - (right.seatIndex ?? 0));
   const occupied = new Set<number>();
-  const existing = new Map((room.players ?? []).map((player) => [player.id, player]));
   return members.map((member) => {
     if (
       !Number.isInteger(member.seatIndex) ||
@@ -405,7 +402,7 @@ const playersFromMembers = (room: RoomRecord): Player[] => {
       );
     }
     occupied.add(member.seatIndex!);
-    return waitingPlayerFor(room, member, existing.get(member.id));
+    return waitingPlayerFor(room, member);
   });
 };
 
