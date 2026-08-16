@@ -9,7 +9,7 @@ import { Badge } from '../../../ui/Badge';
 import { Button } from '../../../ui/Button';
 import { Card } from '../../../ui/Card';
 import { Modal } from '../../../ui/Modal';
-import { isActionAllowed } from '../selectors';
+import { isActionAllowed, startCheckReason } from '../selectors';
 
 interface RoomActionsProps {
   room: RoomViewV31;
@@ -42,6 +42,17 @@ export function RoomActions({
   const locked = room.status === 'starting';
   const isHost = currentMember?.isHost === true;
   const can = (action: AllowedRoomAction) => isActionAllowed(room, action);
+  const failedChecksFor = (action: 'begin_ready_check' | 'start_game') => room.startCheck.items
+    .filter((item) => !item.passed)
+    .filter((item) => action === 'start_game' || (
+      item.key !== 'all_humans_online' && item.key !== 'all_humans_ready'
+    ));
+  const blockedReasonFor = (action: 'begin_ready_check' | 'start_game'): string => {
+    const failedChecks = failedChecksFor(action);
+    return failedChecks.length
+      ? `暂不可用：${failedChecks.map(startCheckReason).join('；')}`
+      : '当前阶段暂不能执行该操作。';
+  };
   const transferTargets = room.members.filter(
     (member) =>
       member.kind === 'player' &&
@@ -76,16 +87,24 @@ export function RoomActions({
           </Button>
         ) : null}
 
-        {isHost && can('begin_ready_check') ? (
-          <Button
-            variant="primary"
-            size="action"
-            disabled={locked || busy('begin_ready_check')}
-            onClick={onBeginReadyCheck}
-          >
-            <Play size={17} aria-hidden="true" />
-            {busy('begin_ready_check') ? '正在开始准备…' : '开始准备'}
-          </Button>
+        {isHost && room.status === 'waiting' ? (
+          <>
+            <Button
+              variant="primary"
+              size="action"
+              disabled={locked || busy('begin_ready_check') || !can('begin_ready_check')}
+              aria-describedby={!can('begin_ready_check') ? 'begin-ready-check-reason' : undefined}
+              onClick={onBeginReadyCheck}
+            >
+              <Play size={17} aria-hidden="true" />
+              {busy('begin_ready_check') ? '正在开始准备…' : '开始准备'}
+            </Button>
+            {!can('begin_ready_check') ? (
+              <p id="begin-ready-check-reason" className="waiting-room__action-blocker" role="status">
+                {blockedReasonFor('begin_ready_check')}
+              </p>
+            ) : null}
+          </>
         ) : null}
 
         {isHost && can('cancel_ready_check') ? (
@@ -99,20 +118,24 @@ export function RoomActions({
           </Button>
         ) : null}
 
-        {isHost && can('start_game') ? (
-          <Button
-            variant="primary"
-            size="action"
-            disabled={locked || busy('start_game')}
-            onClick={onStartGame}
-          >
-            <Play size={18} aria-hidden="true" />
-            {busy('start_game') ? '正在开局…' : '开始对局'}
-          </Button>
-        ) : isHost && room.status === 'ready_check' ? (
-          <p className="waiting-room__action-hint">
-            开局按钮会在所有检查通过后出现。
-          </p>
+        {isHost && room.status === 'ready_check' ? (
+          <>
+            <Button
+              variant="primary"
+              size="action"
+              disabled={locked || busy('start_game') || !can('start_game')}
+              aria-describedby={!can('start_game') ? 'start-game-reason' : undefined}
+              onClick={onStartGame}
+            >
+              <Play size={18} aria-hidden="true" />
+              {busy('start_game') ? '正在开局…' : '开始对局'}
+            </Button>
+            {!can('start_game') ? (
+              <p id="start-game-reason" className="waiting-room__action-blocker" role="status">
+                {blockedReasonFor('start_game')}
+              </p>
+            ) : null}
+          </>
         ) : null}
 
         {can('invite') ? (

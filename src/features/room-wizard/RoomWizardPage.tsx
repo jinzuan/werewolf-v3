@@ -242,6 +242,64 @@ function FieldError({ issue: error }: { issue?: WizardIssue }) {
   return error ? <span role="alert" style={{ color: 'var(--ww-state-danger)', fontSize: 'var(--ww-text-caption-size)' }}>{error.message}</span> : null;
 }
 
+function SeatStepper({
+  label,
+  value,
+  min,
+  max,
+  issue,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  issue?: WizardIssue;
+  onChange: (value: number) => void;
+}) {
+  const clamp = (next: number): number => Math.max(min, Math.min(max, next));
+  const setValue = (next: number): void => onChange(clamp(next));
+
+  return (
+    <label className="v3-field" style={{ minWidth: 220, flex: '1 1 240px', margin: 0 }}>
+      <span>{label}</span>
+      <div style={row} role="group" aria-label={`${label}调节`}>
+        <Button
+          variant="icon"
+          aria-label={`减少${label}`}
+          disabled={value <= min}
+          onClick={() => setValue(value - 1)}
+        >
+          <Minus size={16} aria-hidden="true" />
+        </Button>
+        <Input
+          type="number"
+          inputMode="numeric"
+          min={min}
+          max={max}
+          value={value}
+          aria-label={label}
+          aria-invalid={Boolean(issue)}
+          onChange={(event) => setValue(Number(event.target.value) || min)}
+          style={{ width: 82, textAlign: 'center' }}
+        />
+        <Button
+          variant="icon"
+          aria-label={`增加${label}`}
+          disabled={value >= max}
+          onClick={() => setValue(value + 1)}
+        >
+          <Plus size={16} aria-hidden="true" />
+        </Button>
+      </div>
+      <span style={{ color: 'var(--ww-text-muted)', fontSize: 'var(--ww-text-caption-size)' }}>
+        可调范围 {min}–{max}
+      </span>
+      <FieldError issue={issue} />
+    </label>
+  );
+}
+
 function PlayersStep({
   draft,
   catalog,
@@ -270,12 +328,20 @@ function PlayersStep({
   const updateCount = (maxPlayers: number) => {
     const nextPreset = presetFor(catalog, maxPlayers);
     const currentIsPreset = Boolean(draft.rolePresetId && selectedPreset?.id === draft.rolePresetId);
+    const mixedComputerSeats = Math.min(
+      Math.max(1, draft.computerSeats || Math.floor(maxPlayers / 3)),
+      Math.max(1, maxPlayers - 1),
+    );
+    const mixedMinimumHumans = Math.min(
+      Math.max(1, draft.minHumanPlayers),
+      Math.max(1, maxPlayers - mixedComputerSeats),
+    );
     const seatPatch = draft.mode === 'human'
       ? { minHumanPlayers: maxPlayers }
       : draft.mode === 'quick_computer'
         ? { minHumanPlayers: 0, computerSeats: 0 }
         : draft.aiFillPolicy === 'fixed'
-          ? { computerSeats: Math.min(Math.max(1, draft.computerSeats), Math.max(1, maxPlayers - 1)), minHumanPlayers: maxPlayers - Math.min(Math.max(1, draft.computerSeats), Math.max(1, maxPlayers - 1)) }
+          ? { computerSeats: mixedComputerSeats, minHumanPlayers: mixedMinimumHumans }
           : { minHumanPlayers: Math.min(Math.max(1, draft.minHumanPlayers), maxPlayers), computerSeats: 0 };
     if (currentIsPreset && nextPreset) {
       update({ maxPlayers, ...seatPatch, rolePresetId: nextPreset.id, roleSetup: { ...nextPreset.roleSetup }, rulesetId: nextPreset.rulesetId, rulesetVersion: nextPreset.rulesetVersion });
@@ -350,14 +416,47 @@ function PlayersStep({
 
       <Card data-wizard-block="players" tabIndex={-1}>
         <div className="v3-card-heading"><Users size={20} /><div><h2>席位分配</h2><p>角色总数会在下一步与总席位核对。</p></div></div>
-        {draft.mode === 'human' ? <p>朋友房：真人需要坐满{draft.maxPlayers}个席位后才能开局。</p> : null}
-        {draft.mode === 'quick_computer' ? <p>快速电脑局：创建时会自动补满{draft.maxPlayers}个电脑席。</p> : null}
+        {draft.mode === 'human' ? <p>朋友房：最低真人锁定为{draft.maxPlayers}人，电脑席锁定为0。</p> : null}
+        {draft.mode === 'quick_computer' ? <p>快速电脑局：最低真人锁定为0，创建时会自动补满{draft.maxPlayers}个电脑席。</p> : null}
         {draft.mode === 'mixed' ? <div style={css('gap')}>
           <div style={row}>
-            <button type="button" aria-pressed={draft.aiFillPolicy === 'fixed'} onClick={() => update({ aiFillPolicy: 'fixed', computerSeats: Math.max(1, Math.min(draft.maxPlayers - 1, draft.computerSeats || 1)), minHumanPlayers: draft.maxPlayers - Math.max(1, Math.min(draft.maxPlayers - 1, draft.computerSeats || 1)) })} style={choiceStyle(draft.aiFillPolicy === 'fixed')}><strong>按预设电脑席</strong><span>预留电脑席，可邀请真人占用其余席位。</span></button>
+            <button type="button" aria-pressed={draft.aiFillPolicy === 'fixed'} onClick={() => {
+              const computerSeats = Math.max(1, Math.min(draft.maxPlayers - 1, draft.computerSeats || Math.floor(draft.maxPlayers / 3)));
+              const minHumanPlayers = Math.min(Math.max(1, draft.minHumanPlayers), draft.maxPlayers - computerSeats);
+              update({ aiFillPolicy: 'fixed', computerSeats, minHumanPlayers });
+            }} style={choiceStyle(draft.aiFillPolicy === 'fixed')}><strong>按预设电脑席</strong><span>电脑席与最低真人都可单独调整。</span></button>
             <button type="button" aria-pressed={draft.aiFillPolicy === 'fill_to_max'} onClick={() => update({ aiFillPolicy: 'fill_to_max', computerSeats: 0 })} style={choiceStyle(draft.aiFillPolicy === 'fill_to_max')}><strong>开局时补满</strong><span>电脑数量按开局时的真人席位实时估算。</span></button>
           </div>
-          {draft.aiFillPolicy === 'fixed' ? <label className="v3-field" style={{ maxWidth: 240 }}><span>电脑席数量</span><Input type="number" min={1} max={Math.max(1, draft.maxPlayers - 1)} value={draft.computerSeats} onChange={(event) => { const value = Math.max(1, Math.min(Math.max(1, draft.maxPlayers - 1), Number(event.target.value) || 1)); update({ computerSeats: value, minHumanPlayers: draft.maxPlayers - value }); }} /><FieldError issue={issueFor('computerSeats')} /></label> : <label className="v3-field" style={{ maxWidth: 240 }}><span>最低真人数</span><Input type="number" min={1} max={draft.maxPlayers} value={draft.minHumanPlayers} onChange={(event) => update({ minHumanPlayers: Math.max(1, Math.min(draft.maxPlayers, Number(event.target.value) || 1)) })} /><FieldError issue={issueFor('minHumanPlayers')} /></label>}
+          {draft.aiFillPolicy === 'fixed' ? (
+            <div style={{ ...row, alignItems: 'flex-start' }}>
+              <SeatStepper
+                label="最低真人数"
+                value={draft.minHumanPlayers}
+                min={1}
+                max={Math.max(1, draft.maxPlayers - draft.computerSeats)}
+                issue={issueFor('minHumanPlayers')}
+                onChange={(value) => update({ minHumanPlayers: value })}
+              />
+              <SeatStepper
+                label="电脑席数量"
+                value={draft.computerSeats}
+                min={1}
+                max={Math.max(1, draft.maxPlayers - draft.minHumanPlayers)}
+                issue={issueFor('computerSeats')}
+                onChange={(value) => update({ computerSeats: value })}
+              />
+            </div>
+          ) : (
+            <SeatStepper
+              label="最低真人数"
+              value={draft.minHumanPlayers}
+              min={1}
+              max={draft.maxPlayers}
+              issue={issueFor('minHumanPlayers')}
+              onChange={(value) => update({ minHumanPlayers: value })}
+            />
+          )}
+          {draft.aiFillPolicy === 'fixed' ? <p style={{ margin: 0, color: 'var(--ww-text-muted)' }}>最低真人数 + 电脑席数量不能超过{draft.maxPlayers}个总席位。</p> : null}
         </div> : null}
         <SeatPreview draft={draft} />
       </Card>

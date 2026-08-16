@@ -7,6 +7,7 @@ import {
   selectSpectators,
   selectUnassignedPlayers,
   startCheckCopy,
+  startCheckReason,
 } from '../selectors';
 
 const room = (members: RoomViewV31['members']): RoomViewV31 => ({
@@ -127,4 +128,10 @@ test('等待房动作和开局检查都消费服务端事实', () => {
   assert.equal(copy.reason, '还需要 1 名真人加入。');
   assert.equal(copy.remedyAction, 'invite');
   assert.doesNotMatch(copy.reason, /minimum_humans|room\.start/);
+  assert.equal(startCheckReason({
+    key: 'all_humans_ready',
+    passed: false,
+    messageKey: 'room.start.all_humans_ready',
+    params: { total: 8, actual: 7 },
+  }), '真人玩家全部准备：还有 1 名真人玩家未准备。');
 });

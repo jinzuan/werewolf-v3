@@ -293,7 +293,12 @@
 .waiting-room__action-list { align-items: stretch; flex-wrap: wrap; }
 .waiting-room__action-list .v3-button { flex: 0 1 auto; }
 .waiting-room__action-list .v3-button--action { min-width: 150px; }
-.waiting-room__action-hint { flex: 1 1 100%; margin: 0; }
+.waiting-room__action-hint,
+.waiting-room__action-blocker { flex: 1 1 100%; margin: 0; }
+.waiting-room__action-blocker {
+  color: var(--ww-state-warning);
+  overflow-wrap: anywhere;
+}
 .waiting-room__actions > .waiting-room__transition-note { margin: 0; }
 
 .waiting-room__danger-menu { display: grid; gap: var(--ww-space-5); }

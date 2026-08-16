@@ -117,6 +117,23 @@ test('room creation options never carry browser-managed AI configuration', () =>
   assert.doesNotMatch(JSON.stringify(readWizardDraft(stored)), /apiKey|token|credential|secret/i);
 });
 
+test('mixed seat policy accepts independently tuned minimum humans and computer seats', () => {
+  const draft = createInitialDraft(catalog);
+  const valid = {
+    ...draft,
+    mode: 'mixed' as const,
+    aiFillPolicy: 'fixed' as const,
+    minHumanPlayers: 3,
+    computerSeats: 4,
+  };
+  assert.equal(validateWizardStep(valid, 'players', catalog).length, 0);
+
+  const invalid = { ...valid, minHumanPlayers: 9 };
+  assert.ok(validateWizardStep(invalid, 'players', catalog).some(
+    (item) => item.path === 'computerSeats' && item.message.includes('不能超过'),
+  ));
+});
+
 test('server field issues map to a safe Chinese message and the correct block', () => {
   const issues = serverIssuesToWizardIssues([
     { path: 'roleSetup.wolf', messageKey: 'room.config.role_count_above_max', params: { max: 6 }, errorCode: 'INVALID_ROOM_CONFIG' },

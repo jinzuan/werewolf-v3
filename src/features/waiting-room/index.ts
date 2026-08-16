@@ -6,6 +6,7 @@ export {
   selectSpectators,
   selectUnassignedPlayers,
   startCheckCopy,
+  startCheckReason,
   WAITING_ROOM_STATUSES,
   WAITING_STATUS_LABELS,
 } from './selectors';

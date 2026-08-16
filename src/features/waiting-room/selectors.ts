@@ -41,6 +41,13 @@ const numberParam = (
   return typeof value === 'number' ? value : undefined;
 };
 
+const numberParamFirst = (
+  item: StartCheckItem,
+  ...keys: string[]
+): number | undefined => keys
+  .map((key) => numberParam(item, key))
+  .find((value): value is number => value !== undefined);
+
 /** Room facts are the only source for seat occupancy. Empty seats have no member. */
 export const selectPlayerSeats = (room: RoomViewV31): WaitingSeat[] => {
   const totalSeats = Math.max(0, room.config.maxPlayers);
@@ -138,7 +145,7 @@ export const startCheckCopy = (item: StartCheckItem): StartCheckCopy => {
       };
     }
     case 'minimum_humans': {
-      const required = numberParam(item, 'required');
+      const required = numberParamFirst(item, 'required', 'minimum');
       const actual = numberParam(item, 'actual');
       const missing = required !== undefined && actual !== undefined
         ? Math.max(0, required - actual)
@@ -153,13 +160,22 @@ export const startCheckCopy = (item: StartCheckItem): StartCheckCopy => {
       };
     }
     case 'all_humans_online':
-      return {
-        label: checkLabel(item),
-        reason: '有真人玩家暂时离线，恢复连接后才能开始。',
-        remedy: '查看离线席位',
-      };
+      {
+        const total = numberParam(item, 'total');
+        const actual = numberParam(item, 'actual');
+        const missing = total !== undefined && actual !== undefined
+          ? Math.max(0, total - actual)
+          : undefined;
+        return {
+          label: checkLabel(item),
+          reason: missing !== undefined && missing > 0
+            ? `还有 ${missing} 名真人暂时离线。`
+            : '有真人玩家暂时离线，恢复连接后才能开始。',
+          remedy: '查看离线席位',
+        };
+      }
     case 'all_humans_ready': {
-      const required = numberParam(item, 'required');
+      const required = numberParamFirst(item, 'required', 'total');
       const actual = numberParam(item, 'actual');
       const missing = required !== undefined && actual !== undefined
         ? Math.max(0, required - actual)
@@ -167,18 +183,27 @@ export const startCheckCopy = (item: StartCheckItem): StartCheckCopy => {
       return {
         label: checkLabel(item),
         reason: missing !== undefined
-          ? `还有 ${missing} 名真人玩家未准备。`
+          ? missing > 0 ? `还有 ${missing} 名真人玩家未准备。` : '仍有真人玩家未准备。'
           : '仍有真人玩家未准备。',
         remedy: '查看未准备席位',
       };
     }
-    case 'ai_fill':
+    case 'ai_fill': {
+      const expected = numberParamFirst(item, 'expected', 'required');
+      const actual = numberParam(item, 'actual');
+      const missing = numberParam(item, 'missing');
+      const detail = missing !== undefined && missing > 0
+        ? `还需要 ${missing} 个电脑席。`
+        : expected !== undefined && actual !== undefined && actual > expected
+          ? `当前有 ${actual} 个电脑席，最多需要 ${expected} 个。`
+          : '电脑席位无法按当前房间设置补齐。';
       return {
         label: checkLabel(item),
-        reason: '电脑席位无法按当前房间设置补齐。',
+        reason: detail,
         remedy: '查看房间设置',
         remedyAction: 'update_config',
       };
+    }
     case 'ai_provider_config':
       return {
         label: checkLabel(item),
@@ -194,6 +219,12 @@ export const startCheckCopy = (item: StartCheckItem): StartCheckCopy => {
         remedyAction: 'update_config',
       };
   }
+};
+
+/** A compact reason for disabled room actions, composed only from start checks. */
+export const startCheckReason = (item: StartCheckItem): string => {
+  const copy = startCheckCopy(item);
+  return `${copy.label}：${copy.reason}`;
 };
 
 export const memberReadyLabel = (
