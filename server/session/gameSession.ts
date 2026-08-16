@@ -198,19 +198,31 @@ export class GameSession {
   }
 
   async initialize(): Promise<void> {
+    await this.reconcileFromEventStream();
     if (this.state.streamVersion === 0) {
+      const before = structuredClone(this.state);
       this.setDeadline();
-      await this.append([
-        this.event(
-          'game.started',
-          { day: 1, stage: 'guard_seer' },
-          'public_timeline',
-          undefined,
-          'system:game-start',
-        ),
-        this.stateEvent('system:game-start'),
-      ]);
-      await this.changed();
+      try {
+        await this.append([
+          this.event(
+            'game.started',
+            { day: 1, stage: 'guard_seer' },
+            'public_timeline',
+            undefined,
+            'system:game-start',
+          ),
+          this.stateEvent('system:game-start'),
+        ]);
+      } catch (error) {
+        this.state = before;
+        throw error;
+      }
+      try {
+        await this.changed();
+      } catch (error) {
+        this.scheduleDeadline();
+        throw error;
+      }
     }
     this.scheduleDeadline();
   }
@@ -333,6 +345,7 @@ export class GameSession {
       return this.reject('ACTOR_DEAD');
     }
 
+    const before = structuredClone(this.state);
     const beforeRevision = this.stageRevision;
     const beforeStageKey = this.stageKey();
     const events = this.applyCommand(actor, command, meta.commandId);
@@ -348,14 +361,22 @@ export class GameSession {
     if (beforeRevision !== this.stageRevision) this.setDeadline();
     const committed = [
       ...events,
-      this.stateEvent(meta.commandId, meta.actorId),
+      this.stateEvent(meta.commandId, meta.actorId, meta.commandId),
     ];
-    await this.append(committed);
+    try {
+      await this.append(committed);
+    } catch (error) {
+      this.state = before;
+      throw error;
+    }
     const result = { ok: true, events: committed } satisfies CommandResult;
     this.state.processedCommands[meta.commandId] = structuredClone(result);
     this.trimProcessedCommands();
-    await this.changed();
-    this.scheduleDeadline();
+    try {
+      await this.changed();
+    } finally {
+      this.scheduleDeadline();
+    }
     return result;
   }
 
@@ -1202,16 +1223,19 @@ export class GameSession {
         : this.now() + this.stageDurationMs;
   }
 
-  private scheduleDeadline(): void {
+  private scheduleDeadline(retryDelayMs?: number): void {
     if (this.timer !== undefined) this.scheduler.clear(this.timer);
     this.timer = undefined;
     const deadline = this.state.gameState.deadlineTs;
     if (deadline === null || this.state.gameState.phase === 'ended') return;
     const revision = this.stageRevision;
     this.timerRevision = revision;
-    this.timer = this.scheduler.set(Math.max(0, deadline - this.now()), () => {
-      void this.enqueueTimeout(revision);
-    });
+    this.timer = this.scheduler.set(
+      retryDelayMs ?? Math.max(0, deadline - this.now()),
+      () => {
+        void this.enqueueTimeout(revision).catch(() => undefined);
+      },
+    );
   }
 
   private enqueueTimeout(revision: number): Promise<void> {
@@ -1224,9 +1248,13 @@ export class GameSession {
       ) {
         return;
       }
+      const before = structuredClone(this.state);
       const correlationId = `timeout:${this.state.gameId}:${revision}`;
       const events = this.applyTimeout(correlationId);
-      if (events.length === 0) return;
+      if (events.length === 0) {
+        this.state = before;
+        return;
+      }
       this.syncAuthorityFields(false);
       this.setDeadline();
       const committed = [
@@ -1240,9 +1268,20 @@ export class GameSession {
         ...events,
         this.stateEvent(correlationId),
       ];
-      await this.append(committed);
-      await this.changed();
-      this.scheduleDeadline();
+      try {
+        await this.append(committed);
+      } catch (error) {
+        this.state = before;
+        // Leave a retryable timer behind without recursively retrying in the
+        // same scheduler turn when the store is still unavailable.
+        this.scheduleDeadline(1);
+        throw error;
+      }
+      try {
+        await this.changed();
+      } finally {
+        this.scheduleDeadline();
+      }
     });
     this.queue = run.catch(() => undefined);
     return run.then(() => undefined);
@@ -1366,12 +1405,20 @@ export class GameSession {
   private stateEvent(
     correlationId: string,
     actorId?: string,
+    commandId?: string,
   ): DomainEvent {
+    const sessionState = structuredClone(this.state);
+    // Command receipts contain their event arrays and are a runtime cache,
+    // not game state. Persisting them inside every state event would make the
+    // event stream grow quadratically (and recursively through clones).
+    sessionState.processedCommands = {};
     return this.event(
       'game.state_updated',
       {
         gameState: structuredClone(this.state.gameState),
         players: structuredClone(this.state.players),
+        sessionState,
+        ...(commandId ? { commandId } : {}),
       },
       'spectator_omniscient',
       undefined,
@@ -1423,6 +1470,100 @@ export class GameSession {
       events,
     });
     this.state.streamVersion += stored.length;
+  }
+
+  /**
+   * The room snapshot is only a cache of the projection. A process can die
+   * after the event append and before onChanged persists that cache, so every
+   * recovery starts by reconciling it with the event stream.
+   */
+  private async reconcileFromEventStream(): Promise<void> {
+    const stored = await this.eventStore.read(this.streamId());
+    if (stored.length === 0) {
+      if (this.state.streamVersion !== 0) {
+        throw new Error(
+          `Game stream ${this.streamId()} is missing persisted events for snapshot version ${this.state.streamVersion}.`,
+        );
+      }
+      this.storedEventCache = [];
+      this.eventCacheLoaded = true;
+      return;
+    }
+
+    for (let index = 0; index < stored.length; index += 1) {
+      const expected = index + 1;
+      if (stored[index].streamVersion !== expected) {
+        throw new Error(`Game stream ${this.streamId()} has a non-contiguous version.`);
+      }
+    }
+
+    const last = stored.at(-1)!;
+    const stateEventIndex = [...stored]
+      .map(({ event }, index) => ({ event, index }))
+      .reverse()
+      .find(({ event }) => event.eventType === 'game.state_updated');
+    const payload = stateEventIndex?.event.payload as {
+      sessionState?: unknown;
+      commandId?: unknown;
+    } | undefined;
+    const persistedState = payload?.sessionState;
+
+    // Streams written before the full session state was added can only be
+    // trusted when the room snapshot is already at their exact version.
+    if (!persistedState) {
+      if (this.state.streamVersion !== last.streamVersion) {
+        throw new Error(
+          `Game stream ${this.streamId()} cannot replay an older state-event format from a stale room snapshot.`,
+        );
+      }
+      this.storedEventCache = stored;
+      this.eventCacheLoaded = true;
+      return;
+    }
+
+    if (
+      typeof persistedState !== 'object' ||
+      Array.isArray(persistedState) ||
+      (persistedState as Partial<SessionState>).roomId !== this.state.roomId ||
+      (persistedState as Partial<SessionState>).gameId !== this.state.gameId
+    ) {
+      throw new Error(`Game stream ${this.streamId()} does not match its room.`);
+    }
+
+    const recovered = structuredClone(persistedState as SessionState);
+    recovered.streamVersion = last.streamVersion;
+    recovered.sequence = Math.max(
+      recovered.sequence,
+      ...stored.map(({ event }) => event.sequence),
+    );
+
+    // state_updated is the commit marker for one command transaction. Rebuild
+    // the runtime receipt cache from each committed transaction so a retry is
+    // idempotent even after a process restart. The receipts themselves are
+    // deliberately not embedded in sessionState (see stateEvent above).
+    const stateEventIndexes = stored
+      .map(({ event }, index) => ({ event, index }))
+      .filter(({ event }) => event.eventType === 'game.state_updated');
+    for (let index = 0; index < stateEventIndexes.length; index += 1) {
+      const entry = stateEventIndexes[index];
+      const commandId = (entry.event.payload as { commandId?: unknown }).commandId;
+      if (typeof commandId !== 'string') continue;
+      const previousIndex = stateEventIndexes[index - 1]?.index ?? -1;
+      recovered.processedCommands[commandId] = {
+        ok: true,
+        events: stored
+          .slice(previousIndex + 1, entry.index + 1)
+          .map(({ event }) => structuredClone(event)),
+      };
+    }
+    recovered.processedCommands = Object.fromEntries(
+      Object.entries(recovered.processedCommands).slice(-400),
+    );
+
+    this.state = recovered;
+    this.migrateSnapshot();
+    this.storedEventCache = stored;
+    this.eventCacheLoaded = true;
   }
 
   private streamId(): string {

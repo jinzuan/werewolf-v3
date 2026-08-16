@@ -1,5 +1,5 @@
 import type { EventStore } from '../../shared/events';
-import type { AIConfig } from '../../shared/types';
+import type { ServerAIConfig as AIConfig } from '../ai/config';
 import type { InsightStore } from '../review/insightStore';
 import type { ReviewGenerator, ReviewPipeline } from '../review/reviewPipeline';
 import type { ReviewRepository } from '../review/reviewRepository';

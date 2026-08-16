@@ -657,7 +657,6 @@ export class GameStartCoordinator {
         eventStore: this.options.eventStore,
         sessionOptions: this.options.sessionOptions,
       });
-      await session.initialize();
 
       const outcome: PersistedStartOutcome = {
         roomCode: startingRoom.code,
@@ -710,6 +709,16 @@ export class GameStartCoordinator {
         },
       );
 
+      // The room commit is the durable start intent. The event stream is
+      // appended only after it exists, so a crash between these operations
+      // leaves a recoverable playing room rather than an orphan game stream.
+      const committedStart = await this.repository.get(roomCode);
+      if (!committedStart) {
+        throw new GameStartError('ROOM_NOT_FOUND', 'Room disappeared after the game was committed.');
+      }
+      await this.options.onRoomChange?.(clone(committedStart), 'status_changed');
+      await session.initialize();
+
       const committed = await this.repository.get(roomCode);
       if (!committed) throw new GameStartError('ROOM_NOT_FOUND', 'Room does not exist.');
       this.sessions.set(committed.code, session);
@@ -727,6 +736,7 @@ export class GameStartCoordinator {
         frozenRosterRevision,
         claim.addedAIIds,
         failure,
+        session?.gameId,
       );
       throw failure;
     }
@@ -755,17 +765,36 @@ export class GameStartCoordinator {
     startingRosterRevision: number,
     addedAIIds: readonly string[],
     failure: GameStartError,
+    gameId?: string,
   ): Promise<void> {
     try {
+      const stream = gameId
+        ? await this.options.eventStore.read(`game:${gameId}`)
+        : [];
       const rolledBack = await this.repository.mutate(
         roomCode,
         (room) => {
-          if (room.status !== 'starting') return;
-          if (rosterRevisionOf(room) !== startingRosterRevision) {
+          const committedStart =
+            room.status === 'playing' &&
+            gameId !== undefined &&
+            room.gameId === gameId;
+          if (room.status !== 'starting' && !committedStart) return;
+          if (!committedStart && rosterRevisionOf(room) !== startingRosterRevision) {
             throw new GameStartError(
               'ROOM_REVISION_CONFLICT',
               'The room roster changed while the failed game was rolling back.',
             );
+          }
+          // If initialization already made it to the event stream, the room
+          // is durable and must remain recoverable; never roll it back into a
+          // ready room while its source of truth exists.
+          if (committedStart && stream.length > 0) {
+            delete room.startOwner;
+            delete room.startLeaseUntil;
+            delete room.startedAt;
+            delete room.startAddedAIIds;
+            delete room.startRosterRevision;
+            return room;
           }
           const added = new Set(addedAIIds);
           room.members = room.members.filter((member) => !added.has(member.id));
