@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { safeUuid } from '../../lib/uuid';
 import type {
   DomainEvent,
   ProjectedSnapshot,
@@ -87,7 +88,7 @@ const scheduleSessionCursor = (session: V3Session): void => {
   sessionPersistence.scheduleCursor(session);
 };
 
-const newActorId = (): string => crypto.randomUUID();
+const newActorId = (): string => safeUuid();
 
 const PENDING_CREATE_KEY = 'werewolf-v3-pending-create';
 type PendingCreate = { createRequestId: string; actorId: string };
@@ -740,7 +741,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
     if (!current.session || !current.room) return false;
     const action = roomActionForCommand(command);
     if (action && !roomActions(current.room).includes(action)) return false;
-    const commandId = crypto.randomUUID();
+    const commandId = safeUuid();
     commandRequests.set(commandId, {
       roomId: current.session.roomId,
       expectedRoomRevision: current.room.roomRevision,

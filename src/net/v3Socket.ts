@@ -1,4 +1,5 @@
 import { io, type Socket } from 'socket.io-client';
+import { safeUuid } from '../lib/uuid';
 import type {
   CommandReceipt,
   CommandReceiptAck,
@@ -288,7 +289,7 @@ export const adoptV3Identity = (resumeToken: string): void => {
 };
 
 const commandMeta = (actorId: string, roomId?: string) => ({
-  commandId: crypto.randomUUID(),
+  commandId: safeUuid(),
   actorId,
   sentAt: Date.now(),
   ...(roomId ? { roomId } : {}),
