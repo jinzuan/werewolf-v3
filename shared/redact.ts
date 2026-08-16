@@ -1,31 +1,46 @@
 /** Shared recursive redaction boundary for logs, diagnostics and debug buffers. */
 
-export const SENSITIVE_KEYS = new Set([
-  'aiconfig',
-  'apikey',
+const SENSITIVE_KEY_NAMES = new Set([
+  'ai_config',
   'api_key',
+  'apikey',
   'access_token',
   'accesstoken',
   'authorization',
   'credential',
-  'credentialref',
+  'credential_ref',
   'join_token',
-  'jointoken',
   'omniscient_token',
-  'omniscienttoken',
   'password',
   'resume_token',
-  'resumetoken',
   'secret',
+  'session',
   'token',
 ]);
 
-const normalizedKey = (key: string): string => key.replace(/[-\s]/g, '_').toLowerCase();
-const isSensitiveKey = (key: string): boolean => {
-  const normalized = normalizedKey(key);
-  return SENSITIVE_KEYS.has(normalized) ||
-    normalized.endsWith('apikey') || normalized.endsWith('accesstoken');
+/** Canonical key form shared by every sensitive-data boundary. */
+export const normalizeSensitiveKey = (key: string): string => key
+  .trim()
+  .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+  .replace(/[-\s]+/g, '_')
+  .toLowerCase();
+
+/** Match exact names and credential/token suffixes, including aliases. */
+export const isSensitiveKey = (key: string): boolean => {
+  const normalized = normalizeSensitiveKey(key);
+  return SENSITIVE_KEY_NAMES.has(normalized) ||
+    normalized.endsWith('_api_key') ||
+    normalized.endsWith('apikey') ||
+    normalized.endsWith('_access_token') ||
+    normalized.endsWith('accesstoken') ||
+    normalized.endsWith('_credential_ref') ||
+    normalized.endsWith('_token');
 };
+
+export interface SensitiveKeyScanOptions {
+  /** A narrow structural exception, used only by the session credential shape. */
+  allowKey?: (key: string, path: readonly string[]) => boolean;
+}
 
 /** Bearer <key> → Bearer ***<后4位>; raw values are never retained by key-aware redaction. */
 export const redactAuthorization = (text: string): string => {
@@ -53,14 +68,20 @@ export const redactSensitive = (text: string): string => {
 
 export const containsSensitiveKeys = (
   value: unknown,
+  options: SensitiveKeyScanOptions = {},
+  path: readonly string[] = [],
   seen = new Set<object>(),
 ): boolean => {
   if (!value || typeof value !== 'object') return false;
   if (seen.has(value)) return false;
   seen.add(value);
-  if (Array.isArray(value)) return value.some((item) => containsSensitiveKeys(item, seen));
+  if (Array.isArray(value)) {
+    return value.some((item, index) =>
+      containsSensitiveKeys(item, options, [...path, String(index)], seen));
+  }
   return Object.entries(value as Record<string, unknown>).some(([key, child]) =>
-    isSensitiveKey(key) || containsSensitiveKeys(child, seen));
+    (!options.allowKey?.(key, path) && isSensitiveKey(key)) ||
+    containsSensitiveKeys(child, options, [...path, normalizeSensitiveKey(key)], seen));
 };
 
 /**

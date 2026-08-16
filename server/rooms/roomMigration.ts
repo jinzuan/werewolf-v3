@@ -280,9 +280,16 @@ export const needsRoomMigration = (room: RoomRecord): boolean =>
  * display role setup for an active legacy game; it never changes `players` or
  * `session`, so restoring an old playing room cannot deal a second time.
  */
-export const migrateRoomRecord = (input: RoomRecord): RoomRecord => {
+export const migrateRoomRecord = (
+  input: RoomRecord,
+  options: { allowLegacyPlaintextCredentials?: boolean } = {},
+): RoomRecord => {
   const room = clone(input);
-  if (process.env.WW_ENV === 'production' && hasLegacyPlaintextCredentials(room)) {
+  if (
+    process.env.WW_ENV === 'production' &&
+    !options.allowLegacyPlaintextCredentials &&
+    hasLegacyPlaintextCredentials(room)
+  ) {
     const error = new Error('Room storage contains legacy plaintext AI credentials; run the offline secret migration.');
     (error as Error & { code?: string }).code = 'LEGACY_SECRET_DATA';
     throw error;
@@ -322,7 +329,7 @@ export const migrateRoomRecord = (input: RoomRecord): RoomRecord => {
 };
 
 export const migrateRoomRecords = (rooms: readonly RoomRecord[]): RoomRecord[] =>
-  rooms.map(migrateRoomRecord);
+  rooms.map((room) => migrateRoomRecord(room));
 
 /** Remove the legacy online fact before a normalized record is persisted. */
 export const stripPersistedConnectionFacts = (room: RoomRecord): RoomRecord => {

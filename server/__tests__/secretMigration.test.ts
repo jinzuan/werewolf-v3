@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -7,7 +7,7 @@ import { EndpointPolicy } from '../security/endpointPolicy';
 import { migrateLegacySecrets } from '../security/secretMigration';
 import { InMemoryCredentialStore } from '../security/roomCredentialStore';
 
-test('legacy AI credentials migrate to a ref and never remain in the active room file', async () => {
+test('legacy AI credentials are sanitized and blocked until rotation', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'ww-migration-'));
   const file = path.join(directory, 'rooms.json');
   const backup = path.join(directory, 'rooms.legacy.bak');
@@ -38,8 +38,9 @@ test('legacy AI credentials migrate to a ref and never remain in the active room
   assert.equal(result.migratedRooms, 1);
   const active = await readFile(file, 'utf8');
   assert.doesNotMatch(active, /canary-api-key|canary-token/);
-  assert.match(active, /credentialRef/);
-  assert.deepEqual(await store.get({ namespace: 'test', roomCode: 'ABC123' }, result.credentialRefs[0]), {
-    apiKey: 'canary-api-key', token: 'canary-token',
-  });
+  assert.doesNotMatch(active, /credentialRef/);
+  assert.match(active, /credentialRotationRequired/);
+  assert.deepEqual(result.credentialRefs, []);
+  assert.deepEqual(result.rotationRequiredRoomCodes, ['ABC123']);
+  await assert.rejects(() => access(backup));
 });

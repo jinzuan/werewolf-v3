@@ -182,3 +182,25 @@ export const effectiveRequestProtocol = (
   if (value === 'http') return 'http';
   return 'http';
 };
+
+/** Resolve the address used by pre-auth controls without trusting spoofed headers. */
+export const effectiveClientAddress = (
+  request: RequestLike,
+  policy: TrustedProxyPolicy,
+): string => {
+  const remote = request.socket?.remoteAddress;
+  let direct: string | undefined;
+  try {
+    direct = remote ? canonicalAddress(remote) : undefined;
+  } catch {
+    direct = undefined;
+  }
+  if (!direct || !policy.isTrusted(remote)) return direct ?? 'unknown';
+  const forwarded = headerValue(request.headers, 'x-forwarded-for');
+  if (typeof forwarded !== 'string') return direct;
+  try {
+    return canonicalAddress(forwarded.split(',', 1)[0]);
+  } catch {
+    return direct;
+  }
+};

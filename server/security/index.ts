@@ -5,6 +5,7 @@ export {
   TrustedProxyPolicyError,
   parseTrustedProxySource,
   parseTrustedProxySources,
+  effectiveClientAddress,
 } from './trustedProxyPolicy';
 export type {
   RequestLike,
@@ -14,3 +15,4 @@ export type {
 export * from './roomCredentialStore';
 export * from './encryptedFileCredentialStore';
 export * from './safeHttpClient';
+export * from './joinRateLimiter';

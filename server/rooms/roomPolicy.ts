@@ -206,7 +206,7 @@ const checkAiFill = (room: RoomRecord): {
 /** Validate the persisted non-secret AI tuning without reading SecretStore. */
 const checkAIProviderConfig = (room: RoomRecord): boolean | undefined => {
   const config = configFor(room);
-  if (config?.credentialSchemaAmbiguous) return false;
+  if (config?.credentialSchemaAmbiguous || config?.credentialRotationRequired) return false;
   if (!config?.aiProviderConfig) return undefined;
   const provider = config.aiProviderConfig;
   const shapeValid =

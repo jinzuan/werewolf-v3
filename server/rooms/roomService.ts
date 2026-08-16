@@ -156,6 +156,7 @@ export interface RoomServiceErrorOptions {
   params?: Record<string, string | number>;
   issues?: RoomConfigIssue[];
   receipt?: CommandReceipt;
+  retryAfterMs?: number;
 }
 
 /** Errors crossing the socket boundary have stable, UI-safe fields. */
@@ -165,6 +166,7 @@ export class RoomServiceError extends Error {
   readonly params?: Record<string, string | number>;
   readonly issues?: RoomConfigIssue[];
   readonly receipt?: CommandReceipt;
+  readonly retryAfterMs?: number;
 
   constructor(options: RoomServiceErrorOptions) {
     super(options.code);
@@ -174,6 +176,7 @@ export class RoomServiceError extends Error {
     this.params = options.params;
     this.issues = options.issues;
     this.receipt = options.receipt;
+    this.retryAfterMs = options.retryAfterMs;
   }
 }
 
@@ -1258,6 +1261,7 @@ export class RoomService {
           draft.config.credentialSchemaAmbiguous = true;
         } else if (effectiveCanonicalPatch) {
           delete draft.config.credentialSchemaAmbiguous;
+          delete draft.config.credentialRotationRequired;
         }
         if (!nextRef) delete draft.config.credentialRef;
         delete draft.config.aiConfig;
@@ -2012,6 +2016,9 @@ export class RoomService {
       behavior: config.behavior,
       capability: getAIProviderCapability(config.provider),
       hasCredential,
+      ...(room.config?.credentialRotationRequired
+        ? { credentialRotationRequired: true }
+        : {}),
       configRevision: room.configRevision ?? 1,
       updatedAt: room.updatedAt ?? room.createdAt,
     }, hasApiKey, hasToken);
@@ -2019,7 +2026,7 @@ export class RoomService {
 
   private async providerForRoom(room: RoomRecord): Promise<AIProvider> {
     const roomConfig = room.config?.aiProviderConfig;
-    if (room.config?.credentialSchemaAmbiguous) {
+    if (room.config?.credentialSchemaAmbiguous || room.config?.credentialRotationRequired) {
       throw this.error('CREDENTIAL_SCHEMA_AMBIGUOUS', 'room.error.ai_credential_schema_ambiguous');
     }
     if (!roomConfig) {

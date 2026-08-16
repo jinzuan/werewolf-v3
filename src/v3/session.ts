@@ -3,7 +3,12 @@ import type {
   IdentityCredentials,
   RoomView,
 } from '../../shared/protocol';
-import { SENSITIVE_KEYS } from '../../shared/redact';
+import {
+  containsSensitiveKeys,
+  normalizeSensitiveKey,
+} from '../../shared/redact';
+
+export { containsSensitiveKeys } from '../../shared/redact';
 
 export const V3_SESSION_KEY = 'werewolf-v3-session';
 export const V3_SESSION_VERSION = 2 as const;
@@ -102,35 +107,20 @@ export const writeV3Session = (
   }
 };
 
-const containsForbiddenSessionSecrets = (
-  value: unknown,
-  path: string[] = [],
-  seen = new Set<object>(),
-): boolean => {
-  if (!value || typeof value !== 'object') return false;
-  if (seen.has(value)) return false;
-  seen.add(value);
-  if (Array.isArray(value)) {
-    return value.some((child, index) => containsForbiddenSessionSecrets(child, [...path, String(index)], seen));
-  }
-  return Object.entries(value as Record<string, unknown>).some(([key, child]) => {
-    const normalized = key.replace(/[-\s]/g, '_').toLowerCase();
-    const allowedCredential = path[0] === 'credentials' &&
-      ['resumetoken', 'jointoken', 'omniscienttoken', 'resume_token', 'join_token', 'omniscient_token'].includes(normalized);
-    if (SENSITIVE_KEYS.has(normalized) && !allowedCredential) return true;
-    return containsForbiddenSessionSecrets(child, [...path, normalized], seen);
-  });
-};
+const allowedSessionCredentialKey = (
+  key: string,
+  path: readonly string[],
+): boolean => path.length === 1 && path[0] === 'credentials' && [
+  'resume_token',
+  'join_token',
+  'omniscient_token',
+].includes(normalizeSensitiveKey(key));
 
-const ROOM_SENSITIVE_KEYS = new Set([
-  'joinToken',
-  'resumeToken',
-  'omniscientToken',
-  'session',
-]);
+/** Session storage is the sole structural exception for join/resume tokens. */
+const containsForbiddenSessionSecrets = (value: unknown): boolean =>
+  containsSensitiveKeys(value, { allowKey: allowedSessionCredentialKey });
 
 const ROOM_PRIVATE_KEYS = new Set([
-  ...SENSITIVE_KEYS,
   'players',
   'role',
   'gameState',
@@ -173,12 +163,8 @@ const containsKeys = (
   );
 };
 
-export const containsSensitiveKeys = (
-  value: unknown,
-): boolean => containsKeys(value, ROOM_SENSITIVE_KEYS);
-
 export const isPublicRoomViewSafe = (room: RoomView): boolean =>
-  !containsKeys(room, ROOM_PRIVATE_KEYS);
+  !containsSensitiveKeys(room) && !containsKeys(room, ROOM_PRIVATE_KEYS);
 
 export const isSnapshotSafeForViewer = (
   snapshot: ProjectedSnapshot,

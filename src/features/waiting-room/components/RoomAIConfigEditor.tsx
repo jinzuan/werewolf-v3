@@ -125,6 +125,11 @@ export function RoomAIConfigEditor({
     >
       <div className="waiting-room__editor waiting-room__ai-editor">
         {error ? <div className="v3-alert v3-alert--error" role="alert">{error}</div> : null}
+        {summary?.credentialRotationRequired ? (
+          <div className="v3-alert v3-alert--warning" role="alert">
+            旧版凭据已迁移但尚未轮换。请重新填写唯一 Bearer 凭据并保存；完成前不会向模型服务发起请求。
+          </div>
+        ) : null}
         {status === 'loading' ? <p className="waiting-room__empty-copy">正在读取房主可见设置…</p> : null}
         <div className="waiting-room__editor-grid">
           <label className="waiting-room__editor-field">

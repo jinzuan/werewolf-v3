@@ -3,7 +3,7 @@ import type {
   ViewerContext,
 } from '../../shared/events';
 import type { GameEventsMessage } from '../../shared/protocol';
-import { containsSensitiveKeys } from './session';
+import { containsSensitiveKeys } from '../../shared/redact';
 import { filterVisibleEvents } from './visibility';
 
 export interface EventStreamState {
