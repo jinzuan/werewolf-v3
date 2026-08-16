@@ -7,7 +7,16 @@ import type {
   ViewerContext,
 } from '../../shared/events';
 import { DOMAIN_EVENT_SCHEMA_VERSION } from '../../shared/events';
-import type { GameCommand, GameCommandMeta } from '../../shared/protocol';
+import {
+  EVENT_HISTORY_DEFAULT_LIMIT,
+  EVENT_HISTORY_MAX_LIMIT,
+} from '../../shared/protocol';
+import type {
+  EventHistoryPage,
+  EventHistoryQuery,
+  GameCommand,
+  GameCommandMeta,
+} from '../../shared/protocol';
 import type {
   GameAction,
   GameState,
@@ -238,6 +247,51 @@ export class GameSession {
     return stored
       .map(({ event }) => this.projector.projectEvent(event, viewer))
       .filter((event): event is DomainEvent => event !== undefined);
+  }
+
+  async eventPageFor(
+    viewer: ViewerContext,
+    query: EventHistoryQuery = {},
+  ): Promise<EventHistoryPage> {
+    const afterSequence = Number.isSafeInteger(query.afterSequence) && query.afterSequence! >= 0
+      ? query.afterSequence!
+      : 0;
+    const beforeSequence = Number.isSafeInteger(query.beforeSequence) && query.beforeSequence! >= 0
+      ? query.beforeSequence!
+      : undefined;
+    const limit = Number.isSafeInteger(query.limit) && (query.limit ?? 0) > 0
+      ? Math.min(query.limit!, EVENT_HISTORY_MAX_LIMIT)
+      : EVENT_HISTORY_DEFAULT_LIMIT;
+    const stored = await this.eventStore.read(this.streamId(), afterSequence);
+    const eligible = beforeSequence === undefined
+      ? stored
+      : stored.filter(({ event }) => event.sequence < beforeSequence);
+    const page = beforeSequence === undefined
+      ? eligible.slice(0, limit)
+      : eligible.slice(-limit);
+    const events = page
+      .map(({ event }) => this.projector.projectEvent(event, viewer))
+      .filter((event): event is DomainEvent => event !== undefined);
+    const hasMore = beforeSequence === undefined
+      ? eligible.length > page.length
+      : eligible.length > page.length;
+    const firstSequence = page[0]?.event.sequence;
+    const lastSequence = page.at(-1)?.event.sequence;
+    return {
+      afterSequence,
+      ...(beforeSequence === undefined ? {} : { beforeSequence }),
+      events,
+      limit,
+      hasMore,
+      // These cursors track the authoritative raw stream, even when the
+      // viewer projection hides every event in this page.
+      nextAfterSequence: beforeSequence === undefined
+        ? (lastSequence ?? afterSequence)
+        : null,
+      nextBeforeSequence: beforeSequence !== undefined
+        ? (firstSequence ?? beforeSequence)
+        : null,
+    };
   }
 
   async projectEvents(events: readonly DomainEvent[], viewer: ViewerContext) {

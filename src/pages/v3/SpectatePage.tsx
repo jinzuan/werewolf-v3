@@ -20,6 +20,7 @@ import {
   type ServerClockSample,
 } from '../../v3/serverClock';
 import { formatCountdown } from '../../utils/countdown';
+import { MAX_EVENT_WINDOW } from '../../v3/eventStream';
 
 export function SpectatePage() {
   const connected = useV3Store((state) => state.connected);
@@ -37,7 +38,10 @@ export function SpectatePage() {
     const timer = window.setInterval(() => setNow(Date.now()), 250);
     return () => window.clearInterval(timer);
   }, [snapshot?.gameState.deadlineTs]);
-  const publicEvents = useMemo(() => publicSpectatorEvents(events), [events]);
+  const publicEvents = useMemo(
+    () => publicSpectatorEvents(events).slice(-MAX_EVENT_WINDOW),
+    [events],
+  );
   const players = snapshot?.players ?? [];
   const playerName = (id: string | null) =>
     players.find((player) => player.id === id)?.name ?? '未知目标';
@@ -118,7 +122,7 @@ export function SpectatePage() {
           <Card>
             <div className="v3-panel-heading">
               <div><span>按时间顺序</span><h2>公开事件时间线</h2></div>
-              <span className="v3-numeric">共 {publicEvents.length} 条</span>
+              <span className="v3-numeric">最近 {publicEvents.length} 条</span>
             </div>
             <div className="v3-timeline">
               {publicEvents.length === 0 ? (

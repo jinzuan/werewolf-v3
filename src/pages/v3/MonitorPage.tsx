@@ -21,6 +21,7 @@ import {
   type ServerClockSample,
 } from '../../v3/serverClock';
 import { formatCountdown } from '../../utils/countdown';
+import { MAX_EVENT_WINDOW } from '../../v3/eventStream';
 
 export function MonitorPage() {
   const connected = useV3Store((state) => state.connected);
@@ -55,7 +56,8 @@ export function MonitorPage() {
     .filter((event) =>
       !query.trim() ||
       describeEvent(event, playerName).toLowerCase().includes(query.trim().toLowerCase()),
-    ), [events, visibility, query, players]);
+    )
+    .slice(-MAX_EVENT_WINDOW), [events, visibility, query, players]);
 
   if (!omniscient) {
     return (
@@ -154,7 +156,7 @@ export function MonitorPage() {
               <Badge tone="success">{room ? roomStatusLabel(room.status) : '对局中'}</Badge>
             </div>
             <div className="v3-setting-row">
-              <div><strong>记录数量</strong><span>完整事件记录已按时间顺序显示。</span></div>
+              <div><strong>记录数量</strong><span>仅保留最近 {MAX_EVENT_WINDOW} 条，历史记录按页从服务端读取。</span></div>
               <strong>{events.length}</strong>
             </div>
             <details className="v3-advanced-info">

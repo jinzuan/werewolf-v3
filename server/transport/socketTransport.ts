@@ -1,4 +1,5 @@
 import type { Server, Socket } from 'socket.io';
+import { EVENT_HISTORY_MAX_LIMIT } from '../../shared/protocol';
 import type {
   GameCommand,
   ProtocolAckError,
@@ -6,6 +7,7 @@ import type {
   RoomSnapshotReason,
   RoomMutationCommand,
   V3Command,
+  RoomListQuery,
 } from '../../shared/protocol';
 import type { RoomAccess, SocketIdentity } from '../rooms/types';
 import { RoomService, RoomServiceError } from '../rooms/roomService';
@@ -204,15 +206,26 @@ export function bindSocketTransport(
     const room = await rooms.get(identity.roomCode, identity.actorId);
     if (room.status !== 'playing' && room.status !== 'ended') return;
     const afterSequence = targetState.lastSequence ?? 0;
-    const events = await rooms.events(identity, afterSequence);
+    const page = await rooms.eventsPage(identity, {
+      afterSequence,
+      limit: EVENT_HISTORY_MAX_LIMIT,
+    });
+    const events = page.events;
     const snapshot = await rooms.snapshot(identity);
-    targetState.lastSequence = snapshot.lastSequence;
+    targetState.lastSequence = page.hasMore
+      ? (page.nextAfterSequence ?? afterSequence)
+      : Math.max(afterSequence, snapshot.lastSequence, events.at(-1)?.sequence ?? afterSequence);
     target.emit('v3:events', {
       type: 'game.events',
       roomId: snapshot.roomId,
       gameId: snapshot.gameId,
       afterSequence,
       lastSequence: snapshot.lastSequence,
+      ...(page.beforeSequence === undefined ? {} : { beforeSequence: page.beforeSequence }),
+      limit: page.limit,
+      hasMore: page.hasMore,
+      nextAfterSequence: page.nextAfterSequence,
+      nextBeforeSequence: page.nextBeforeSequence,
       events,
     });
     target.emit('v3:snapshot', {
@@ -568,9 +581,16 @@ export function bindSocketTransport(
       },
     );
 
-    socket.on('v3:rooms', async (_request, ack?: (response: unknown) => void) => {
+    socket.on('v3:rooms', async (request: unknown, ack?: (response: unknown) => void) => {
       try {
-        ack?.({ ok: true, rooms: await rooms.listPublicRooms() });
+        const input = request && typeof request === 'object'
+          ? request as RoomListQuery
+          : {};
+        const page = await rooms.listPublicRoomsPage({
+          ...(typeof input.cursor === 'string' ? { cursor: input.cursor } : {}),
+          ...(typeof input.limit === 'number' ? { limit: input.limit } : {}),
+        });
+        ack?.({ ok: true, ...page });
       } catch (error) {
         ack?.(errorResponse(error));
       }

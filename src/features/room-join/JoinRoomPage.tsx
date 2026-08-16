@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowRight, DoorOpen, Eye, KeyRound } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { roomPath } from '../../app/routes/roomRouting';
 import { AppShell } from '../../components/shell/AppShell';
 import { useV3Store } from '../../stores/v3Store';
@@ -11,6 +11,7 @@ import { joinActionLabel, joinIntentFromQuery, normalizeJoinCode, type JoinInten
 
 export function JoinRoomPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const connected = useV3Store((state) => state.connected);
   const loading = useV3Store((state) => state.loading);
@@ -24,9 +25,26 @@ export function JoinRoomPage() {
   const [joinPassword, setJoinPassword] = useState('');
 
   useEffect(() => {
-    setRoomCode(normalizeJoinCode(searchParams.get('code')));
-    setIntent(joinIntentFromQuery(searchParams.get('intent')));
-  }, [searchParams]);
+    const code = normalizeJoinCode(searchParams.get('code'));
+    const rawIntent = searchParams.get('intent');
+    const nextIntent = joinIntentFromQuery(rawIntent);
+    setRoomCode(code);
+    setIntent(nextIntent);
+
+    // A join URL may prefill only public routing hints. Replace the current
+    // history entry so credentials accidentally pasted into a link cannot
+    // remain in the address bar, hash, or browser history.
+    const safeParams = new URLSearchParams();
+    if (code) safeParams.set('code', code);
+    if (rawIntent === 'play' || rawIntent === 'watch') safeParams.set('intent', rawIntent);
+    const safeSearch = safeParams.toString();
+    if (location.search !== (safeSearch ? `?${safeSearch}` : '') || location.hash) {
+      navigate(
+        { pathname: location.pathname, search: safeSearch ? `?${safeSearch}` : '', hash: '' },
+        { replace: true },
+      );
+    }
+  }, [location.hash, location.pathname, location.search, navigate, searchParams]);
 
   const enter = async (nextIntent: JoinIntent) => {
     const code = normalizeJoinCode(roomCode);

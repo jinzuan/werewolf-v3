@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { joinInviteUrl } from '../../app/routes/roomRouting';
 import type {
   AllowedRoomAction,
   RoomConfigView,
@@ -133,7 +134,7 @@ export function WaitingRoomPage() {
     }
     try {
       await navigator.clipboard.writeText(
-        `${room.name} 邀请你加入狼人杀房间\n房间码：${room.code}\n邀请口令：${joinToken}`,
+        `${joinInviteUrl(window.location.origin, room.code, 'play')}\n\n房间码：${room.code}\n邀请口令：${joinToken}`,
       );
       setCopied(true);
       setPageError(null);

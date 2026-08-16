@@ -19,4 +19,9 @@ test('join is a deep-linkable keyboard-safe route with browser back support', as
   await expect(page.getByRole('heading', { name: '用房间码找到同伴' })).toBeVisible();
   await expect(page.getByRole('textbox', { name: '房间码' })).toHaveValue('AB12CD');
   await expect(page.getByRole('button', { name: '加入房间', exact: true })).toBeVisible();
+
+  await page.goto(`${v3.appURL}/rooms/join?code=ab12cd&intent=play&joinToken=canary-join&resumeToken=canary-resume#canary-hash`);
+  await expect(page).toHaveURL(/\/rooms\/join\?code=AB12CD&intent=play$/);
+  await expect(page.locator('body')).not.toContainText('canary-join');
+  await expect(page.locator('body')).not.toContainText('canary-resume');
 });

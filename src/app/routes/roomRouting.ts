@@ -10,6 +10,7 @@ export const ROOM_VIEW_SEGMENTS = [
 ] as const;
 
 export type RoomViewSegment = (typeof ROOM_VIEW_SEGMENTS)[number];
+export type RoomJoinIntent = 'play' | 'watch';
 
 export const WAITING_ROOM_STATUSES: readonly RoomStatus[] = [
   'waiting',
@@ -38,6 +39,32 @@ export const roomJoinPath = (roomCode?: string): string => {
   return code
     ? `/rooms/join?code=${encodeURIComponent(code)}`
     : '/rooms/join';
+};
+
+/**
+ * Build the only URL that is safe to put in an invitation. Credentials are
+ * deliberately not accepted by this API; the join page collects the口令 in
+ * memory after opening the link.
+ */
+export const joinInviteUrl = (
+  origin: string,
+  roomCode: string,
+  intent: RoomJoinIntent = 'play',
+): string => {
+  let base: URL;
+  try {
+    base = new URL(origin);
+  } catch {
+    throw new TypeError('邀请链接 origin 无效');
+  }
+  if (base.protocol !== 'http:' && base.protocol !== 'https:') {
+    throw new TypeError('邀请链接必须使用 HTTP(S) 同源地址');
+  }
+  const url = new URL('/rooms/join', base.origin);
+  const code = normalizeRoomCode(roomCode);
+  if (code) url.searchParams.set('code', code);
+  url.searchParams.set('intent', intent === 'watch' ? 'watch' : 'play');
+  return url.toString();
 };
 
 export const roomStatusLabel = (status: RoomStatus): string => {
@@ -83,4 +110,3 @@ export const resolveRoomDestination = (
   room: RoomView,
   _requested: RoomViewSegment | null = null,
 ): RoomViewSegment => canonicalRoomView(room);
-
