@@ -13,6 +13,8 @@ export const UNKNOWN_EVENT_MESSAGE = '系统状态已更新';
 /** Stable template keys make additions fail at compile time instead of falling through to raw enum values. */
 export const DOMAIN_EVENT_MESSAGE_KEYS = {
   'game.started': 'game_started',
+  'role.confirmed': 'role_confirmed',
+  'role.confirmation_completed': 'role_confirmation_completed',
   'game.state_updated': 'state_updated',
   'game.ended': 'game_ended',
   'stage.timed_out': 'stage_timed_out',
@@ -31,13 +33,16 @@ export const DOMAIN_EVENT_MESSAGE_KEYS = {
   'wolf.kill_locked': 'wolf_kill_locked',
   'wolf.discussion_timed_out': 'wolf_discussion_timed_out',
   'day.started': 'day_started',
+  'day.discussion_started': 'day_discussion_started',
   'day.speech': 'day_speech',
   'day.speech_skipped': 'day_speech_skipped',
   'day.voting_started': 'day_voting_started',
   'day.vote_cast': 'day_vote_cast',
   'day.revote_required': 'day_revote_required',
+  'day.exile_result': 'day_exile_result',
   'day.no_exile': 'day_no_exile',
   'day.exiled': 'day_exiled',
+  'day.ended': 'day_ended',
   'hunter.entitled': 'hunter_entitled',
   'hunter.shot': 'hunter_shot',
   'hunter.shot_skipped': 'hunter_shot_skipped',
@@ -46,6 +51,8 @@ export const DOMAIN_EVENT_MESSAGE_KEYS = {
 /** Human-readable templates are kept as Chinese strings; placeholders are internal, never exposed raw. */
 export const DOMAIN_EVENT_MESSAGES = {
   'game.started': '对局开始，进入第 {day} 夜。',
+  'role.confirmed': '你已确认身份。',
+  'role.confirmation_completed': '所有玩家已确认身份，首夜开始。',
   'game.state_updated': UNKNOWN_EVENT_MESSAGE,
   'game.ended': '对局结束，{winner}获胜。',
   'stage.timed_out': '{stage}行动时间已结束。',
@@ -64,13 +71,16 @@ export const DOMAIN_EVENT_MESSAGES = {
   'wolf.kill_locked': '狼人已决定今晚的目标。',
   'wolf.discussion_timed_out': '狼人讨论时间已结束。',
   'day.started': '第 {day} 天开始。',
+  'day.discussion_started': '自由讨论开始。',
   'day.speech': '{actor}：{content}',
   'day.speech_skipped': '{actor}跳过了本轮发言。',
   'day.voting_started': '放逐投票开始。',
   'day.vote_cast': '{actor}已投票。',
   'day.revote_required': '本轮出现平票，将在候选人中重新投票。',
+  'day.exile_result': '放逐投票已锁定，结果待结算。',
   'day.no_exile': '本轮无人出局。',
   'day.exiled': '{target}被投票出局。',
+  'day.ended': '第 {day} 天结束。',
   'hunter.entitled': '猎人可以选择是否开枪。',
   'hunter.shot': '猎人开枪带走了{target}。',
   'hunter.shot_skipped': '猎人选择不开枪。',
@@ -158,7 +168,13 @@ export const describeEvent = (
 
   switch (event.eventType) {
     case 'game.started':
-      return `对局开始，进入第 ${dayFrom(payload)} 夜。`;
+      return payload.stage === 'role_confirm'
+        ? '对局开始，请确认身份。'
+        : `对局开始，进入第 ${dayFrom(payload)} 夜。`;
+    case 'role.confirmed':
+      return '你已确认身份。';
+    case 'role.confirmation_completed':
+      return '所有玩家已确认身份，首夜开始。';
     case 'game.state_updated':
       return UNKNOWN_EVENT_MESSAGE;
     case 'game.ended':
@@ -209,6 +225,8 @@ export const describeEvent = (
       return '狼人讨论时间已结束。';
     case 'day.started':
       return `第 ${dayFrom(payload)} 天开始。`;
+    case 'day.discussion_started':
+      return '自由讨论开始。';
     case 'day.speech':
       return `${actor}：${textValue(payload.content, '')}`.replace(/：$/, '');
     case 'day.speech_skipped':
@@ -219,10 +237,14 @@ export const describeEvent = (
       return `${actor}已投票。`;
     case 'day.revote_required':
       return '本轮出现平票，将在候选人中重新投票。';
+    case 'day.exile_result':
+      return '放逐投票已锁定，结果待结算。';
     case 'day.no_exile':
       return '本轮无人出局。';
     case 'day.exiled':
       return `${target}被投票出局。`;
+    case 'day.ended':
+      return `第 ${dayFrom(payload)} 天结束。`;
     case 'hunter.entitled':
       return '猎人可以选择是否开枪。';
     case 'hunter.shot':

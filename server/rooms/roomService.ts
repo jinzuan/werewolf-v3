@@ -435,12 +435,11 @@ export class RoomService {
         continue;
       }
       const recoverySnapshot = clone(room.session);
-      const existingEvents = await this.eventStore.read(
-        `game:${recoverySnapshot.state.gameId}`,
-      );
-      if (existingEvents.length === 0) recoverySnapshot.state.streamVersion = 0;
       const session = this.createSession(room, room.players, this.eventStore, recoverySnapshot);
-      if (existingEvents.length === 0) await session.initialize();
+      // initialize() reconciles the room cache with the event stream. It also
+      // creates the initial event when a durable playing intent was committed
+      // just before a process crashed.
+      await session.initialize();
       session.restoreScheduling();
       this.sessions.set(room.code, session);
       this.startAI(room.code, room.config?.mode === 'quick_computer');
@@ -2375,6 +2374,9 @@ export class RoomService {
   ): GameSession {
     return new GameSession(room.id, players, eventStore, snapshot, {
       ...this.options.session,
+      ...(room.config?.mode === 'quick_computer'
+        ? { keepTimersRefed: true }
+        : {}),
       onChanged: async (session) => this.persistSession(room.code, session),
     });
   }
@@ -2392,6 +2394,8 @@ export class RoomService {
       // The coordinator owns the starting transaction. Do not let the initial
       // game.started event advance its CAS before the playing commit.
       if (room.status === 'starting') return;
+      const persistedVersion = room.session?.state.streamVersion ?? 0;
+      if (persistedVersion > snapshot.state.streamVersion) return;
       room.session = snapshot;
       room.players = session.players;
       room.gameId = snapshot.state.gameId;

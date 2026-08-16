@@ -3,7 +3,7 @@ import test from 'node:test';
 import { InMemoryEventStore } from '../events/store';
 import { InMemoryRoomRepository } from '../rooms/repository';
 import { RoomService } from '../rooms/roomService';
-import { createRequest, startRoom } from './fixtures';
+import { confirmRoles, createRequest, startRoom } from './fixtures';
 
 test('successful ACK and event replay use the same viewer projection', async () => {
   const rooms = new RoomService(
@@ -26,6 +26,7 @@ test('successful ACK and event replay use the same viewer projection', async () 
     created.credentials.resumeToken,
   );
   const session = rooms.session(created.room.code)!;
+  await confirmRoles(session);
   const guardian = session.players.find((player) => player.role === 'guardian')!;
   const seer = session.players.find((player) => player.role === 'seer')!;
   await session.dispatch(

@@ -4,7 +4,8 @@ import { DOMAIN_EVENT_SCHEMA_VERSION } from '../../shared/events';
 import { buildAIPrompt, buildAIRuntimeContext, projectAIContext } from '../ai';
 import { InMemoryEventStore } from '../events/store';
 import { GameSession } from '../session/gameSession';
-import { createPlayers, dispatch } from './fixtures';
+import { createPlayers, dispatch, initializeSession } from './fixtures';
+import { FakeClock } from './fakeClock';
 
 test('night order is guard_seer then wolf discussion/vote then witch then resolve', async () => {
   const players = createPlayers();
@@ -13,7 +14,7 @@ test('night order is guard_seer then wolf discussion/vote then witch then resolv
     players,
     new InMemoryEventStore(),
   );
-  await session.initialize();
+  await initializeSession(session, players);
 
   const guardian = players.find((player) => player.role === 'guardian')!;
   const seer = players.find((player) => player.role === 'seer')!;
@@ -129,12 +130,15 @@ test('night order is guard_seer then wolf discussion/vote then witch then resolv
 
 test('real session event projection feeds death, action, and vote history into final words', async () => {
   const players = createPlayers('room-final-words');
+  const clock = new FakeClock();
   const session = new GameSession(
     'room-final-words',
     players,
     new InMemoryEventStore(),
+    undefined,
+    { now: clock.now, scheduler: clock, stageDurationMs: 100 },
   );
-  await session.initialize();
+  await initializeSession(session, players);
   const guardian = players.find((player) => player.role === 'guardian')!;
   const seer = players.find((player) => player.role === 'seer')!;
   const wolves = players.filter((player) => player.role === 'wolf');
@@ -159,8 +163,12 @@ test('real session event projection feeds death, action, and vote history into f
     type: 'game.skip_night',
     payload: { action: 'heal' },
   });
+  await clock.advance(100);
 
-  while (session.serialize().state.dayFlow.stage === 'speech') {
+  while (
+    session.serialize().state.dayFlow.stage === 'speech' ||
+    session.serialize().state.dayFlow.stage === 'discussion'
+  ) {
     const speaker = session.serialize().state.gameState.currentSpeaker!;
     await dispatch(session, speaker, {
       type: 'game.skip_speech',
@@ -173,6 +181,7 @@ test('real session event projection feeds death, action, and vote history into f
       payload: { targetId: voter.id === seer.id ? wolves[0].id : seer.id },
     });
   }
+  await clock.advance(100);
   assert.equal(session.serialize().state.dayFlow.stage, 'last_words');
 
   const viewer = { kind: 'player' as const, playerId: seer.id, role: 'seer' as const };
@@ -220,7 +229,7 @@ test('command ids and stage revisions are enforced', async () => {
     players,
     new InMemoryEventStore(),
   );
-  await session.initialize();
+  await initializeSession(session, players);
   const guardian = players.find((player) => player.role === 'guardian')!;
   const command = {
     type: 'game.skip_night' as const,
@@ -272,7 +281,7 @@ test('wolf vote tie randomly kills a tied target without revote or empty kill', 
       undefined,
       { rng: () => randomValue },
     );
-    await session.initialize();
+    await initializeSession(session, players);
     const guardian = players.find((player) => player.role === 'guardian')!;
     const seer = players.find((player) => player.role === 'seer')!;
     const wolves = players.filter((player) => player.role === 'wolf');

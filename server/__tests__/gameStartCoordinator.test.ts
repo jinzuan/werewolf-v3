@@ -157,12 +157,14 @@ test('different concurrent start commands produce one game and one loser', async
 
 test('session failure rolls starting back without fake playing or AI seats', async () => {
   const repository = new InMemoryRoomRepository([roomRecord()]);
+  let statusAtInitialize: string | undefined;
   const coordinator = coordinatorFor(repository, new InMemoryEventStore(), {
     sessionFactory: () => ({
       gameId: 'never-committed',
       players: [],
       serialize: () => ({ state: {} } as never),
       initialize: async () => {
+        statusAtInitialize = (await repository.get('START1'))?.status;
         throw new Error('injected session failure');
       },
       dispose: () => undefined,
@@ -180,6 +182,7 @@ test('session failure rolls starting back without fake playing or AI seats', asy
       error instanceof GameStartError && error.code === 'GAME_START_FAILED',
   );
 
+  assert.equal(statusAtInitialize, 'playing');
   const room = await repository.get('START1');
   assert.equal(room?.status, 'ready_check');
   assert.equal(room?.members.filter((member) => member.isAI).length, 0);

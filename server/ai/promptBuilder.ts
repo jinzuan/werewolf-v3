@@ -34,6 +34,7 @@ const ROLE_NAMES: Record<Role, string> = {
 };
 
 const ACTION_LABELS: Record<GameAction, string> = {
+  confirm_role: '确认身份',
   guard: '守护',
   check: '查验',
   wolf_speak: '狼队发言',
@@ -50,6 +51,7 @@ const ACTION_LABELS: Record<GameAction, string> = {
 };
 
 const COMMAND_ACTION_NAMES: Partial<Record<GameCommand['type'], string>> = {
+  'game.confirm_role': 'confirm_role',
   'game.speak': 'speak',
   'game.wolf_speak': 'wolf_speak',
   'game.vote': 'vote',
@@ -217,6 +219,8 @@ const buildOutputContract = (
     switch (action) {
       case 'speak':
         return '{"action":"speak","content":"发言文本"}';
+      case 'confirm_role':
+        return '{"action":"confirm_role"}';
       case 'wolf_speak':
         return '{"action":"wolf_speak","content":"狼队讨论"}';
       case 'vote':

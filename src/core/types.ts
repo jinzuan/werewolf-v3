@@ -128,6 +128,7 @@ export type VoteChoice = PlayerId | null;
 export interface VoteBallot {
   voterId: PlayerId;
   targetId: VoteChoice;
+  reason?: string | null;
 }
 
 export interface VoteTally {

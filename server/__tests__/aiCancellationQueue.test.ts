@@ -6,7 +6,7 @@ import { AIOrchestrator } from '../ai/orchestrator';
 import { HttpAIProvider } from '../ai/httpProvider';
 import { InMemoryEventStore } from '../events/store';
 import { GameSession } from '../session/gameSession';
-import { createPlayers } from './fixtures';
+import { createPlayers, initializeSession } from './fixtures';
 import type { ServerAIConfig } from '../ai/config';
 
 const config = (): ServerAIConfig => ({
@@ -58,7 +58,7 @@ test('an active HTTP request receives orchestrator cancellation', async () => {
   const players = createPlayers();
   const guardian = players.find((player) => player.role === 'guardian')!;
   const session = new GameSession('room-1', players, new InMemoryEventStore());
-  await session.initialize();
+  await initializeSession(session, players);
   let aborted = false;
   const provider = new HttpAIProvider(config(), {
     timeoutMs: 30_000,

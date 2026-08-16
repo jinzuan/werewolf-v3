@@ -32,6 +32,7 @@ export interface ScheduleEligibleAIInput {
 
 const commandTypeForAction = (action: GameAction): GameCommand['type'] => {
   switch (action) {
+    case 'confirm_role': return 'game.confirm_role';
     case 'guard':
     case 'check':
     case 'heal':
@@ -127,6 +128,20 @@ export class SessionCoordinator {
     const actor = state.players.find((player) => player.id === task.actorId);
     // Last-words and hunter stages intentionally authorize one dead actor.
     if (!actorEntry || !actor?.role) return;
+    if (task.actionClass === 'confirm_role') {
+      await session.dispatch(
+        {
+          commandId: `ai:${task.gameId}:${task.stageRevision}:${actor.id}:confirm_role`,
+          actorId: actor.id,
+          sentAt: this.options.now?.() ?? Date.now(),
+          roomId: room.id,
+          gameId: session.gameId,
+          expectedStageRevision: task.stageRevision,
+        },
+        { type: 'game.confirm_role', payload: {} },
+      );
+      return;
+    }
     const provider = await this.options.providerForRoom(room);
     const events = await this.contextCache.eventsFor(session, {
       kind: 'player',
@@ -142,7 +157,7 @@ export class SessionCoordinator {
       stage,
       dayNumber: state.gameState.day,
       roundNumber:
-        state.gameState.phase === 'voting'
+        state.dayFlow.stage === 'voting'
           ? state.dayFlow.voteRound
           : state.gameState.phase === 'night'
             ? state.gameState.wolfDiscussionRound
@@ -157,11 +172,11 @@ export class SessionCoordinator {
       hunterShotAvailable: actorEntry.actions.includes('hunter_shoot'),
       wolfVoteRound: state.gameState.wolfDiscussionRound,
       lastWordsRound:
-        state.gameState.phase === 'lastWords'
+        state.dayFlow.stage === 'last_words'
           ? 3 - state.dayFlow.lastWordsRemaining
           : undefined,
       lastWordsRoundsRemaining:
-        state.gameState.phase === 'lastWords'
+        state.dayFlow.stage === 'last_words'
           ? state.dayFlow.lastWordsRemaining
           : undefined,
       experience: [

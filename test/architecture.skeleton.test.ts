@@ -274,6 +274,7 @@ test('V3.1 房间目录、创建配置与版本化 RoomView 形状固定', () =>
     'EXPIRED_COMMAND',
     'ACTION_NOT_ALLOWED',
     'INVALID_TARGET',
+    'CONTENT_TOO_LONG',
   ]);
   assert.ok(PROTOCOL_ERROR_CODES.includes('ROOM_TOKEN_INVALID'));
   assert.ok(PROTOCOL_ERROR_CODES.includes('ROOM_REVISION_CONFLICT'));

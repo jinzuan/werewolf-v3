@@ -14,7 +14,9 @@ test('a 12 AI room advances without human commands to an ended game', async () =
       WW_DATA_DIR: '/tmp/werewolf-v3-autogame',
       WW_DEPLOYMENT_NAMESPACE: 'autogame',
     }),
-    { autoDrive: true, roomOptions: { aiTimeoutMs: 100, session: { stageDurationMs: 500 } } },
+    // Stage-transition behavior is covered with a fake clock; keep this
+    // end-to-end smoke focused on AI self-driving and bounded in wall time.
+    { autoDrive: true, roomOptions: { aiTimeoutMs: 100, session: { stageDurationMs: 0 } } },
   );
   await application.start();
   const created = await application.rooms.create({

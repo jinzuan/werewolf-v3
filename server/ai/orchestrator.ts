@@ -27,6 +27,8 @@ export interface AIOrchestratorOptions {
 
 const commandTypeForAction = (action: GameAction): GameCommand['type'] => {
   switch (action) {
+    case 'confirm_role':
+      return 'game.confirm_role';
     case 'guard':
     case 'check':
     case 'heal':
@@ -316,6 +318,13 @@ export class AIOrchestrator {
         (player) => player.id !== actor.id && player.role !== 'wolf',
       ) ?? firstOther;
 
+    if (allowed.has('confirm_role')) {
+      return {
+        command: { type: 'game.confirm_role', payload: {} },
+        reason: 'deterministic role confirmation',
+      };
+    }
+
     // A deadline is an explicit consent to skip, not a reason to invent a
     // normal speech turn. Normal provider failures still use the contextual
     // rules-degraded text below so an AI room does not go silent.
@@ -512,6 +521,12 @@ export class AIOrchestrator {
       (player) => player.id === context.playerId,
     );
     const allowed = new Set(context.allowedActions ?? []);
+    if (allowed.has('confirm_role')) {
+      return {
+        command: { type: 'game.confirm_role', payload: {} },
+        reason: 'role confirmation is the only allowed action',
+      };
+    }
     if (allowed.has('skip_speech')) {
       return {
         command: {
