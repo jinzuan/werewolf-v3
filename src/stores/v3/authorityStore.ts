@@ -50,7 +50,7 @@ import {
   mergeEventEnvelope,
   type EventStreamState,
 } from '../../v3/eventStream';
-import { containsSensitiveKeys } from '../../v3/session';
+import { containsSensitiveKeys } from '../../../shared/redact';
 import {
   createEmptyAuthorityState,
   createV3Session,

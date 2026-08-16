@@ -24,6 +24,10 @@ export interface RuntimeConfig {
   endedRoomTtlMs: number;
   roomSweepIntervalMs: number;
   startupGraceMs: number;
+  joinRateLimitCapacity: number;
+  joinRateLimitRefillPerSecond: number;
+  rateLimitStore: 'memory' | 'shared';
+  instanceCount: number;
 }
 
 export interface RuntimeConfigEnv {
@@ -35,12 +39,20 @@ export interface RuntimeConfigEnv {
   WW_ROOM_SWEEP_INTERVAL_MS?: string;
   WW_ROOM_STARTUP_GRACE_MS?: string;
   WW_BIND_HOST?: string;
+  WW_JOIN_RATE_LIMIT_CAPACITY?: string;
+  WW_JOIN_RATE_LIMIT_REFILL_PER_SECOND?: string;
+  WW_RATE_LIMIT_STORE?: string;
+  WW_INSTANCE_COUNT?: string;
+  WW_REPLICA_COUNT?: string;
+  WW_DEPLOYMENT_REPLICAS?: string;
 }
 
 const DEFAULT_WAITING_ROOM_TTL_MS = 30 * 60 * 1000;
 const DEFAULT_ENDED_ROOM_TTL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_ROOM_SWEEP_INTERVAL_MS = 60 * 1000;
 const DEFAULT_ROOM_STARTUP_GRACE_MS = 5_000;
+const DEFAULT_JOIN_RATE_LIMIT_CAPACITY = 8;
+const DEFAULT_JOIN_RATE_LIMIT_REFILL_PER_SECOND = 0.2;
 const namespacePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 const fail = (message: string): never => {
@@ -94,6 +106,20 @@ const durationOf = (
   return parsed;
 };
 
+const positiveNumberOf = (
+  value: string | undefined,
+  fallback: number,
+  label: string,
+  integer = false,
+): number => {
+  if (value === undefined || value.trim() === '') return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0 || (integer && !Number.isSafeInteger(parsed))) {
+    fail(`${label} must be a positive ${integer ? 'integer' : 'number'}.`);
+  }
+  return parsed;
+};
+
 /** Resolve all server-owned data paths in one place. Test processes must name
  * their temporary directory explicitly, keeping them away from formal data. */
 export const resolveRuntimeConfig = (
@@ -116,6 +142,20 @@ export const resolveRuntimeConfig = (
 
   if (environment === 'production' && !env.WW_DEPLOYMENT_NAMESPACE?.trim()) {
     fail('production requires an explicit WW_DEPLOYMENT_NAMESPACE.');
+  }
+
+  const rateLimitStore = (env.WW_RATE_LIMIT_STORE?.trim() || 'memory') as 'memory' | 'shared';
+  if (rateLimitStore !== 'memory' && rateLimitStore !== 'shared') {
+    fail('WW_RATE_LIMIT_STORE must be memory or shared.');
+  }
+  const instanceCount = positiveNumberOf(
+    env.WW_INSTANCE_COUNT ?? env.WW_REPLICA_COUNT ?? env.WW_DEPLOYMENT_REPLICAS,
+    1,
+    'WW_INSTANCE_COUNT',
+    true,
+  );
+  if (instanceCount > 1 && rateLimitStore !== 'shared') {
+    fail('multiple instances require a shared RateLimitStore; use one instance or WW_RATE_LIMIT_STORE=shared.');
   }
 
   return {
@@ -153,5 +193,18 @@ export const resolveRuntimeConfig = (
       'WW_ROOM_STARTUP_GRACE_MS',
       true,
     ),
+    joinRateLimitCapacity: positiveNumberOf(
+      env.WW_JOIN_RATE_LIMIT_CAPACITY,
+      DEFAULT_JOIN_RATE_LIMIT_CAPACITY,
+      'WW_JOIN_RATE_LIMIT_CAPACITY',
+      true,
+    ),
+    joinRateLimitRefillPerSecond: positiveNumberOf(
+      env.WW_JOIN_RATE_LIMIT_REFILL_PER_SECOND,
+      DEFAULT_JOIN_RATE_LIMIT_REFILL_PER_SECOND,
+      'WW_JOIN_RATE_LIMIT_REFILL_PER_SECOND',
+    ),
+    rateLimitStore,
+    instanceCount,
   };
 };

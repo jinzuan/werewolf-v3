@@ -305,6 +305,7 @@ export const PROTOCOL_ERROR_CODES = [
   'IDENTITY_ALREADY_BOUND',
   'IDENTITY_ALREADY_EXISTS',
   'ROOM_TOKEN_INVALID',
+  'ROOM_JOIN_DENIED',
   'ROOM_FULL',
   'ROOM_NOT_FOUND',
   'HOST_REQUIRED',
@@ -352,6 +353,7 @@ export interface ProtocolAckError {
   /** Present on ROOM_REVISION_CONFLICT so clients can converge immediately. */
   room?: RoomView;
   retryable?: boolean;
+  retryAfterMs?: number;
   /** Present when the server durably recorded a rejected mutation. */
   receipt?: CommandReceipt;
   /** Present when the server durably recorded a rejected mutation. */

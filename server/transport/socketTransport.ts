@@ -14,6 +14,12 @@ import {
   isAllowedOrigin,
   type RuntimeSecurityConfig,
 } from '../security/runtimeSecurityConfig';
+import {
+  effectiveClientAddress,
+  trustedProxyPolicyFor,
+  InMemoryRateLimitStore,
+  JoinRateLimiter,
+} from '../security';
 
 interface SocketState {
   identity?: SocketIdentity;
@@ -44,6 +50,7 @@ const STABLE_CODES = new Set<ProtocolErrorCode>([
   'IDENTITY_ALREADY_BOUND',
   'IDENTITY_ALREADY_EXISTS',
   'ROOM_TOKEN_INVALID',
+  'ROOM_JOIN_DENIED',
   'ROOM_FULL',
   'ROOM_NOT_FOUND',
   'HOST_REQUIRED',
@@ -80,6 +87,10 @@ export interface SocketTransportOptions {
   dropMutationAckOnce?: boolean;
   dropMutationPushOnce?: boolean;
   security?: RuntimeSecurityConfig;
+  joinRateLimiter?: JoinRateLimiter;
+  /** Keep successful and failed pre-auth attempts approximately equal-time. */
+  joinResponseDelayMs?: number;
+  sleep?: (delayMs: number) => Promise<void>;
 }
 
 const errorResponse = (error: unknown): ProtocolAckError => {
@@ -91,6 +102,7 @@ const errorResponse = (error: unknown): ProtocolAckError => {
       ...(error.params ? { params: error.params } : {}),
       ...(error.issues ? { issues: error.issues } : {}),
       ...(error.receipt ? { receipt: error.receipt } : {}),
+      ...(error.retryAfterMs !== undefined ? { retryAfterMs: error.retryAfterMs } : {}),
     };
   }
   const candidate = error as {
@@ -99,6 +111,7 @@ const errorResponse = (error: unknown): ProtocolAckError => {
     params?: unknown;
     issues?: unknown;
     retryable?: unknown;
+    retryAfterMs?: unknown;
     receipt?: unknown;
   };
   const code =
@@ -117,8 +130,21 @@ const errorResponse = (error: unknown): ProtocolAckError => {
       : {}),
     ...(Array.isArray(candidate?.issues) ? { issues: candidate.issues } : {}),
     ...(typeof candidate?.retryable === 'boolean' ? { retryable: candidate.retryable } : {}),
+    ...(typeof candidate?.retryAfterMs === 'number' ? { retryAfterMs: candidate.retryAfterMs } : {}),
     ...(candidate?.receipt && typeof candidate.receipt === 'object'
       ? { receipt: candidate.receipt as ProtocolAckError['receipt'] }
+      : {}),
+  };
+};
+
+const joinDeniedResponse = (error: unknown): ProtocolAckError => {
+  const candidate = error as { retryAfterMs?: unknown };
+  return {
+    ok: false,
+    code: 'ROOM_JOIN_DENIED',
+    messageKey: 'room.error.join_denied',
+    ...(typeof candidate?.retryAfterMs === 'number'
+      ? { retryAfterMs: Math.max(0, Math.ceil(candidate.retryAfterMs)) }
       : {}),
   };
 };
@@ -146,6 +172,21 @@ export function bindSocketTransport(
   rooms: RoomService,
   options: SocketTransportOptions = {},
 ): void {
+  const joinRateLimiter = options.joinRateLimiter ?? new JoinRateLimiter({
+    store: new InMemoryRateLimitStore(),
+    capacity: 8,
+    refillPerSecond: 0.2,
+  });
+  const trustedProxy = options.security ? trustedProxyPolicyFor(options.security) : undefined;
+  const clientAddressPolicy = trustedProxy ?? trustedProxyPolicyFor({
+    trustProxy: { enabled: false, sources: [], bindHost: '127.0.0.1' },
+  });
+  const joinResponseDelayMs = Math.max(0, options.joinResponseDelayMs ?? 10);
+  const sleep = options.sleep ?? ((delayMs: number) => new Promise<void>((resolve) => setTimeout(resolve, delayMs)));
+  const waitForJoinFloor = async (startedAt: number): Promise<void> => {
+    const remaining = joinResponseDelayMs - (Date.now() - startedAt);
+    if (remaining > 0) await sleep(remaining);
+  };
   let dropCreateAck =
     (process.env.NODE_ENV === 'test' || process.env.WW_ENV === 'test') &&
     (options.dropCreateAckOnce === true || process.env.WW_TEST_DROP_CREATE_ACK_ONCE === '1');
@@ -279,6 +320,8 @@ export function bindSocketTransport(
         request: V3Command & { actorName?: string; avatarId?: string },
         ack?: (response: unknown) => void,
       ) => {
+        const joinAttemptStartedAt = Date.now();
+        const isJoinAttempt = request?.command?.type === 'room.join' || request?.command?.type === 'spectator.join';
         try {
           const { meta, command } = request;
           if (command.type === 'catalog.get') {
@@ -320,6 +363,19 @@ export function bindSocketTransport(
             if (state(socket).identity) {
               throw new RoomServiceError({ code: 'IDENTITY_ALREADY_BOUND', messageKey: 'room.error.identity_already_bound' });
             }
+            const roomCode = typeof command.payload.roomCode === 'string'
+              ? command.payload.roomCode.trim().toUpperCase()
+              : '';
+            const limited = await joinRateLimiter.check({
+              clientIp: effectiveClientAddress(socket.request, clientAddressPolicy),
+              roomCode,
+              actorId: meta.actorId,
+            });
+            if (!limited.allowed) {
+              await waitForJoinFloor(joinAttemptStartedAt);
+              ack?.(joinDeniedResponse(limited));
+              return;
+            }
             const access = await rooms.join({
               actorId: meta.actorId,
               name: request.actorName ?? '玩家',
@@ -328,6 +384,7 @@ export function bindSocketTransport(
               joinToken: command.payload.joinToken,
             });
             await bind(access, meta.actorId);
+            await waitForJoinFloor(joinAttemptStartedAt);
             ack?.({ ok: true, ...access });
             await pushRoom(access.room.code, 'joined');
             return;
@@ -336,6 +393,19 @@ export function bindSocketTransport(
           if (command.type === 'spectator.join') {
             if (state(socket).identity) {
               throw new RoomServiceError({ code: 'IDENTITY_ALREADY_BOUND', messageKey: 'room.error.identity_already_bound' });
+            }
+            const roomCode = typeof command.payload.roomCode === 'string'
+              ? command.payload.roomCode.trim().toUpperCase()
+              : '';
+            const limited = await joinRateLimiter.check({
+              clientIp: effectiveClientAddress(socket.request, clientAddressPolicy),
+              roomCode,
+              actorId: meta.actorId,
+            });
+            if (!limited.allowed) {
+              await waitForJoinFloor(joinAttemptStartedAt);
+              ack?.(joinDeniedResponse(limited));
+              return;
             }
             const access = await rooms.join({
               actorId: meta.actorId,
@@ -347,6 +417,7 @@ export function bindSocketTransport(
               omniscientToken: command.payload.omniscientToken,
             });
             await bind(access, meta.actorId);
+            await waitForJoinFloor(joinAttemptStartedAt);
             ack?.({ ok: true, ...access });
             await pushRoom(access.room.code, 'joined');
             return;
@@ -476,7 +547,10 @@ export function bindSocketTransport(
           await pushRoom(identity.roomCode, reason, revision.commandId);
         } catch (error) {
           mutationPushBlocked.delete(state(socket).identity?.roomCode?.toUpperCase() ?? '');
-          const response = errorResponse(error);
+          if (isJoinAttempt) {
+            await waitForJoinFloor(joinAttemptStartedAt);
+          }
+          const response = isJoinAttempt ? joinDeniedResponse(error) : errorResponse(error);
           ack?.(response);
         }
       },

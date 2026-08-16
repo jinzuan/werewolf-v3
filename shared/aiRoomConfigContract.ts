@@ -16,6 +16,8 @@ export interface RoomAIConfigSummary {
   /** Capability is server-resolved; older summaries may omit it. */
   capability?: AIProviderCapability;
   hasCredential: boolean;
+  /** A migrated credential is blocked until the owner explicitly rotates it. */
+  credentialRotationRequired?: boolean;
   /** @deprecated Compatibility projection for pre-C clients. */
   hasApiKey?: boolean;
   /** @deprecated Compatibility projection for pre-C clients. */

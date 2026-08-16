@@ -22,8 +22,11 @@ import {
   isAllowedOrigin,
   parseRuntimeSecurityConfig,
   SafeHttpClient,
+  InMemoryRateLimitStore,
+  JoinRateLimiter,
 } from './security';
 import { FileLifecycleOutbox } from './rooms/lifecycleOutbox';
+import { scanLegacySecretBackups } from './security/secretMigration';
 
 const security = parseRuntimeSecurityConfig();
 const responseHeaders = (): Record<string, string> => security.environment === 'production'
@@ -105,6 +108,22 @@ const endpointPolicy = new EndpointPolicy({
   allowPrivateEndpoints: security.allowPrivateAIEndpoints,
   allowlist: security.aiEndpointAllowlist,
 });
+await scanLegacySecretBackups({
+  dataRoot: runtime.dataDir,
+  secretRoot: runtime.secretsDir,
+  namespace: runtime.deploymentNamespace,
+  store: credentialStore,
+  endpointPolicy,
+  auditPath: path.join(runtime.secretsDir, 'legacy-secret-migration-audit.json'),
+});
+if (runtime.rateLimitStore !== 'memory') {
+  throw new Error('shared RateLimitStore must be injected by the deployment composition root');
+}
+const joinRateLimiter = new JoinRateLimiter({
+  store: new InMemoryRateLimitStore(),
+  capacity: runtime.joinRateLimitCapacity,
+  refillPerSecond: runtime.joinRateLimitRefillPerSecond,
+});
 const safeHttpClient = new SafeHttpClient(endpointPolicy);
 const aiProviderFactory = (config: AIConfig, options: HttpAIProviderOptions) =>
   new HttpAIProvider(config, { ...options, safeHttpClient, telemetry: defaultAITelemetry });
@@ -141,7 +160,7 @@ const roomService = new RoomService(new FileRoomRepository(runtime.roomsFile, {
 });
 
 await roomService.restore();
-bindSocketTransport(io, roomService, { security });
+bindSocketTransport(io, roomService, { security, joinRateLimiter });
 
 httpServer.listen(port, runtime.bindHost, () => {
   const scheme = security.environment === 'production' ? 'https' : 'http';

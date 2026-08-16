@@ -54,6 +54,8 @@ export interface RoomConfigRecord {
   credentialRef?: string;
   /** Legacy migration could not prove which bearer value was intended. */
   credentialSchemaAmbiguous?: boolean;
+  /** A legacy plaintext copy existed; the owner must rotate before AI calls resume. */
+  credentialRotationRequired?: boolean;
   [key: string]: unknown;
 }
 

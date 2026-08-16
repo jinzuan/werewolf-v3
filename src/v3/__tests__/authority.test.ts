@@ -310,6 +310,13 @@ test('legacy join-token session shapes are rejected', () => {
   assert.equal(readV3Session(storage), null);
 });
 
+test('the shared sensitive-key scanner catches nested and suffix aliases', () => {
+  assert.equal(containsSensitiveKeys({ nested: { apiKey: 'canary' } }), true);
+  assert.equal(containsSensitiveKeys({ nested: { credentialRef: 'canary' } }), true);
+  assert.equal(containsSensitiveKeys({ nested: { 'access-token': 'canary' } }), true);
+  assert.equal(containsSensitiveKeys({ nested: { providerApiKey: 'canary' } }), true);
+});
+
 test('authority reset clears room, identity, snapshot, and events atomically', () => {
   assert.deepEqual(createEmptyAuthorityState(), {
     room: null,

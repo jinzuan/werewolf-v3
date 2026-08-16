@@ -155,7 +155,7 @@ const projectMember = (
 const projectAIConfigStatus = (room: RoomRecord): RoomAIConfigStatus => {
   const config = room.config?.aiProviderConfig;
   if (!config) return 'not_configured';
-  if (room.config?.credentialSchemaAmbiguous) return 'invalid';
+  if (room.config?.credentialSchemaAmbiguous || room.config?.credentialRotationRequired) return 'invalid';
   const validShape =
     ['siliconflow', 'deepseek', 'local', 'custom'].includes(config.provider) &&
     typeof config.model === 'string' && config.model.trim().length > 0 &&
