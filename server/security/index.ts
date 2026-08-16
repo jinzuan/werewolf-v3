@@ -13,3 +13,4 @@ export type {
 } from './trustedProxyPolicy';
 export * from './roomCredentialStore';
 export * from './encryptedFileCredentialStore';
+export * from './safeHttpClient';

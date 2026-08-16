@@ -125,7 +125,11 @@ const projectConfig = (room: RoomRecord): RoomConfigView => {
   };
 };
 
-const projectMember = (room: RoomRecord, member: RoomMember): RoomMemberViewV31 => {
+const projectMember = (
+  room: RoomRecord,
+  member: RoomMember,
+  isConnected?: (roomCode: string, memberId: string) => boolean,
+): RoomMemberViewV31 => {
   const isPlayer = member.kind === 'player';
   const isAI = isPlayer && Boolean(member.isAI);
   return {
@@ -137,7 +141,9 @@ const projectMember = (room: RoomRecord, member: RoomMember): RoomMemberViewV31 
       : null,
     isAI,
     isHost: member.id === room.hostId,
-    connected: Boolean(member.connected),
+    connected: isConnected
+      ? isConnected(room.code, member.id)
+      : member.connected !== false,
     ready: isPlayer && !isAI && typeof member.ready === 'boolean'
       ? member.ready
       : null,
@@ -149,6 +155,7 @@ const projectMember = (room: RoomRecord, member: RoomMember): RoomMemberViewV31 
 const projectAIConfigStatus = (room: RoomRecord): RoomAIConfigStatus => {
   const config = room.config?.aiProviderConfig;
   if (!config) return 'not_configured';
+  if (room.config?.credentialSchemaAmbiguous) return 'invalid';
   const validShape =
     ['siliconflow', 'deepseek', 'local', 'custom'].includes(config.provider) &&
     typeof config.model === 'string' && config.model.trim().length > 0 &&
@@ -195,8 +202,8 @@ export class RoomProjector {
       config,
       configRevision: normalized.configRevision ?? 1,
       configLocked: Boolean(normalized.configLocked),
-      members: normalized.members.map((candidate) => projectMember(normalized, candidate)),
-      counts: roomCounts(normalized),
+      members: normalized.members.map((candidate) => projectMember(normalized, candidate, this.policy.options.isConnected)),
+      counts: roomCounts(normalized, this.policy.options.isConnected),
       computerPlayerStatus: projectAIConfigStatus(normalized),
       startCheck: this.policy.evaluateStartCheck(normalized),
       viewer: {

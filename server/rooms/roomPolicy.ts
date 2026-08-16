@@ -23,6 +23,8 @@ export interface RoomPolicyOptions {
   registry?: RulesetRegistryLike;
   /** Optional M1 validator seam for callers that already validate a config. */
   isConfigValid?: (room: RoomRecord) => boolean;
+  /** Runtime-only connection fact; it is never persisted with a RoomRecord. */
+  isConnected?: (roomCode: string, memberId: string) => boolean;
 }
 
 export type RoomPolicyInput = RoomPolicyOptions | RulesetRegistryLike;
@@ -204,6 +206,7 @@ const checkAiFill = (room: RoomRecord): {
 /** Validate the persisted non-secret AI tuning without reading SecretStore. */
 const checkAIProviderConfig = (room: RoomRecord): boolean | undefined => {
   const config = configFor(room);
+  if (config?.credentialSchemaAmbiguous) return false;
   if (!config?.aiProviderConfig) return undefined;
   const provider = config.aiProviderConfig;
   const shapeValid =
@@ -242,12 +245,21 @@ const checkConfig = (
     ? options.isConfigValid(room)
     : isValidConfigShape(room);
 
-export const roomCounts = (room: RoomRecord): RoomCounts => {
+const connectedOf = (
+  room: RoomRecord,
+  member: RoomMember,
+  isConnected?: (roomCode: string, memberId: string) => boolean,
+): boolean => isConnected ? isConnected(room.code, member.id) : member.connected !== false;
+
+export const roomCounts = (
+  room: RoomRecord,
+  isConnected?: (roomCode: string, memberId: string) => boolean,
+): RoomCounts => {
   const humans = room.members.filter(human);
   return {
     playerSeats: countPlayerMembers(room.members),
     humanPlayers: humans.length,
-    onlineHumanPlayers: humans.filter((member) => member.connected).length,
+    onlineHumanPlayers: humans.filter((member) => connectedOf(room, member, isConnected)).length,
     readyHumanPlayers: humans.filter((member) => member.ready === true).length,
     spectators: room.members.filter((member) => member.kind === 'spectator').length,
   };
@@ -262,7 +274,7 @@ export const evaluateStartCheck = (
   const normalizedOptions = normalizeOptions(options);
   const registry = normalizedOptions.registry ?? defaultRulesetRegistry;
   const config = configFor(room);
-  const counts = roomCounts(room);
+  const counts = roomCounts(room, normalizedOptions.isConnected);
   const configValid = checkConfig(room, normalizedOptions);
   const maxPlayers = config?.maxPlayers ?? room.maxPlayers;
   const roleCount = countRoleSetup(room);
@@ -272,7 +284,7 @@ export const evaluateStartCheck = (
   const minimumPassed =
     configValid && humans.length >= (config?.minHumanPlayers ?? Number.MAX_SAFE_INTEGER);
   const onlineFailures = humans
-    .filter((member) => !member.connected)
+    .filter((member) => !connectedOf(room, member, normalizedOptions.isConnected))
     .map((member) => member.id);
   const readyFailures = humans
     .filter((member) => member.ready !== true)
@@ -366,12 +378,15 @@ const baseReadyCheckCanStart = (check: StartCheck): boolean =>
       : item.passed,
   );
 
-const canTransfer = (room: RoomRecord): boolean =>
+const canTransfer = (
+  room: RoomRecord,
+  isConnected?: (roomCode: string, memberId: string) => boolean,
+): boolean =>
   room.members.some(
     (member) =>
       human(member) &&
       member.id !== room.hostId &&
-      member.connected,
+      connectedOf(room, member, isConnected),
   );
 
 export class RoomPolicy {
@@ -390,7 +405,7 @@ export class RoomPolicy {
   }
 
   counts(room: RoomRecord): RoomCounts {
-    return roomCounts(room);
+    return roomCounts(room, this.options.isConnected);
   }
 
   allowedRoomActions(
@@ -417,7 +432,7 @@ export class RoomPolicy {
     if (isHost && status === 'ready_check') {
       actions.add('cancel_ready_check');
       if (check.passed && isHumanPlayer) actions.add('start_game');
-      if (canTransfer(room)) actions.add('transfer_host');
+      if (canTransfer(room, this.options.isConnected)) actions.add('transfer_host');
     }
     if (isHumanPlayer && status === 'ready_check') actions.add('set_ready');
     if (isHost && (status === 'waiting' || status === 'ready_check')) {

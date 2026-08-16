@@ -10,6 +10,9 @@ import type {
 export interface CanonicalReviewArchive {
   gameId: string;
   roomId: string;
+  /** Canonical source; the event bytes live in the durable event segments. */
+  streamId?: string;
+  contentHash?: string;
   startedAt: number;
   endedAt: number;
   winner: 'wolf' | 'good' | 'draw' | null;

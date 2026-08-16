@@ -15,8 +15,11 @@ export interface RoomAIConfigSummary {
   behavior: RoomAIBehavior;
   /** Capability is server-resolved; older summaries may omit it. */
   capability?: AIProviderCapability;
-  hasApiKey: boolean;
-  hasToken: boolean;
+  hasCredential: boolean;
+  /** @deprecated Compatibility projection for pre-C clients. */
+  hasApiKey?: boolean;
+  /** @deprecated Compatibility projection for pre-C clients. */
+  hasToken?: boolean;
   configRevision: number;
   updatedAt: number;
 }
@@ -33,9 +36,15 @@ export interface RoomAIConfigPatch {
   temperature?: number;
   maxTokens?: number;
   behavior?: RoomAIBehavior;
+  credential?: string;
+  clearCredential?: boolean;
+  /** @deprecated Legacy aliases are migrated at the boundary only. */
   apiKey?: string;
+  /** @deprecated Legacy aliases are migrated at the boundary only. */
   token?: string;
+  /** @deprecated Legacy aliases are migrated at the boundary only. */
   clearApiKey?: boolean;
+  /** @deprecated Legacy aliases are migrated at the boundary only. */
   clearToken?: boolean;
 }
 

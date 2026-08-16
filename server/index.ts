@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import path from 'node:path';
 import { Server } from 'socket.io';
 import { FileEventStore } from './events/fileStore';
 import { FileRoomRepository } from './rooms/fileRepository';
@@ -20,7 +21,9 @@ import {
   isSecureRequest,
   isAllowedOrigin,
   parseRuntimeSecurityConfig,
+  SafeHttpClient,
 } from './security';
+import { FileLifecycleOutbox } from './rooms/lifecycleOutbox';
 
 const security = parseRuntimeSecurityConfig();
 const responseHeaders = (): Record<string, string> => security.environment === 'production'
@@ -102,8 +105,17 @@ const endpointPolicy = new EndpointPolicy({
   allowPrivateEndpoints: security.allowPrivateAIEndpoints,
   allowlist: security.aiEndpointAllowlist,
 });
+const safeHttpClient = new SafeHttpClient(endpointPolicy);
 const aiProviderFactory = (config: AIConfig, options: HttpAIProviderOptions) =>
-  new HttpAIProvider(config, { ...options, telemetry: defaultAITelemetry });
+  new HttpAIProvider(config, { ...options, safeHttpClient, telemetry: defaultAITelemetry });
+const lifecycleOutbox = new FileLifecycleOutbox(
+  path.join(runtime.outboxDir, 'room-lifecycle.json'),
+  {
+    environment: runtime.environment,
+    deploymentNamespace: runtime.deploymentNamespace,
+    dataRoot: runtime.dataDir,
+  },
+);
 const roomService = new RoomService(new FileRoomRepository(runtime.roomsFile, {
   environment: runtime.environment,
   deploymentNamespace: runtime.deploymentNamespace,
@@ -117,7 +129,9 @@ const roomService = new RoomService(new FileRoomRepository(runtime.roomsFile, {
   waitingRoomTtlMs: runtime.waitingRoomTtlMs,
   endedRoomTtlMs: runtime.endedRoomTtlMs,
   roomSweepIntervalMs: runtime.roomSweepIntervalMs,
+  startupGraceMs: runtime.startupGraceMs,
   credentialStore,
+  lifecycleOutbox,
   credentialNamespace: runtime.deploymentNamespace,
   endpointPolicy,
   aiProviderFactory,

@@ -43,13 +43,15 @@ import { GameStartCoordinator, GameStartError } from './gameStartCoordinator';
 import { nextSeatIndex } from './seatAllocator';
 import { RoomPolicy, RoomPolicyError, roomCounts } from './roomPolicy';
 import { RoomProjector, assertIdentityRoom } from './roomProjector';
-import type { RoomRepository } from './repository';
-import { RoomRevisionConflictError } from './repository';
+import { ConnectionRegistry } from './connectionRegistry';
 import {
   RoomLifecycleService,
   type RoomMutationResult,
   type RoomTombstone,
 } from './roomLifecycleService';
+import type { LifecycleOutbox } from './lifecycleOutbox';
+import type { RoomRepository } from './repository';
+import { RoomRevisionConflictError } from './repository';
 import type { RuntimeEnvironment } from '../runtimeConfig';
 import {
   EndpointPolicy,
@@ -57,7 +59,11 @@ import {
 } from '../security/endpointPolicy';
 import {
   InMemoryCredentialStore,
+  CredentialSchemaAmbiguousError,
+  canonicalCredentialValues,
+  resolveBearerCredential,
   type RoomCredentialStore,
+  type RoomCredentialValues,
 } from '../security/roomCredentialStore';
 import type {
   CreateRoomRequest,
@@ -84,8 +90,24 @@ interface RoomAIConfigCommandOutcome {
 interface RoomAISecretMutation {
   kind: 'created' | 'rotated' | 'emptied';
   credentialRef: string;
-  previous: { apiKey?: string; token?: string };
+  previous: RoomCredentialValues;
 }
+
+/**
+ * Keep old in-process callers readable without putting the retired fields on
+ * the wire. JSON/object-key projections expose only hasCredential.
+ */
+const withLegacyCredentialAliases = (
+  summary: RoomAIConfigSummary,
+  hasApiKey: boolean,
+  hasToken: boolean,
+): RoomAIConfigSummary => {
+  Object.defineProperties(summary, {
+    hasApiKey: { configurable: true, enumerable: false, value: hasApiKey },
+    hasToken: { configurable: true, enumerable: false, value: hasToken },
+  });
+  return summary;
+};
 
 const stableValue = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(stableValue);
@@ -103,7 +125,12 @@ const createFingerprint = (options: CreateRoomOptionsV31): string => {
   // Credentials are deliberately not part of the request identity, while
   // provider/model/endpoint tuning remains part of the frozen create input.
   if (options.aiConfig) {
-    const { apiKey: _apiKey, token: _token, ...providerConfig } = options.aiConfig;
+    const {
+      apiKey: _apiKey,
+      token: _token,
+      bearerCredential: _bearerCredential,
+      ...providerConfig
+    } = options.aiConfig;
     nonSecret.aiConfig = providerConfig;
   }
   return JSON.stringify(stableValue(nonSecret));
@@ -167,6 +194,7 @@ export interface RoomServiceOptions {
   waitingRoomTtlMs?: number;
   endedRoomTtlMs?: number;
   roomSweepIntervalMs?: number;
+  startupGraceMs?: number;
   clock?: () => number;
   sweepLogger?: (entry: {
     environment?: RuntimeEnvironment;
@@ -186,7 +214,9 @@ export interface RoomServiceOptions {
   reviewPipeline?: ReviewPipeline;
   insightStore?: InsightStore;
   aiTelemetry?: AITelemetry;
+  connectionRegistry?: ConnectionRegistry;
   lifecycleService?: RoomLifecycleService;
+  lifecycleOutbox?: LifecycleOutbox;
 }
 
 export class RoomService {
@@ -200,6 +230,7 @@ export class RoomService {
   private readonly roomDissolvedListeners = new Set<
     (roomCode: string, roomId: string, causeCommandId?: string) => void | Promise<void>
   >();
+  readonly connectionRegistry: ConnectionRegistry;
   private readonly lifecycle: RoomLifecycleService;
   private readonly connectionLeases = new Map<string, Set<string>>();
   private readonly aiProvider?: AIProvider;
@@ -224,6 +255,8 @@ export class RoomService {
   private readonly waitingRoomTtlMs: number;
   private readonly endedRoomTtlMs: number;
   private readonly roomSweepIntervalMs: number;
+  private readonly startupGraceMs: number;
+  private startupGraceUntil = 0;
   private readonly now: () => number;
   private readonly sweepLogger?: RoomServiceOptions['sweepLogger'];
   private sweepTimer?: ReturnType<typeof setInterval>;
@@ -261,24 +294,56 @@ export class RoomService {
     this.waitingRoomTtlMs = options.waitingRoomTtlMs ?? 30 * 60 * 1000;
     this.endedRoomTtlMs = options.endedRoomTtlMs ?? 24 * 60 * 60 * 1000;
     this.roomSweepIntervalMs = options.roomSweepIntervalMs ?? 60 * 1000;
+    this.startupGraceMs = options.startupGraceMs ?? 5_000;
     this.now = options.clock ?? Date.now;
     this.sweepLogger = options.sweepLogger;
     this.reviewPipeline = options.reviewPipeline;
     this.insightStore = options.insightStore;
+    this.connectionRegistry = options.connectionRegistry ?? new ConnectionRegistry();
+    for (const fact of repository.takeLegacyConnectionFacts?.() ?? []) {
+      for (const memberId of fact.memberIds) {
+        this.connectionRegistry.markServiceConnected(fact.roomCode, memberId);
+      }
+    }
     this.catalog = options.catalog ?? defaultRoomCatalogService;
-    this.policy = options.policy ?? new RoomPolicy({ registry: this.catalog.registry });
+    this.policy = options.policy ?? new RoomPolicy({
+      registry: this.catalog.registry,
+      isConnected: (roomCode, memberId) => this.connectionRegistry.isConnected(roomCode, memberId),
+    });
     this.projector =
       options.projector ??
       new RoomProjector({
         policy: this.policy,
         registry: this.catalog.registry,
+        isConnected: (roomCode, memberId) => this.connectionRegistry.isConnected(roomCode, memberId),
       });
     this.credentialStore = options.credentialStore ?? new InMemoryCredentialStore();
-    this.lifecycle = options.lifecycleService ?? new RoomLifecycleService();
     this.credentialNamespace = options.credentialNamespace ?? process.env.WW_DEPLOYMENT_NAMESPACE ?? 'development';
     this.endpointPolicy = options.endpointPolicy ?? new EndpointPolicy({ environment: this.environment });
     this.aiProviderFactory = options.aiProviderFactory ?? ((config, providerOptions) =>
       new HttpAIProvider(config, providerOptions));
+    this.lifecycle = options.lifecycleService ?? new RoomLifecycleService(repository, {
+      environment: this.environment,
+      deploymentNamespace: this.deploymentNamespace,
+      credentialNamespace: this.credentialNamespace,
+      credentialStore: this.credentialStore,
+      outbox: options.lifecycleOutbox,
+      clock: this.now,
+      onCommitted: async (room, intent) => {
+        if (!intent.terminal) return;
+        this.connectionRegistry.clearRoom(room.code);
+        this.clearConnectionLeases(room.code);
+      },
+      onCleanup: async (room, intent) => {
+        if (!intent.terminal) return;
+        const session = this.sessions.get(intent.roomCode.toUpperCase());
+        session?.dispose();
+        this.sessions.delete(intent.roomCode.toUpperCase());
+        this.roomAIProviders.delete(intent.roomCode.toUpperCase());
+        this.fastAutoRooms.delete(intent.roomCode.toUpperCase());
+        void room;
+      },
+    });
     this.starter =
       options.startCoordinator ??
       new GameStartCoordinator(repository, {
@@ -296,6 +361,11 @@ export class RoomService {
 
   async restore(): Promise<number> {
     this.closed = false;
+    // A process epoch starts with no live sockets. Persisted `connected` bits
+    // are legacy input only and are intentionally not imported.
+    this.connectionRegistry.restore();
+    this.startupGraceUntil = this.now() + this.startupGraceMs;
+    await this.lifecycle.restore();
     await this.sweepExpiredRooms();
     this.startSweepTimer();
     await this.reviewPipeline?.restore();
@@ -377,17 +447,34 @@ export class RoomService {
         await this.endpointPolicy.validate(aiConfig.endpoint, {
           provider: aiConfig.provider,
         });
+        const legacyKey = options.aiConfig.apiKey?.trim();
+        const legacyToken = options.aiConfig.token?.trim();
+        const hasCanonicalCredential = options.aiConfig.bearerCredential !== undefined;
+        const hasLegacyCredential = options.aiConfig.apiKey !== undefined || options.aiConfig.token !== undefined;
+        const mixedCredentialSchema = hasCanonicalCredential && hasLegacyCredential;
+        const legacyAmbiguous = mixedCredentialSchema || Boolean(legacyKey && legacyToken && legacyKey !== legacyToken);
+        const credentialValues = mixedCredentialSchema
+          ? {
+              bearerCredential: options.aiConfig.bearerCredential?.trim(),
+              apiKey: legacyKey,
+              token: legacyToken,
+            }
+          : options.aiConfig.bearerCredential !== undefined
+          ? canonicalCredentialValues({ bearerCredential: options.aiConfig.bearerCredential })
+          : legacyAmbiguous
+            // Keep the legacy values isolated for offline migration. The room
+            // is marked ambiguous and providerForRoom refuses to call out.
+            ? { apiKey: legacyKey, token: legacyToken }
+            : canonicalCredentialValues({ apiKey: legacyKey, token: legacyToken });
         candidateCredentialRef = await this.credentialStore.put(
           { namespace: this.credentialNamespace, roomCode },
-          { apiKey: options.aiConfig.apiKey, token: options.aiConfig.token },
+          credentialValues,
         );
         config.credentialRef = candidateCredentialRef;
+        if (legacyAmbiguous) config.credentialSchemaAmbiguous = true;
       } catch (error) {
         if (candidateCredentialRef) {
-          await this.credentialStore.delete(
-            { namespace: this.credentialNamespace, roomCode },
-            candidateCredentialRef,
-          ).catch(() => undefined);
+          await this.lifecycle.enqueueOrphanCredentialCleanup(roomCode, roomId, candidateCredentialRef);
         }
         if (error instanceof EndpointPolicyError) {
           throw this.error('AI_ENDPOINT_NOT_ALLOWED', 'room.error.ai_endpoint_not_allowed', undefined, [{
@@ -411,7 +498,6 @@ export class RoomService {
       // A quick computer room is observed by its creator.  The creator must
       // not consume a human seat or receive a player projection.
       kind: config.mode === 'quick_computer' ? 'spectator' : 'player',
-      connected: true,
       omniscient: config.mode === 'quick_computer',
       resumeToken,
       seatIndex: config.mode === 'quick_computer' ? null : 0,
@@ -456,18 +542,12 @@ export class RoomService {
       );
     } catch (error) {
       if (candidateCredentialRef) {
-        await this.credentialStore.delete(
-          { namespace: this.credentialNamespace, roomCode },
-          candidateCredentialRef,
-        ).catch(() => undefined);
+        await this.lifecycle.enqueueOrphanCredentialCleanup(roomCode, roomId, candidateCredentialRef);
       }
       throw error;
     }
     if (!claim.created && candidateCredentialRef && claim.room.config?.credentialRef !== candidateCredentialRef) {
-      await this.credentialStore.delete(
-        { namespace: this.credentialNamespace, roomCode },
-        candidateCredentialRef,
-      ).catch(() => undefined);
+      await this.lifecycle.enqueueOrphanCredentialCleanup(roomCode, roomId, candidateCredentialRef);
     }
 
     if (claim.room.config?.mode === 'quick_computer') {
@@ -475,6 +555,7 @@ export class RoomService {
     }
 
     const current = await this.requireRoom(claim.room.code);
+    this.connectionRegistry.markServiceConnected(current.code, request.actorId);
     this.startAI(current.code, current.config?.mode === 'quick_computer');
     return this.createdAccess(current, request.actorId);
   }
@@ -517,7 +598,6 @@ export class RoomService {
           id: request.actorId,
           name: request.name.trim().slice(0, 32) || '玩家',
           kind: spectator ? 'spectator' : 'player',
-          connected: true,
           omniscient:
             spectator && request.omniscientToken !== undefined &&
             request.omniscientToken === draft.omniscientToken,
@@ -541,6 +621,7 @@ export class RoomService {
       throw this.mapError(error);
     }
     const current = await this.requireRoom(room.code);
+    this.connectionRegistry.markServiceConnected(current.code, request.actorId);
     return { room: this.projectRoom(current, request.actorId), credentials: { resumeToken } };
   }
 
@@ -553,11 +634,12 @@ export class RoomService {
         throw this.error('UNAUTHENTICATED', 'room.error.unauthenticated');
       }
       accepted = true;
-      member.connected = true;
+      room.lastSeenAt = this.now();
       this.touchActivity(room);
     });
     if (!accepted) throw this.error('UNAUTHENTICATED', 'room.error.unauthenticated');
     const room = await this.requireRoom(roomCode);
+    this.connectionRegistry.markServiceConnected(room.code, actorId);
     return { room: this.projectRoom(room, actorId), credentials: { resumeToken } };
   }
 
@@ -565,17 +647,11 @@ export class RoomService {
   async bindConnection(identity: SocketIdentity, connectionId: string): Promise<void> {
     const room = await this.requireRoom(identity.roomCode);
     const member = assertIdentityRoom(identity, room);
-    const key = `${room.code}:${member.id}`;
+    const key = `${room.code.toUpperCase()}:${member.id}`;
     const leases = this.connectionLeases.get(key) ?? new Set<string>();
     leases.add(connectionId);
     this.connectionLeases.set(key, leases);
-    if (!member.connected) {
-      await this.repository.mutate(room.code, (draft) => {
-        const current = assertIdentityRoom(identity, draft);
-        current.connected = true;
-        this.touchActivity(draft);
-      });
-    }
+    this.connectionRegistry.bind(room.code, member.id, connectionId);
   }
 
   async identity(roomCode: string, actorId: string, resumeToken: string): Promise<SocketIdentity> {
@@ -584,6 +660,9 @@ export class RoomService {
       (item) => item.id === actorId && item.resumeToken === resumeToken,
     );
     if (!member) throw this.error('UNAUTHENTICATED', 'room.error.unauthenticated');
+    // Direct service callers have no transport bind step. Socket transport
+    // replaces this synthetic lease with its physical socket immediately.
+    this.connectionRegistry.markServiceConnected(room.code, actorId);
     return {
       actorId,
       roomCode: room.code,
@@ -597,19 +676,19 @@ export class RoomService {
 
   async disconnect(identity: SocketIdentity, connectionId?: string): Promise<void> {
     const key = `${identity.roomCode.toUpperCase()}:${identity.actorId}`;
+    this.connectionRegistry.unbind(identity.roomCode, identity.actorId, connectionId);
     const leases = this.connectionLeases.get(key);
     if (connectionId && leases) {
       leases.delete(connectionId);
-      if (leases.size > 0) return;
-      this.connectionLeases.delete(key);
-    } else if (connectionId) {
-      // A disconnect can race a process restart. The persisted connected bit
-      // is still corrected when no live lease is known.
+      if (leases.size === 0) this.connectionLeases.delete(key);
+    } else if (!connectionId) {
       this.connectionLeases.delete(key);
     }
+    if (connectionId && this.connectionRegistry.isConnected(identity.roomCode, identity.actorId)) return;
     await this.repository.mutate(identity.roomCode, (room) => {
       const member = assertIdentityRoom(identity, room);
-      if (member.connected) member.connected = false;
+      void member;
+      room.lastSeenAt = this.now();
       this.touchActivity(room);
     });
   }
@@ -741,7 +820,7 @@ export class RoomService {
       .filter((room) => this.isPubliclyVisible(room))
       .map((room) => {
       const config = room.config;
-      const counts = roomCounts(room);
+      const counts = this.policy.counts(room);
       return {
         roomCode: room.code,
         roomName: room.name,
@@ -793,11 +872,9 @@ export class RoomService {
     }> = [];
     for (const room of expired) {
       const reason = this.expiryReason(room);
-      await this.repository.remove(room.code);
-      this.roomAIProviders.delete(room.code.toUpperCase());
-      this.connectionLeases.forEach((_leases, key) => {
-        if (key.startsWith(`${room.code}:`)) this.connectionLeases.delete(key);
-      });
+      const kind = room.status === 'ended' ? 'ended_retention' : 'waiting_ttl';
+      await this.lifecycle.commit(room.code, kind);
+      if (await this.repository.get(room.code)) continue;
       const entry = {
         roomCode: room.code,
         reason,
@@ -822,6 +899,21 @@ export class RoomService {
   /** Short alias used by administrative tooling. */
   async sweep() {
     return this.sweepExpiredRooms();
+  }
+
+  /** Administrative removal still goes through the same tombstone saga. */
+  async adminRemove(roomCode: string): Promise<boolean> {
+    const room = await this.repository.get(roomCode);
+    if (!room) return false;
+    await this.lifecycle.commit(room.code, 'admin_remove');
+    return (await this.repository.get(room.code)) === undefined;
+  }
+
+  private clearConnectionLeases(roomCode: string): void {
+    const prefix = `${roomCode.trim().toUpperCase()}:`;
+    for (const key of [...this.connectionLeases.keys()]) {
+      if (key.startsWith(prefix)) this.connectionLeases.delete(key);
+    }
   }
 
   private startSweepTimer(): void {
@@ -851,11 +943,15 @@ export class RoomService {
 
   private isExpired(room: RoomRecord): boolean {
     const now = this.now();
+    if (room.environment !== this.environment ||
+      room.deploymentNamespace !== this.deploymentNamespace) return false;
+    if (now < this.startupGraceUntil) return false;
     const lastActivity = room.lastActivityAt ?? room.updatedAt ?? room.createdAt;
     if (!Number.isFinite(lastActivity)) return false;
     if (room.status === 'waiting' || room.status === 'ready_check') {
       const hasOnlineHuman = room.members.some(
-        (member) => member.kind === 'player' && !member.isAI && member.connected,
+        (member) => member.kind === 'player' && !member.isAI &&
+          this.connectionRegistry.isConnected(room.code, member.id),
       );
       return !hasOnlineHuman && now - lastActivity >= this.waitingRoomTtlMs;
     }
@@ -884,7 +980,7 @@ export class RoomService {
 
   private toSummary(room: RoomRecord): RoomSummary {
     const config = room.config;
-    const counts = roomCounts(room);
+    const counts = this.policy.counts(room);
     return {
       roomCode: room.code,
       roomName: room.name,
@@ -949,7 +1045,7 @@ export class RoomService {
     }, commandId);
     const updated = await this.requireRoom(identity.roomCode);
     if (existing.config?.credentialRef && !updated.config?.credentialRef) {
-      await this.deleteRoomCredential(existing);
+      await this.lifecycle.enqueueCleanup(existing, 'mode_switch', existing.config.credentialRef);
       this.roomAIProviders.delete(identity.roomCode.toUpperCase());
     }
     return this.get(identity.roomCode, identity.actorId);
@@ -1049,20 +1145,48 @@ export class RoomService {
           throw this.error('SECRET_STORE_UNAVAILABLE', 'room.error.secret_store_unavailable');
         }
 
-        const nextValues = { ...(previousValues ?? {}) };
+        const hasCanonicalPatch = normalizedPatch.credential !== undefined || normalizedPatch.clearCredential === true;
+        const hasLegacyPatch = normalizedPatch.apiKey !== undefined || normalizedPatch.token !== undefined ||
+          normalizedPatch.clearApiKey === true || normalizedPatch.clearToken === true;
+        if (hasCanonicalPatch && hasLegacyPatch) {
+          throw this.error('CREDENTIAL_SCHEMA_AMBIGUOUS', 'room.error.ai_credential_schema_ambiguous');
+        }
+        if (hasCanonicalPatch) resolveBearerCredential(previousValues);
+        const legacyAgainstCanonical = Boolean(
+          hasLegacyPatch && previousValues?.bearerCredential &&
+          !(normalizedPatch.apiKey !== undefined && normalizedPatch.token !== undefined) &&
+          !(normalizedPatch.clearApiKey === true && normalizedPatch.clearToken === true),
+        );
+        if (hasLegacyPatch && previousValues?.bearerCredential && !legacyAgainstCanonical) {
+          throw this.error('CREDENTIAL_SCHEMA_AMBIGUOUS', 'room.error.ai_credential_schema_ambiguous');
+        }
+        const effectiveCanonicalPatch = hasCanonicalPatch || legacyAgainstCanonical;
+        const nextValues: RoomCredentialValues = effectiveCanonicalPatch
+          ? normalizedPatch.clearCredential
+            ? {}
+            : legacyAgainstCanonical
+              ? normalizedPatch.clearApiKey || normalizedPatch.clearToken
+                ? {}
+                : { bearerCredential: normalizedPatch.apiKey ?? normalizedPatch.token }
+              : { bearerCredential: normalizedPatch.credential }
+          : { ...(previousValues ?? {}) };
         const setApiKey = normalizedPatch.apiKey;
         const setToken = normalizedPatch.token;
-        if (normalizedPatch.clearApiKey) delete nextValues.apiKey;
-        else if (setApiKey) nextValues.apiKey = setApiKey;
-        if (normalizedPatch.clearToken) delete nextValues.token;
-        else if (setToken) nextValues.token = setToken;
+        if (!effectiveCanonicalPatch) {
+          if (normalizedPatch.clearApiKey) delete nextValues.apiKey;
+          else if (setApiKey) nextValues.apiKey = setApiKey;
+          if (normalizedPatch.clearToken) delete nextValues.token;
+          else if (setToken) nextValues.token = setToken;
+        }
 
         const secretsChanged =
-          nextValues.apiKey !== previousValues?.apiKey ||
-          nextValues.token !== previousValues?.token;
+          JSON.stringify(nextValues) !== JSON.stringify(previousValues ?? {});
         let nextRef = previousRef;
         if (secretsChanged) {
-          if (nextValues.apiKey || nextValues.token) {
+          const nextCredential = effectiveCanonicalPatch
+            ? Boolean(nextValues.bearerCredential)
+            : Boolean(nextValues.apiKey || nextValues.token);
+          if (nextCredential) {
             if (previousRef) {
               await this.credentialStore.rotate(
                 { namespace: this.credentialNamespace, roomCode: draft.code },
@@ -1126,6 +1250,11 @@ export class RoomService {
           aiProviderConfig: nextProviderConfig,
           ...(nextRef ? { credentialRef: nextRef } : {}),
         };
+        if (!effectiveCanonicalPatch && nextValues.apiKey && nextValues.token && nextValues.apiKey !== nextValues.token) {
+          draft.config.credentialSchemaAmbiguous = true;
+        } else if (effectiveCanonicalPatch) {
+          delete draft.config.credentialSchemaAmbiguous;
+        }
         if (!nextRef) delete draft.config.credentialRef;
         delete draft.config.aiConfig;
         if (configChanged) {
@@ -1141,7 +1270,7 @@ export class RoomService {
 
         const configRevision = (draft.configRevision ?? 1) + (configChanged ? 1 : 0);
         const nextRoomRevision = (draft.roomRevision ?? 1) + 1;
-        const summary = {
+        const summary = withLegacyCredentialAliases({
           provider: candidate.provider,
           model: candidate.model,
           endpointOrigin: candidate.endpointOrigin,
@@ -1149,11 +1278,10 @@ export class RoomService {
           maxTokens: candidate.maxTokens,
           behavior: candidate.behavior,
           capability: getAIProviderCapability(candidate.provider),
-          hasApiKey: Boolean(nextValues.apiKey),
-          hasToken: Boolean(nextValues.token),
+          hasCredential: Boolean(nextValues.bearerCredential || nextValues.apiKey || nextValues.token),
           configRevision,
           updatedAt: this.now(),
-        } satisfies RoomAIConfigSummary;
+        } satisfies RoomAIConfigSummary, Boolean(nextValues.apiKey), Boolean(nextValues.token));
         outcome = { summary, roomRevision: nextRoomRevision };
         draft.recentRoomCommands = [
           ...(draft.recentRoomCommands ?? []).filter((entry) => entry.commandId !== commandId),
@@ -1179,10 +1307,8 @@ export class RoomService {
       outcome = result.outcome;
       if (committedReceipt) this.lifecycle.rememberReceipt(committedReceipt);
       if (result.kind === 'applied' && result.cleanupRef) {
-        await this.credentialStore.delete(
-          { namespace: this.credentialNamespace, roomCode: identity.roomCode },
-          result.cleanupRef,
-        ).catch(() => undefined);
+        const updated = await this.requireRoom(identity.roomCode);
+        await this.lifecycle.enqueueCleanup(updated, 'mode_switch', result.cleanupRef);
       }
       this.roomAIProviders.delete(identity.roomCode.toUpperCase());
       return outcome;
@@ -1208,6 +1334,9 @@ export class RoomService {
       }
       if (error instanceof RoomRevisionConflictError) throw this.mapError(error);
       if (error instanceof RoomServiceError) throw error;
+      if (error instanceof CredentialSchemaAmbiguousError) {
+        throw this.error('CREDENTIAL_SCHEMA_AMBIGUOUS', 'room.error.ai_credential_schema_ambiguous');
+      }
       if (error && typeof error === 'object' && String((error as { code?: unknown }).code ?? '').startsWith('CREDENTIAL_')) {
         throw this.error('SECRET_STORE_UNAVAILABLE', 'room.error.secret_store_unavailable');
       }
@@ -1324,11 +1453,7 @@ export class RoomService {
     const current = await this.repository.get(identity.roomCode).catch(() => undefined);
     if (!current || current.members.length === 0) {
       if (committedTombstone) this.lifecycle.rememberTombstone(committedTombstone);
-      if (current?.config?.credentialRef) {
-        await this.deleteRoomCredential(current);
-      }
-      this.roomAIProviders.delete(identity.roomCode.toUpperCase());
-      await this.repository.remove(identity.roomCode).catch(() => undefined);
+      if (current) await this.lifecycle.commit(current.code, 'last_member_leave');
       return undefined;
     }
     return this.projectRoom(current, current.hostId);
@@ -1342,7 +1467,8 @@ export class RoomService {
   ): Promise<RoomView> {
     await this.mutateRoom(identity, expectedRoomRevision, 'transfer_host', (room) => {
       const target = room.members.find((member) => member.id === targetMemberId);
-      if (!target || target.kind !== 'player' || target.isAI || !target.connected) {
+      if (!target || target.kind !== 'player' || target.isAI ||
+        !this.connectionRegistry.isConnected(identity.roomCode, target.id)) {
         throw this.error('MEMBER_NOT_FOUND', 'room.error.host_target_not_found');
       }
       room.hostId = target.id;
@@ -1384,15 +1510,7 @@ export class RoomService {
     const tombstone = committedTombstone ?? this.makeTombstone(committedRoom, commandId);
     this.lifecycle.rememberTombstone(tombstone);
     if (committedReceipt) this.lifecycle.rememberReceipt(committedReceipt);
-    for (const key of [...this.connectionLeases.keys()]) {
-      if (key.startsWith(`${tombstone.roomCode}:`)) this.connectionLeases.delete(key);
-    }
-    await this.deleteRoomCredential(committedRoom);
-    this.roomAIProviders.delete(identity.roomCode.toUpperCase());
-    // Cleanup is deliberately best effort. The committed tombstone/receipt
-    // must never be reported as a failed command because a listener or secret
-    // deletion was unavailable.
-    await this.repository.remove(identity.roomCode).catch(() => undefined);
+    await this.lifecycle.commit(identity.roomCode, 'dissolve');
     return tombstone;
   }
 
@@ -1476,6 +1594,17 @@ export class RoomService {
 
   async getRecord(roomCode: string): Promise<RoomRecord | undefined> {
     const room = await this.repository.get(roomCode);
+    if (room) {
+      // Keep the old diagnostic API useful without making this derived fact
+      // serializable by any repository adapter.
+      for (const member of room.members) {
+        Object.defineProperty(member, 'connected', {
+          configurable: true,
+          enumerable: true,
+          value: this.connectionRegistry.isConnected(room.code, member.id),
+        });
+      }
+    }
     // Compatibility for the pre-C in-process diagnostic API. It is
     // deliberately non-enumerable and contains no credential values; all
     // persisted/projection shapes use aiProviderConfig + credentialRef.
@@ -1503,6 +1632,8 @@ export class RoomService {
     await new Promise((resolve) => setImmediate(resolve));
     this.aiRuns.clear();
     this.roomAIProviders.clear();
+    this.connectionRegistry.clear();
+    this.connectionLeases.clear();
     this.fastAutoRooms.clear();
     this.legacyRoomCodes.clear();
     this.roomChangeListeners.clear();
@@ -1514,24 +1645,15 @@ export class RoomService {
     const config = clone(result.config as RoomConfigRecord);
     const aiProviderConfig = this.normalizeRoomAIConfig(options.aiConfig);
     if (aiProviderConfig) {
-      const { apiKey: _apiKey, token: _token, ...nonSecretConfig } = aiProviderConfig;
+      const {
+        apiKey: _apiKey,
+        token: _token,
+        bearerCredential: _bearerCredential,
+        ...nonSecretConfig
+      } = aiProviderConfig;
       config.aiProviderConfig = nonSecretConfig as RoomAIProviderConfig;
     }
     return config;
-  }
-
-  private async deleteRoomCredential(room: RoomRecord): Promise<void> {
-    const credentialRef = room.config?.credentialRef;
-    if (!credentialRef) return;
-    try {
-      await this.credentialStore.delete(
-        { namespace: this.credentialNamespace, roomCode: room.code },
-        credentialRef,
-      );
-    } catch {
-      // Keep the room lifecycle committed. The store operation is safe to
-      // retry by an operator and its logs must never contain the secret.
-    }
   }
 
   private createdAccess(room: RoomRecord, actorId: string): RoomAccess {
@@ -1661,6 +1783,9 @@ export class RoomService {
     return {
       provider: raw.provider as RoomAIConfig['provider'],
       model,
+      ...(typeof raw.bearerCredential === 'string'
+        ? { bearerCredential: raw.bearerCredential.trim().slice(0, 4_096) }
+        : {}),
       ...(typeof raw.apiKey === 'string' ? { apiKey: raw.apiKey.trim().slice(0, 4_096) } : {}),
       ...(typeof raw.token === 'string' ? { token: raw.token.trim().slice(0, 4_096) } : {}),
       endpoint,
@@ -1715,6 +1840,25 @@ export class RoomService {
       } else normalized.maxTokens = patch.maxTokens;
     }
 
+    if (patch.credential !== undefined || patch.clearCredential !== undefined) {
+      if (patch.clearCredential !== undefined && typeof patch.clearCredential !== 'boolean') {
+        issues.push({ path: 'clearCredential', messageKey: 'room.error.invalid_ai_credential', errorCode: 'INVALID_ROOM_CONFIG' });
+      }
+      const credential = typeof patch.credential === 'string' ? patch.credential.trim() : undefined;
+      if (patch.credential !== undefined &&
+        (typeof patch.credential !== 'string' || credential === '******' || credential!.length > 4_096)) {
+        issues.push({ path: 'credential', messageKey: 'room.error.invalid_ai_credential', errorCode: 'INVALID_ROOM_CONFIG' });
+      }
+      if (credential && patch.clearCredential === true) {
+        issues.push({ path: 'credential', messageKey: 'room.error.ai_credential_set_and_clear', errorCode: 'INVALID_ROOM_CONFIG' });
+      } else if (credential) normalized.credential = credential;
+      if (patch.clearCredential === true) normalized.clearCredential = true;
+      if (patch.apiKey !== undefined || patch.token !== undefined ||
+        patch.clearApiKey !== undefined || patch.clearToken !== undefined) {
+        issues.push({ path: 'credential', messageKey: 'room.error.ai_credential_schema_ambiguous', errorCode: 'CREDENTIAL_SCHEMA_AMBIGUOUS' });
+      }
+    }
+
     const secretField = (
       key: 'apiKey' | 'token',
       clearKey: 'clearApiKey' | 'clearToken',
@@ -1755,6 +1899,7 @@ export class RoomService {
       patch.temperature,
       patch.maxTokens,
       patch.behavior,
+      patch.credential,
       patch.apiKey,
       patch.token,
     ].some((value) => value !== undefined);
@@ -1778,6 +1923,7 @@ export class RoomService {
       temperature: patch.temperature ?? existing?.temperature ?? defaults.temperature,
       maxTokens: patch.maxTokens ?? existing?.maxTokens ?? defaults.maxTokens,
       behavior: patch.behavior ?? existing?.behavior ?? AI_DEFAULTS.defaultBehavior,
+      ...(patch.credential ? { bearerCredential: patch.credential } : {}),
       ...(patch.apiKey ? { apiKey: patch.apiKey } : {}),
       ...(patch.token ? { token: patch.token } : {}),
     };
@@ -1812,7 +1958,7 @@ export class RoomService {
       }
       throw error;
     }
-    let values: { apiKey?: string; token?: string } | undefined;
+    let values: RoomCredentialValues | undefined;
     try {
       values = room.config?.credentialRef
         ? await this.credentialStore.get(
@@ -1826,7 +1972,10 @@ export class RoomService {
     if (room.config?.credentialRef && values === undefined) {
       throw this.error('SECRET_STORE_UNAVAILABLE', 'room.error.secret_store_unavailable');
     }
-    return {
+    const hasApiKey = Boolean(values?.apiKey);
+    const hasToken = Boolean(values?.token);
+    const hasCredential = Boolean(values?.bearerCredential || values?.apiKey || values?.token);
+    return withLegacyCredentialAliases({
       provider: config.provider,
       model: config.model,
       endpointOrigin: endpoint.origin,
@@ -1834,15 +1983,17 @@ export class RoomService {
       maxTokens: config.maxTokens,
       behavior: config.behavior,
       capability: getAIProviderCapability(config.provider),
-      hasApiKey: Boolean(values?.apiKey),
-      hasToken: Boolean(values?.token),
+      hasCredential,
       configRevision: room.configRevision ?? 1,
       updatedAt: room.updatedAt ?? room.createdAt,
-    };
+    }, hasApiKey, hasToken);
   }
 
   private async providerForRoom(room: RoomRecord): Promise<AIProvider> {
     const roomConfig = room.config?.aiProviderConfig;
+    if (room.config?.credentialSchemaAmbiguous) {
+      throw this.error('CREDENTIAL_SCHEMA_AMBIGUOUS', 'room.error.ai_credential_schema_ambiguous');
+    }
     if (!roomConfig) {
       if (!this.aiProvider) throw this.error('AI_PROVIDER_REQUIRED', 'room.error.ai_provider_required');
       return this.aiProvider;
@@ -1869,7 +2020,14 @@ export class RoomService {
       )
       : Promise.resolve(undefined);
     const values = await credential;
-    selected.apiKey = values?.token || values?.apiKey || '';
+    try {
+      selected.apiKey = resolveBearerCredential(values) ?? '';
+    } catch (error) {
+      if (error instanceof CredentialSchemaAmbiguousError) {
+        throw this.error('CREDENTIAL_SCHEMA_AMBIGUOUS', 'room.error.ai_credential_schema_ambiguous');
+      }
+      throw error;
+    }
     selected.temperature = roomConfig.temperature;
     selected.maxTokens = roomConfig.maxTokens;
     if (providerConfig.apiType === 'local') providerConfig.local.apiUrl = roomConfig.endpoint;

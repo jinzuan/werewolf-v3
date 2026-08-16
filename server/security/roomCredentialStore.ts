@@ -7,9 +7,34 @@ export interface CredentialScope {
 }
 
 export interface RoomCredentialValues {
+  bearerCredential?: string;
+  /** @deprecated Read only at the legacy migration boundary. */
   apiKey?: string;
+  /** @deprecated Read only at the legacy migration boundary. */
   token?: string;
 }
+
+/** Convert old key/token records to the one bearer credential, fail closed. */
+export const resolveBearerCredential = (
+  values: RoomCredentialValues | undefined,
+): string | undefined => {
+  if (!values) return undefined;
+  const bearer = typeof values.bearerCredential === 'string'
+    ? values.bearerCredential.trim()
+    : '';
+  const apiKey = typeof values.apiKey === 'string' ? values.apiKey.trim() : '';
+  const token = typeof values.token === 'string' ? values.token.trim() : '';
+  if (bearer && (apiKey || token)) throw new CredentialSchemaAmbiguousError();
+  if (apiKey && token && apiKey !== token) throw new CredentialSchemaAmbiguousError();
+  return bearer || apiKey || token || undefined;
+};
+
+export const canonicalCredentialValues = (
+  values: RoomCredentialValues | undefined,
+): RoomCredentialValues => {
+  const bearerCredential = resolveBearerCredential(values);
+  return bearerCredential ? { bearerCredential } : {};
+};
 
 export interface RoomCredentialStore {
   put(scope: CredentialScope, values: RoomCredentialValues): Promise<string>;
@@ -35,6 +60,13 @@ export class CredentialStoreError extends Error {
   }
 }
 
+export class CredentialSchemaAmbiguousError extends CredentialStoreError {
+  constructor() {
+    super('CREDENTIAL_SCHEMA_AMBIGUOUS');
+    this.name = 'CredentialSchemaAmbiguousError';
+  }
+}
+
 const clone = <T>(value: T): T => structuredClone(value);
 const cleanScope = (scope: CredentialScope): Required<Pick<CredentialScope, 'namespace' | 'roomCode'>> => ({
   namespace: (scope.namespace ?? 'default').trim(),
@@ -51,6 +83,12 @@ const cleanValues = (values: RoomCredentialValues): RoomCredentialValues => {
       }
       if (value.length > 0) out[key] = value;
     }
+  }
+  if (values.bearerCredential !== undefined) {
+    if (typeof values.bearerCredential !== 'string' || values.bearerCredential.length > 4_096) {
+      throw new CredentialStoreError('INVALID_CREDENTIAL');
+    }
+    if (values.bearerCredential.length > 0) out.bearerCredential = values.bearerCredential;
   }
   return out;
 };

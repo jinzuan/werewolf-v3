@@ -265,12 +265,12 @@ const defaultStartCheck = (room: RoomRecord): StartCheck => {
     },
     {
       key: 'all_humans_online',
-      passed: humans.every((member) => member.connected),
-      messageKey: humans.every((member) => member.connected)
+      passed: humans.every((member) => member.connected !== false),
+      messageKey: humans.every((member) => member.connected !== false)
         ? 'room.start.players_online'
         : 'room.start.player_offline',
       affectedMemberIds: humans
-        .filter((member) => !member.connected)
+        .filter((member) => member.connected === false)
         .map((member) => member.id),
     },
     {
@@ -428,7 +428,6 @@ const addComputerMembers = (
       id,
       name: createAIName(seatIndex),
       kind: 'player',
-      connected: true,
       omniscient: false,
       resumeToken: '',
       seatIndex,

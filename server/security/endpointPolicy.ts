@@ -280,7 +280,7 @@ export class EndpointPolicy {
     let addresses: EndpointAddress[];
     if (literal) {
       addresses = [{ address: hostname, family: isIP(hostname) as 4 | 6 }];
-    } else if (!this.resolveDns && context.allowReservedTestHost && isReservedTestHost(hostname)) {
+    } else if (context.allowReservedTestHost && isReservedTestHost(hostname)) {
       addresses = [];
     } else {
       try {
