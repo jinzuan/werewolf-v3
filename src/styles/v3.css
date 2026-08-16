@@ -1561,9 +1561,11 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
 
   .v3-side-nav {
     display: flex;
+    visibility: hidden;
   }
 
   .v3-side-nav.is-open {
+    visibility: visible;
     transform: translateX(0);
   }
 
@@ -1685,4 +1687,150 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
 [data-motion='reduced'] .v3-button:hover:not(:disabled),
 [data-motion='reduced'] .ww-seat:hover:not(:disabled) {
   transform: none;
+}
+
+/* Mobile layout contract: keep every primary flow usable at phone widths. */
+@media (max-width: 480px) {
+  .v3-page-heading {
+    gap: var(--ww-space-3);
+  }
+
+  .v3-page-heading > .v3-badge {
+    justify-self: start;
+  }
+
+  .v3-page > nav[aria-label='创建房间步骤'] > div {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--ww-space-2);
+  }
+
+  .v3-page > nav[aria-label='创建房间步骤'] > div > span > span[aria-hidden='true'] {
+    display: none;
+  }
+
+  .v3-page > nav[aria-label='创建房间步骤'] button {
+    width: 100%;
+    min-width: 0;
+    justify-content: flex-start;
+    padding-inline: var(--ww-space-3);
+  }
+
+  .v3-wizard-main {
+    padding-bottom: calc(var(--ww-space-12) + env(safe-area-inset-bottom));
+  }
+
+  .v3-wizard-main [data-wizard-block]:not([data-wizard-block='creator']) button[aria-pressed] {
+    width: 100%;
+    flex: 1 1 100% !important;
+  }
+
+  .v3-wizard-main [data-wizard-block] > div[style*='justify-content: space-between'] {
+    align-items: stretch !important;
+    flex-direction: column !important;
+  }
+
+  .v3-wizard-main [data-wizard-block] > div[style*='justify-content: space-between'] > .v3-button {
+    align-self: stretch;
+    width: 100%;
+  }
+
+  .v3-wizard-actions > div {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .v3-wizard-confirm-actions {
+    align-items: stretch !important;
+    flex-direction: column !important;
+  }
+
+  .v3-wizard-confirm-actions > .v3-button {
+    width: 100%;
+  }
+
+  .v3-lobby-hero {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--ww-space-5);
+    padding: var(--ww-space-6);
+  }
+
+  .v3-lobby-hero__copy {
+    width: 100%;
+    max-width: none;
+  }
+
+  .v3-lobby-hero__moon {
+    align-self: flex-end;
+  }
+
+  .v3-lobby-hero__actions,
+  .v3-empty-state__actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .v3-lobby-hero__actions .v3-button,
+  .v3-empty-state__actions .v3-button {
+    width: 100%;
+  }
+
+  .v3-section__header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: var(--ww-space-3);
+  }
+
+  .v3-lobby-list-status {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .v3-lobby-list-status .v3-badge {
+    align-self: flex-start;
+  }
+
+  .v3-room-row {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--ww-space-2);
+  }
+
+  .v3-room-row__mark,
+  .v3-room-row > .v3-badge {
+    align-self: flex-start;
+  }
+
+  .v3-room-row__body strong,
+  .v3-room-row__body span {
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .v3-room-row > .v3-button {
+    width: 100%;
+  }
+
+  .v3-room-header__meta {
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--ww-space-2) var(--ww-space-3);
+    padding: var(--ww-space-2) var(--page-gutter);
+    border-bottom: 1.5px solid var(--ww-border-default);
+    background: var(--ww-bg-surface);
+  }
+
+  .v3-room-header__meta > span {
+    color: var(--ww-text-muted);
+    font-size: var(--ww-text-caption-size);
+  }
+
+  .v3-room-header__meta > strong {
+    letter-spacing: .08em;
+  }
 }

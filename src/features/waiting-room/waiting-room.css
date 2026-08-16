@@ -347,8 +347,12 @@
   .waiting-room__ai-summary .v3-button { width: 100%; }
 }
 
-@media (max-width: 419px) {
-  .waiting-room__header-main { gap: var(--ww-space-2); }
+@media (max-width: 480px) {
+  .waiting-room {
+    padding-bottom: calc(var(--ww-space-12) + env(safe-area-inset-bottom));
+  }
+
+  .waiting-room__header-main { gap: var(--ww-space-2); flex-direction: column; align-items: stretch; }
   .waiting-room__header-main .v3-badge { white-space: normal; text-align: center; }
   .waiting-room__players,
   .waiting-room__header-card { padding: var(--ww-space-4); }
