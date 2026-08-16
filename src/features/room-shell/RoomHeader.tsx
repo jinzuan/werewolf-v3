@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Badge } from '../../ui/Badge';
 import { useV3Store } from '../../stores/v3Store';
-import { sceneForRoom } from './scene';
+import { useRoomShell } from './RoomShellContext';
 import {
   roomStatusLabel,
   type RoomViewSegment,
@@ -32,7 +32,7 @@ export interface RoomHeaderProps extends TopStatusBarProps {
 export function RoomHeader({ children, ...status }: RoomHeaderProps) {
   const room = useV3Store((state) => state.room);
   const session = useV3Store((state) => state.session);
-  const snapshot = useV3Store((state) => state.snapshot);
+  const { scene: roomScene } = useRoomShell();
 
   if (!room || !session) {
     return <TopStatusBar {...status} />;
@@ -53,7 +53,7 @@ export function RoomHeader({ children, ...status }: RoomHeaderProps) {
     <div className="v3-room-header">
       <TopStatusBar
         {...status}
-        scene={status.scene ?? sceneForRoom(room.status, snapshot?.gameState)}
+        scene={status.scene ?? roomScene}
         eyebrow={room.name}
         title={requestedTitle ?? viewLabel[segment]}
       />

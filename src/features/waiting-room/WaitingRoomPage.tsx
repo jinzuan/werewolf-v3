@@ -4,7 +4,6 @@ import type {
   AllowedRoomAction,
   RoomConfigView,
   RoomAIConfigPatch,
-  RoomMutationCommand,
   StartCheckItem,
 } from '../../../shared/protocol';
 import { AppShell } from '../../components/shell/AppShell';
@@ -81,14 +80,16 @@ export function WaitingRoomPage() {
   const cancelReadyCheck = useV3Store((state) => state.cancelReadyCheck);
   const setReady = useV3Store((state) => state.setReady);
   const startGame = useV3Store((state) => state.startGame);
-  const mutateRoom = useV3Store((state) => state.mutateRoom);
+  const updateRoomConfig = useV3Store((state) => state.updateRoomConfig);
+  const transferHostAction = useV3Store((state) => state.transferHost);
+  const leaveRoomMutation = useV3Store((state) => state.leaveRoomMutation);
+  const dissolveRoom = useV3Store((state) => state.dissolveRoom);
   const refreshRoom = useV3Store((state) => state.refreshRoom);
   const aiSummary = useV3Store((state) => state.aiConfigSummary);
   const aiConfigStatus = useV3Store((state) => state.aiConfigStatus);
   const aiConfigError = useV3Store((state) => state.aiConfigError);
   const loadAIConfig = useV3Store((state) => state.loadAIConfig);
   const updateAIConfig = useV3Store((state) => state.updateAIConfig);
-  const clearAuthority = useV3Store((state) => state.clearAuthority);
   const [pageError, setPageError] = useState<string | null>(null);
   const [configEditorOpen, setConfigEditorOpen] = useState(false);
   const [aiEditorOpen, setAIEditorOpen] = useState(false);
@@ -101,34 +102,27 @@ export function WaitingRoomPage() {
 
   const runDirectMutation = useCallback(async (
     action: DirectRoomAction,
-    command: RoomMutationCommand,
+    operation: () => Promise<boolean>,
   ): Promise<boolean> => {
-    const currentRoom = useV3Store.getState().room;
-    const currentSession = useV3Store.getState().session;
     if (
-      !currentRoom ||
-      !currentSession ||
-      currentRoom.status === 'starting' ||
-      !isActionAllowed(currentRoom, action)
+      !room ||
+      !session ||
+      room.status === 'starting' ||
+      !isActionAllowed(room, action)
     ) {
       return false;
     }
 
     setPageError(null);
-    const success = await mutateRoom(command);
-    if (!success) {
-      if (useV3Store.getState().lastCommandOutcome?.status !== 'unknown') await refreshRoom();
-      return false;
-    }
+    if (!await operation()) return false;
 
     if (action === 'leave' || action === 'dissolve') {
-      clearAuthority();
       navigate('/lobby', { replace: true });
     } else {
       await refreshRoom();
     }
     return true;
-  }, [clearAuthority, mutateRoom, navigate, refreshRoom]);
+  }, [navigate, refreshRoom, room, session]);
 
   const onCopyInvite = useCallback(async () => {
     if (!room || !session || !isActionAllowed(room, 'invite')) return;
@@ -178,10 +172,7 @@ export function WaitingRoomPage() {
     void startGame();
   };
   const updateConfig = (config: RoomConfigView) => {
-    void runDirectMutation('update_config', {
-      type: 'room.update_config',
-      payload: { config },
-    }).then((success) => {
+    void runDirectMutation('update_config', () => updateRoomConfig(config)).then((success) => {
       if (success) setConfigEditorOpen(false);
     });
   };
@@ -195,22 +186,13 @@ export function WaitingRoomPage() {
     });
   };
   const transferHost = (memberId: string) => {
-    void runDirectMutation('transfer_host', {
-      type: 'room.transfer_host',
-      payload: { targetMemberId: memberId },
-    });
+    void runDirectMutation('transfer_host', () => transferHostAction(memberId));
   };
   const dissolve = () => {
-    void runDirectMutation('dissolve', {
-      type: 'room.dissolve',
-      payload: { confirm: true },
-    });
+    void runDirectMutation('dissolve', dissolveRoom);
   };
   const leave = () => {
-    void runDirectMutation('leave', {
-      type: 'room.leave',
-      payload: {},
-    });
+    void runDirectMutation('leave', leaveRoomMutation);
   };
   const resolveCheckAction = (action: Extract<AllowedRoomAction, 'invite' | 'update_config' | 'update_ai_config'>) => {
     if (action === 'invite') void onCopyInvite();

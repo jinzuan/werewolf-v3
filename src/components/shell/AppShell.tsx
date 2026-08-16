@@ -1,8 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { RoomHeader } from '../../features/room-shell/RoomHeader';
-import { sceneForRoom } from '../../features/room-shell/scene';
 import { useRoomShell } from '../../features/room-shell/RoomShellContext';
-import { useV3Store } from '../../stores/v3Store';
 import { SideNav } from './SideNav';
 import { TopStatusBar } from './TopStatusBar';
 
@@ -18,11 +16,8 @@ interface AppShellProps {
 }
 
 export function AppShell({ children, ...status }: AppShellProps) {
-  const inRoom = useRoomShell();
-  const room = useV3Store((state) => state.room);
-  const snapshot = useV3Store((state) => state.snapshot);
+  const { inRoom, scene } = useRoomShell();
   const [navigationOpen, setNavigationOpen] = useState(false);
-  const scene = sceneForRoom(room?.status, snapshot?.gameState);
 
   useEffect(() => {
     setNavigationOpen(false);
