@@ -69,6 +69,7 @@ import {
   type V3Session,
 } from '../../v3/session';
 import { getSessionPersistence } from '../../runtime/sessionPersistence';
+import { subscribeV3ReconnectLifecycle } from '../../runtime/reconnectLifecycle';
 
 const storage = (): Storage | null =>
   typeof localStorage === 'undefined' ? null : localStorage;
@@ -628,6 +629,10 @@ export const useV3Store = create<V3Store>()((set, get) => {
       subscribeV3Connection((connected) => {
         set({ connected });
         if (connected && get().session && !get().recovering) void recover();
+      }),
+      subscribeV3ReconnectLifecycle(() => {
+        const current = get();
+        if (current.session && !current.recovering) void recover();
       }),
       subscribeV3Messages((message) => {
         if (message.type !== 'room.closed') return;
