@@ -82,7 +82,7 @@ export const createRequest = (
 
 export const startRoom = async (
   rooms: {
-    get: (roomCode: string, actorId: string) => Promise<{ roomRevision: number }>;
+    get: (roomCode: string, actorId: string) => Promise<{ roomRevision: number; status: 'waiting' | 'ready_check' }>;
     beginReadyCheck: (identity: unknown, revision: number, commandId: string) => Promise<{ roomRevision: number }>;
     setReady: (identity: unknown, ready: boolean, revision: number, commandId: string) => Promise<{ roomRevision: number }>;
     startGame: (identity: unknown, command: { commandId: string; expectedRoomRevision: number }) => Promise<unknown>;
@@ -92,7 +92,9 @@ export const startRoom = async (
 ) => {
   const typedIdentity = identity as { roomCode: string; actorId: string };
   const current = await rooms.get(typedIdentity.roomCode, typedIdentity.actorId);
-  const checking = await rooms.beginReadyCheck(identity, current.roomRevision, `${commandPrefix}-ready-check`);
+  const checking = current.status === 'ready_check'
+    ? current
+    : await rooms.beginReadyCheck(identity, current.roomRevision, `${commandPrefix}-ready-check`);
   const ready = await rooms.setReady(identity, true, checking.roomRevision, `${commandPrefix}-ready`);
   return rooms.startGame(identity, {
     commandId: `${commandPrefix}-start`,

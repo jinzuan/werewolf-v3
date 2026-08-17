@@ -59,7 +59,7 @@ export function SelfReadyCard({
               {!showAction && room.status === 'ready_check'
                 ? '请在上方开局流程中确认准备'
                 : room.status === 'waiting'
-                  ? '等房主开始准备检查'
+                  ? '请修改并保存房间设置以进入准备阶段'
                   : '当前暂不能修改准备状态'}
             </span>
           )}

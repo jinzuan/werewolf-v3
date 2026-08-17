@@ -16,7 +16,6 @@ interface RoomActionsProps {
   currentMember: RoomMemberViewV31 | undefined;
   pendingAction: AllowedRoomAction | null;
   onSetReady: (ready: boolean) => void;
-  onBeginReadyCheck: () => void;
   onCancelReadyCheck: () => void;
   onStartGame: () => void;
   onInvite: () => void;
@@ -31,7 +30,6 @@ export function RoomActions({
   currentMember,
   pendingAction,
   onSetReady,
-  onBeginReadyCheck,
   onCancelReadyCheck,
   onStartGame,
   onInvite,
@@ -46,13 +44,9 @@ export function RoomActions({
   const isPlayer = room.viewer.kind === 'player' && currentMember?.kind === 'player';
   const ready = currentMember?.ready === true;
   const can = (action: AllowedRoomAction) => isActionAllowed(room, action);
-  const failedChecksFor = (action: 'begin_ready_check' | 'start_game') => room.startCheck.items
+  const failedChecks = room.startCheck.items
     .filter((item) => !item.passed)
-    .filter((item) => action === 'start_game' || (
-      item.key !== 'all_humans_online' && item.key !== 'all_humans_ready'
-    ));
-  const blockedReasonFor = (action: 'begin_ready_check' | 'start_game'): string => {
-    const failedChecks = failedChecksFor(action);
+  const blockedReasonFor = (): string => {
     return failedChecks.length
       ? `暂不可用：${failedChecks.map(startCheckReason).join('；')}`
       : '当前阶段暂不能执行该操作。';
@@ -82,26 +76,6 @@ export function RoomActions({
       <div className="waiting-room__action-flow" aria-label="开局流程">
         <span className="waiting-room__eyebrow">开局流程</span>
         <div className="waiting-room__action-list waiting-room__action-list--flow">
-        {isHost && room.status === 'waiting' ? (
-          <>
-            <Button
-              variant="primary"
-              size="action"
-              disabled={locked || busy('begin_ready_check') || !can('begin_ready_check')}
-              aria-describedby={!can('begin_ready_check') ? 'begin-ready-check-reason' : undefined}
-              onClick={onBeginReadyCheck}
-            >
-              <Play size={17} aria-hidden="true" />
-              {busy('begin_ready_check') ? '正在开始准备…' : '开始准备'}
-            </Button>
-            {!can('begin_ready_check') ? (
-              <p id="begin-ready-check-reason" className="waiting-room__action-blocker" role="status">
-                {blockedReasonFor('begin_ready_check')}
-              </p>
-            ) : null}
-          </>
-        ) : null}
-
         {isPlayer && room.status === 'ready_check' && can('set_ready') ? (
           <Button
             variant={ready ? 'secondary' : 'primary'}
@@ -128,7 +102,7 @@ export function RoomActions({
             </Button>
             {!can('start_game') ? (
               <p id="start-game-reason" className="waiting-room__action-blocker" role="status">
-                {blockedReasonFor('start_game')}
+                {blockedReasonFor()}
               </p>
             ) : null}
           </>

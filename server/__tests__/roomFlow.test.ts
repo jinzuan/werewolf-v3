@@ -18,6 +18,9 @@ test('room service exposes only RoomView and scoped credentials', async () => {
   });
 
   assert.equal(created.room.members.length, 1);
+  assert.equal(created.room.status, 'ready_check');
+  assert.ok(created.room.viewer.allowedRoomActions.includes('set_ready'));
+  assert.equal(created.room.viewer.allowedRoomActions.includes('begin_ready_check'), false);
   assert.ok(created.credentials.joinToken);
   assert.ok(created.credentials.resumeToken);
   assert.doesNotMatch(serialized(created.room), /joinToken|omniscientToken|resumeToken|session/);
@@ -43,11 +46,9 @@ test('room service exposes only RoomView and scoped credentials', async () => {
     joined.credentials.resumeToken,
   );
   const current = await rooms.get(created.room.code, 'host');
-  const checking = await rooms.beginReadyCheck(
-    hostIdentity,
-    current.roomRevision,
-    'flow-ready-check',
-  );
+  const checking = current.status === 'ready_check'
+    ? current
+    : await rooms.beginReadyCheck(hostIdentity, current.roomRevision, 'flow-ready-check');
   const hostReady = await rooms.setReady(hostIdentity, true, checking.roomRevision, 'flow-host-ready');
   const guestReady = await rooms.setReady(guestIdentity, true, hostReady.roomRevision, 'flow-guest-ready');
   const started = await rooms.startGame(hostIdentity, {

@@ -571,11 +571,14 @@ export class RoomService {
           omniscientToken: token(),
           hostId: request.actorId,
           maxPlayers: config.maxPlayers,
-          status: 'waiting',
+          // Human rooms open directly in the preparation phase. The wizard
+          // has already collected and validated the configuration, so a
+          // second host-only "begin ready check" transition is unnecessary.
+          status: 'ready_check',
           auto: config.mode === 'quick_computer',
           debugMode: false,
           config,
-          configLocked: false,
+          configLocked: true,
           roomRevision: 1,
           configRevision: 1,
           schemaVersion: 1,
@@ -1088,7 +1091,11 @@ export class RoomService {
           : {}),
       };
       room.maxPlayers = next.maxPlayers;
-      room.configLocked = false;
+      // Saving settings starts a fresh preparation phase. This keeps the
+      // legacy "return to settings" path usable without bringing back a
+      // separate begin-preparation button.
+      room.status = 'ready_check';
+      room.configLocked = true;
       room.auto = next.mode === 'quick_computer';
       room.members.forEach((member) => {
         if (member.kind === 'player' && !member.isAI) member.ready = false;

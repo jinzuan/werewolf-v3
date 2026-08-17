@@ -35,8 +35,6 @@ const pendingActionForCommand = (
   command: string | null,
 ): AllowedRoomAction | null => {
   switch (command) {
-    case 'room.begin_ready_check':
-      return 'begin_ready_check';
     case 'room.cancel_ready_check':
       return 'cancel_ready_check';
     case 'room.ready':
@@ -77,7 +75,6 @@ export function WaitingRoomPage() {
   const pendingRoomCommand = useV3Store((state) => state.pendingRoomCommand);
   const room = useV3Store((state) => state.room);
   const session = useV3Store((state) => state.session);
-  const beginReadyCheck = useV3Store((state) => state.beginReadyCheck);
   const cancelReadyCheck = useV3Store((state) => state.cancelReadyCheck);
   const setReady = useV3Store((state) => state.setReady);
   const startGame = useV3Store((state) => state.startGame);
@@ -156,10 +153,6 @@ export function WaitingRoomPage() {
   const pendingAction = pendingActionForCommand(pendingRoomCommand);
   const error = pageError ?? storeError;
 
-  const begin = () => {
-    setPageError(null);
-    void beginReadyCheck();
-  };
   const cancel = () => {
     setPageError(null);
     void cancelReadyCheck();
@@ -228,7 +221,6 @@ export function WaitingRoomPage() {
           currentMember={currentMember}
           pendingAction={pendingAction}
           onSetReady={ready}
-          onBeginReadyCheck={begin}
           onCancelReadyCheck={cancel}
           onStartGame={start}
           onInvite={() => void onCopyInvite()}

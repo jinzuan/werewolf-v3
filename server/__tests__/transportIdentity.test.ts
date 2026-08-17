@@ -42,7 +42,9 @@ test('bound identity rejects impersonation, cross-room, cross-game, and spectato
     spectator.credentials.resumeToken,
   );
   const current = await rooms.get(created.room.code, 'host');
-  const checking = await rooms.beginReadyCheck(hostIdentity, current.roomRevision, 'identity-ready-check');
+  const checking = current.status === 'ready_check'
+    ? current
+    : await rooms.beginReadyCheck(hostIdentity, current.roomRevision, 'identity-ready-check');
   const hostReady = await rooms.setReady(hostIdentity, true, checking.roomRevision, 'identity-host-ready');
   const guestReady = await rooms.setReady(guestIdentity, true, hostReady.roomRevision, 'identity-guest-ready');
   await rooms.startGame(hostIdentity, {
