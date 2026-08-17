@@ -10,7 +10,7 @@ class VisibilityTarget extends EventTarget {
   }
 }
 
-test('reconnect lifecycle recovers when a suspended page becomes visible, online, or pageshow', () => {
+test('reconnect lifecycle recovers across browser and app-switch lifecycle signals', () => {
   const documentTarget = new VisibilityTarget();
   const windowTarget = new EventTarget();
   let recoveries = 0;
@@ -25,11 +25,15 @@ test('reconnect lifecycle recovers when a suspended page becomes visible, online
   documentTarget.emit('visibilitychange');
   windowTarget.dispatchEvent(new Event('pageshow'));
   windowTarget.dispatchEvent(new Event('online'));
-  assert.equal(recoveries, 3);
+  windowTarget.dispatchEvent(new Event('focus'));
+  windowTarget.dispatchEvent(new Event('resume'));
+  assert.equal(recoveries, 5);
 
   cleanup();
   documentTarget.emit('visibilitychange');
   windowTarget.dispatchEvent(new Event('pageshow'));
   windowTarget.dispatchEvent(new Event('online'));
-  assert.equal(recoveries, 3);
+  windowTarget.dispatchEvent(new Event('focus'));
+  windowTarget.dispatchEvent(new Event('resume'));
+  assert.equal(recoveries, 5);
 });

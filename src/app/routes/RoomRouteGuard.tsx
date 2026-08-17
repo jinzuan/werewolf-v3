@@ -25,6 +25,8 @@ export function RoomRouteGuard() {
   const recovering = useV3Store((state) => state.recovering);
   const session = useV3Store((state) => state.session);
   const room = useV3Store((state) => state.room);
+  const error = useV3Store((state) => state.error);
+  const resumeSession = useV3Store((state) => state.resumeSession);
 
   if (!code) return <Navigate to="/lobby" replace />;
 
@@ -41,14 +43,23 @@ export function RoomRouteGuard() {
   const waitingForAuthority =
     authorityStatus === 'resolving' ||
     recovering ||
-    (Boolean(session) && !room);
+    (Boolean(session) && !room) ||
+    // A transient transport failure must not turn a still-valid durable
+    // identity into the join form. `clearAuthority` is the only path that
+    // removes the session for a definitive auth/room failure.
+    (Boolean(session) && authorityStatus === 'error');
 
   if (waitingForAuthority) {
     return (
       <AppShell title="正在恢复房间" eyebrow="房间入口" connected={connected}>
         <Card className="v3-empty-state" aria-live="polite">
           <strong>正在核对房间权限</strong>
-          <span>请稍候，页面会自动进入当前允许的视图。</span>
+          <span>{error ?? '请稍候，页面会自动进入当前允许的视图。'}</span>
+          {authorityStatus === 'error' ? (
+            <button type="button" onClick={() => { void resumeSession(); }}>
+              重新连接
+            </button>
+          ) : null}
         </Card>
       </AppShell>
     );
@@ -72,4 +83,3 @@ export function RoomRouteGuard() {
 
   return <Outlet />;
 }
-

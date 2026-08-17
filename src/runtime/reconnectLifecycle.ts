@@ -36,14 +36,23 @@ export const subscribeV3ReconnectLifecycle = (
   };
   const onPageShow: EventListener = () => onReconnect();
   const onOnline: EventListener = () => onReconnect();
+  // iOS Safari and Android webviews do not all emit the same page lifecycle
+  // event after an app switch. `focus` and the Page Lifecycle `resume` event
+  // are cheap additional recovery boundaries for the same socket/session.
+  const onFocus: EventListener = () => onReconnect();
+  const onResume: EventListener = () => onReconnect();
 
   documentTarget?.addEventListener('visibilitychange', onVisibilityChange);
   windowTarget?.addEventListener('pageshow', onPageShow);
   windowTarget?.addEventListener('online', onOnline);
+  windowTarget?.addEventListener('focus', onFocus);
+  windowTarget?.addEventListener('resume', onResume);
 
   return () => {
     documentTarget?.removeEventListener('visibilitychange', onVisibilityChange);
     windowTarget?.removeEventListener('pageshow', onPageShow);
     windowTarget?.removeEventListener('online', onOnline);
+    windowTarget?.removeEventListener('focus', onFocus);
+    windowTarget?.removeEventListener('resume', onResume);
   };
 };
