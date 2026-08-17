@@ -92,29 +92,44 @@ const scheduleSessionCursor = (session: V3Session): void => {
 const newActorId = (): string => safeUuid();
 
 const PENDING_CREATE_KEY = 'werewolf-v3-pending-create';
-type PendingCreate = { createRequestId: string; actorId: string };
+export const PENDING_CREATE_TTL_MS = 2 * 60 * 1000;
+export type PendingCreate = {
+  createRequestId: string;
+  actorId: string;
+  createdAt: number;
+};
 
 const pendingCreateStorage = (): Storage | null =>
   typeof sessionStorage === 'undefined' ? null : sessionStorage;
 
-const readPendingCreate = (): PendingCreate | null => {
+export const readPendingCreate = (now = Date.now()): PendingCreate | null => {
   const target = pendingCreateStorage();
   if (!target) return null;
   try {
     const parsed = JSON.parse(target.getItem(PENDING_CREATE_KEY) ?? 'null') as Partial<PendingCreate> | null;
-    return parsed && typeof parsed.createRequestId === 'string' && typeof parsed.actorId === 'string'
-      ? parsed as PendingCreate
-      : null;
+    if (
+      !parsed ||
+      typeof parsed.createRequestId !== 'string' ||
+      typeof parsed.actorId !== 'string' ||
+      !Number.isSafeInteger(parsed.createdAt) ||
+      parsed.createdAt > now ||
+      now - parsed.createdAt >= PENDING_CREATE_TTL_MS
+    ) {
+      target.removeItem(PENDING_CREATE_KEY);
+      return null;
+    }
+    return parsed as PendingCreate;
   } catch {
+    try { target.removeItem(PENDING_CREATE_KEY); } catch { /* cache only */ }
     return null;
   }
 };
 
-const writePendingCreate = (pending: PendingCreate): void => {
+export const writePendingCreate = (pending: PendingCreate): void => {
   try { pendingCreateStorage()?.setItem(PENDING_CREATE_KEY, JSON.stringify(pending)); } catch { /* cache only */ }
 };
 
-const clearPendingCreate = (): void => {
+export const clearPendingCreate = (): void => {
   try { pendingCreateStorage()?.removeItem(PENDING_CREATE_KEY); } catch { /* cache only */ }
 };
 
@@ -979,6 +994,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
       const pending = readPendingCreate() ?? {
         createRequestId: newActorId(),
         actorId: newActorId(),
+        createdAt: Date.now(),
       };
       writePendingCreate(pending);
       clearAuthority();
@@ -1002,6 +1018,20 @@ export const useV3Store = create<V3Store>()((set, get) => {
         if (accepted && isRoomStatusWithGame(response.room.status)) {
           await recoverGameProjection();
         }
+        return response;
+      } catch (error) {
+        // An exception that escapes the transport adapter is not safely
+        // replayable. Do not let it poison the next room creation attempt.
+        clearPendingCreate();
+        const message = error instanceof Error && error.message
+          ? error.message
+          : '创建房间失败，请重试。';
+        const response = {
+          ok: false as const,
+          code: 'UNKNOWN_ERROR' as const,
+          message,
+        };
+        set({ authorityStatus: 'error', error: responseMessage(response) });
         return response;
       } finally {
         set({ loading: false });
