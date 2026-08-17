@@ -223,11 +223,27 @@ export function WaitingRoomPage() {
           </div>
         ) : null}
 
+        <RoomActions
+          room={room}
+          currentMember={currentMember}
+          pendingAction={pendingAction}
+          onSetReady={ready}
+          onBeginReadyCheck={begin}
+          onCancelReadyCheck={cancel}
+          onStartGame={start}
+          onInvite={() => void onCopyInvite()}
+          onUpdateConfig={() => setConfigEditorOpen(true)}
+          onTransferHost={transferHost}
+          onDissolve={dissolve}
+          onLeave={leave}
+        />
+
         <SelfReadyCard
           room={room}
           member={currentMember}
           pending={pendingAction === 'set_ready' || pendingRoomCommand === 'room.ready'}
           locked={locked || loading}
+          showAction={false}
           onSetReady={ready}
         />
 
@@ -248,19 +264,6 @@ export function WaitingRoomPage() {
           onUpdateConfig={() => setConfigEditorOpen(true)}
           aiSummary={aiSummary}
           onUpdateAIConfig={openAIConfigEditor}
-        />
-        <RoomActions
-          room={room}
-          currentMember={currentMember}
-          pendingAction={pendingAction}
-          onBeginReadyCheck={begin}
-          onCancelReadyCheck={cancel}
-          onStartGame={start}
-          onInvite={() => void onCopyInvite()}
-          onUpdateConfig={() => setConfigEditorOpen(true)}
-          onTransferHost={transferHost}
-          onDissolve={dissolve}
-          onLeave={leave}
         />
 
         <RoomConfigEditor

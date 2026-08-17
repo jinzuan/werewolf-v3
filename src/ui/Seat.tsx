@@ -21,7 +21,7 @@ interface SeatProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'child
 
 const kindLabels: Record<SeatKind, string> = {
   player: '玩家',
-  computer: '电脑',
+  computer: 'AI',
   spectator: '观战',
   empty: '空席',
 };

@@ -1300,7 +1300,9 @@ select {
 .v3-player-seat:disabled { cursor: default; }
 .v3-player-seat__number { position: absolute; top: 5px; left: 7px; color: var(--ww-text-muted); font: 600 var(--ww-text-caption-size)/20px var(--ww-font-family-number); }
 .v3-player-seat__avatar { width: 48px; height: 48px; display: grid; place-items: center; border: 1.5px solid var(--ww-border-strong); border-radius: 50%; background: var(--ww-bg-raised); color: var(--ww-text-strong); }
-.v3-player-seat strong { width: 100%; min-width: 0; overflow: hidden; color: var(--ww-text-strong); text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.v3-player-seat__name { width: 100%; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 5px; }
+.v3-player-seat__name strong { min-width: 0; overflow: hidden; color: var(--ww-text-strong); text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.v3-ai-label { display: inline-flex; flex: 0 0 auto; align-items: center; padding: 1px 5px; border-radius: var(--ww-radius-pill); background: color-mix(in srgb, var(--ww-state-info) 18%, var(--ww-bg-subtle)); color: var(--ww-state-info); font-size: 11px; font-weight: 700; line-height: 16px; white-space: nowrap; }
 .v3-player-seat__status { display: inline-flex; align-items: center; gap: 3px; max-width: 100%; overflow: hidden; color: var(--ww-state-success); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .v3-player-seat.is-dead { filter: saturate(.45); }
 .v3-player-seat.is-dead .v3-player-seat__status { color: var(--ww-state-danger); }

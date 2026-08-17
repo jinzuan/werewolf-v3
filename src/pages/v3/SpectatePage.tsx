@@ -110,7 +110,7 @@ export function SpectatePage() {
                 <div key={player.id}>
                   <ShieldQuestion size={16} />
                   <span>
-                    {player.order.toString().padStart(2, '0')} {player.name} · {player.isAlive ? '存活' : '已出局'}
+                    {player.order.toString().padStart(2, '0')} {player.name}{player.isAI ? <> <span className="v3-ai-label">AI</span></> : null} · {player.isAlive ? '存活' : '已出局'}
                   </span>
                 </div>
               ))}

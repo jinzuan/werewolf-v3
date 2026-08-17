@@ -1,3 +1,4 @@
+import { randomInt as cryptoRandomInt } from 'node:crypto';
 import type { EventStore } from '../../shared/events';
 import type { RoomSnapshotReason, StartCheck } from '../../shared/roomContract';
 import type { Player, Role } from '../../shared/types';
@@ -14,6 +15,7 @@ import {
 import {
   buildRoleDeck,
   RoleDeckError,
+  secureShuffle,
   type SecureRandomIndex,
 } from './roleDeckBuilder';
 import type {
@@ -351,8 +353,17 @@ const cachedOutcome = (
 const createAIId = (room: RoomRecord, seatIndex: number): string =>
   `ai:${room.id}:${seatIndex}`;
 
-const createAIName = (seatIndex: number): string =>
-  `电脑 ${String(seatIndex + 1).padStart(2, '0')}`;
+/** Names are assigned once when the start claim adds the AI roster. */
+export const AI_NAME_POOL = [
+  '小雨', '阿杰', '小雅', '阿诚', '小安', '小北', '子轩', '梓涵',
+  '浩然', '思远', '清风', '星河', '王大锤', '李大嘴', '张三', '赵六',
+  '不吃香菜', '摸鱼王', '稳住别浪', '全村希望', '隔壁老王', '今天吃啥',
+  '锅盖侠', '躺赢选手', '平平无奇', '先苟一波', '好运来', '村口老张',
+] as const;
+
+const createAINames = (
+  count: number,
+): string[] => secureShuffle(AI_NAME_POOL, cryptoRandomInt).slice(0, count);
 
 const nextSeatIndex = (members: readonly RoomMember[]): number => {
   const used = new Set(
@@ -411,6 +422,7 @@ const addComputerMembers = (
   plan: AIFillPlan,
 ): string[] => {
   const addedIds: string[] = [];
+  const names = createAINames(plan.seatsToAdd);
   for (let index = 0; index < plan.seatsToAdd; index += 1) {
     const seatIndex = nextSeatIndex(room.members);
     const id = createAIId(room, seatIndex);
@@ -423,7 +435,7 @@ const addComputerMembers = (
     }
     room.members.push({
       id,
-      name: createAIName(seatIndex),
+      name: names[index],
       kind: 'player',
       omniscient: false,
       resumeToken: '',

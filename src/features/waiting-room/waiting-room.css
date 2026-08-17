@@ -244,6 +244,15 @@
 .waiting-room__config,
 .waiting-room__actions { display: grid; gap: var(--ww-space-4); }
 
+.waiting-room__action-flow {
+  display: grid;
+  gap: var(--ww-space-2);
+  padding: var(--ww-space-3);
+  border: 1.5px solid color-mix(in srgb, var(--ww-action-primary) 55%, var(--ww-border-default));
+  border-radius: var(--ww-radius-control);
+  background: color-mix(in srgb, var(--ww-bg-subtle) 82%, var(--ww-action-primary));
+}
+
 .waiting-room__spectator-list { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 .waiting-room__spectator { min-width: 0; display: flex; align-items: center; gap: var(--ww-space-3); padding: var(--ww-space-3); border: 1.5px solid var(--ww-border-default); border-radius: var(--ww-radius-control); background: var(--ww-bg-raised); }
 .waiting-room__spectator-avatar { width: 36px; height: 36px; display: grid; place-items: center; flex: 0 0 auto; border: 1.5px solid var(--ww-focus-ring); border-radius: 50%; color: var(--ww-focus-ring); }
@@ -293,6 +302,9 @@
 .waiting-room__action-list { align-items: stretch; flex-wrap: wrap; }
 .waiting-room__action-list .v3-button { flex: 0 1 auto; }
 .waiting-room__action-list .v3-button--action { min-width: 150px; }
+.waiting-room__action-list--flow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.waiting-room__action-list--flow .v3-button { width: 100%; }
+.waiting-room__action-list--secondary { padding-top: var(--ww-space-2); border-top: 1.5px solid var(--ww-border-default); }
 .waiting-room__action-hint,
 .waiting-room__action-blocker { flex: 1 1 100%; margin: 0; }
 .waiting-room__action-blocker {
@@ -329,12 +341,12 @@
   .waiting-room__workspace { display: contents; }
   .waiting-room__header-card { order: 1; padding: var(--ww-space-4); }
   .waiting-room__error { order: 2; margin: 0; }
-  .waiting-room__self-ready { order: 3; }
-  .waiting-room__checks { order: 4; }
-  .waiting-room__players { order: 5; }
-  .waiting-room__spectators { order: 6; }
-  .waiting-room__config { order: 7; }
-  .waiting-room__actions { order: 8; }
+  .waiting-room__actions { order: 3; }
+  .waiting-room__self-ready { order: 4; }
+  .waiting-room__checks { order: 5; }
+  .waiting-room__players { order: 6; }
+  .waiting-room__spectators { order: 7; }
+  .waiting-room__config { order: 8; }
   .waiting-room__footer-note { order: 9; }
   .waiting-room__header-main { align-items: flex-start; }
   .waiting-room__header-main h1 { font-size: var(--ww-text-page-title-size); line-height: var(--ww-text-page-title-line); }
@@ -350,6 +362,7 @@
   .waiting-room__seat-grid .ww-seat { min-height: 112px; }
   .waiting-room__config-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .waiting-room__action-list { display: grid; grid-template-columns: 1fr; }
+  .waiting-room__action-list--flow { grid-template-columns: 1fr; }
   .waiting-room__action-list .v3-button,
   .waiting-room__action-list .v3-button--action { width: 100%; min-width: 0; }
   .waiting-room__editor-grid,

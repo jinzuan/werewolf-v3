@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { InMemoryEventStore } from '../events/store';
 import {
+  AI_NAME_POOL,
   GameStartCoordinator,
   GameStartError,
   type GameStartResult,
@@ -104,6 +105,12 @@ test('start CAS fills exactly the configured AI seats and deals persisted setup'
   assert.equal(result.room.status, 'playing');
   assert.equal(result.players.length, 4);
   assert.equal(result.room.members.filter((member) => member.isAI).length, 3);
+  const aiNames = result.room.members
+    .filter((member) => member.isAI)
+    .map((member) => member.name);
+  assert.equal(new Set(aiNames).size, aiNames.length);
+  assert.ok(aiNames.every((name) => AI_NAME_POOL.includes(name as (typeof AI_NAME_POOL)[number])));
+  assert.ok(aiNames.every((name) => !name.startsWith('电脑')));
   assert.deepEqual(
     result.players.map((player) => player.role).sort(),
     ['seer', 'villager', 'villager', 'wolf'].sort(),

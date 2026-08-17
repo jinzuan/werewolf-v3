@@ -143,7 +143,7 @@ export function MatchResultPage() {
             {players.map((player) => (
               <div key={player.id} className={!player.isAlive ? 'is-dead' : undefined}>
                 <span className="v3-numeric">{String(player.order).padStart(2, '0')}</span>
-                <strong>{player.name}{player.isAI ? ' · 电脑玩家' : ''}</strong>
+                <strong>{player.name}{player.isAI ? <> <span className="v3-ai-label">AI</span></> : null}</strong>
                 <span>{player.role ? ROLE_LABELS[player.role] : '身份未公开'}</span>
                 <Badge tone={player.isAlive ? 'success' : 'danger'}>
                   {player.isAlive ? '存活' : '已出局'}

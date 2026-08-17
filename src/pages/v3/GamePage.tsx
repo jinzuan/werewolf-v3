@@ -333,7 +333,10 @@ export function GamePage() {
                       <span className="v3-player-seat__avatar">
                         <UserRound size={22} />
                       </span>
-                      <strong>{player.name}</strong>
+                      <span className="v3-player-seat__name">
+                        <strong>{player.name}</strong>
+                        {player.isAI ? <span className="v3-ai-label">AI</span> : null}
+                      </span>
                       <span className="v3-player-seat__status">
                         {!player.isAlive ? (
                           <Skull size={13} />

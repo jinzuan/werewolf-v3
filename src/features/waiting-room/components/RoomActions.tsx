@@ -1,4 +1,4 @@
-import { AlertOctagon, ArrowRightLeft, LogOut, Play, RotateCcw, Settings2, ShieldAlert, UserPlus } from 'lucide-react';
+import { AlertOctagon, ArrowRightLeft, CheckCircle, LogOut, Play, RotateCcw, Settings2, ShieldAlert, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import type {
   AllowedRoomAction,
@@ -15,6 +15,7 @@ interface RoomActionsProps {
   room: RoomViewV31;
   currentMember: RoomMemberViewV31 | undefined;
   pendingAction: AllowedRoomAction | null;
+  onSetReady: (ready: boolean) => void;
   onBeginReadyCheck: () => void;
   onCancelReadyCheck: () => void;
   onStartGame: () => void;
@@ -29,6 +30,7 @@ export function RoomActions({
   room,
   currentMember,
   pendingAction,
+  onSetReady,
   onBeginReadyCheck,
   onCancelReadyCheck,
   onStartGame,
@@ -41,6 +43,8 @@ export function RoomActions({
   const [dangerOpen, setDangerOpen] = useState(false);
   const locked = room.status === 'starting';
   const isHost = currentMember?.isHost === true;
+  const isPlayer = room.viewer.kind === 'player' && currentMember?.kind === 'player';
+  const ready = currentMember?.ready === true;
   const can = (action: AllowedRoomAction) => isActionAllowed(room, action);
   const failedChecksFor = (action: 'begin_ready_check' | 'start_game') => room.startCheck.items
     .filter((item) => !item.passed)
@@ -75,18 +79,9 @@ export function RoomActions({
         {isHost ? <Badge tone="gold">房主</Badge> : null}
       </div>
 
-      <div className="waiting-room__action-list">
-        {isHost && can('update_config') ? (
-          <Button
-            variant="secondary"
-            disabled={locked || busy('update_config')}
-            onClick={onUpdateConfig}
-          >
-            <Settings2 size={17} aria-hidden="true" />
-            修改房间设置
-          </Button>
-        ) : null}
-
+      <div className="waiting-room__action-flow" aria-label="开局流程">
+        <span className="waiting-room__eyebrow">开局流程</span>
+        <div className="waiting-room__action-list waiting-room__action-list--flow">
         {isHost && room.status === 'waiting' ? (
           <>
             <Button
@@ -107,14 +102,15 @@ export function RoomActions({
           </>
         ) : null}
 
-        {isHost && can('cancel_ready_check') ? (
+        {isPlayer && room.status === 'ready_check' && can('set_ready') ? (
           <Button
-            variant="secondary"
-            disabled={locked || busy('cancel_ready_check')}
-            onClick={onCancelReadyCheck}
+            variant={ready ? 'secondary' : 'primary'}
+            size="action"
+            disabled={locked || busy('set_ready')}
+            onClick={() => onSetReady(!ready)}
           >
-            <RotateCcw size={17} aria-hidden="true" />
-            {busy('cancel_ready_check') ? '正在返回设置…' : '返回设置'}
+            <CheckCircle size={17} aria-hidden="true" />
+            {busy('set_ready') ? '正在提交准备…' : ready ? '取消准备' : '确认准备'}
           </Button>
         ) : null}
 
@@ -128,7 +124,7 @@ export function RoomActions({
               onClick={onStartGame}
             >
               <Play size={18} aria-hidden="true" />
-              {busy('start_game') ? '正在开局…' : '开始对局'}
+              {busy('start_game') ? '正在开局…' : '开始游戏'}
             </Button>
             {!can('start_game') ? (
               <p id="start-game-reason" className="waiting-room__action-blocker" role="status">
@@ -136,6 +132,31 @@ export function RoomActions({
               </p>
             ) : null}
           </>
+        ) : null}
+        </div>
+      </div>
+
+      <div className="waiting-room__action-list waiting-room__action-list--secondary">
+        {isHost && can('update_config') ? (
+          <Button
+            variant="secondary"
+            disabled={locked || busy('update_config')}
+            onClick={onUpdateConfig}
+          >
+            <Settings2 size={17} aria-hidden="true" />
+            修改房间设置
+          </Button>
+        ) : null}
+
+        {isHost && can('cancel_ready_check') ? (
+          <Button
+            variant="secondary"
+            disabled={locked || busy('cancel_ready_check')}
+            onClick={onCancelReadyCheck}
+          >
+            <RotateCcw size={17} aria-hidden="true" />
+            {busy('cancel_ready_check') ? '正在返回设置…' : '返回设置'}
+          </Button>
         ) : null}
 
         {can('invite') ? (

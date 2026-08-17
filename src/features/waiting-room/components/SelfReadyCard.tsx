@@ -10,6 +10,7 @@ interface SelfReadyCardProps {
   member: RoomMemberViewV31 | undefined;
   pending: boolean;
   locked: boolean;
+  showAction?: boolean;
   onSetReady: (ready: boolean) => void;
 }
 
@@ -18,6 +19,7 @@ export function SelfReadyCard({
   member,
   pending,
   locked,
+  showAction = true,
   onSetReady,
 }: SelfReadyCardProps) {
   const isPlayer = room.viewer.kind === 'player' && member?.kind === 'player';
@@ -42,7 +44,7 @@ export function SelfReadyCard({
             tone={ready ? 'success' : member.connected ? 'warning' : 'danger'}
             label={pending ? '正在提交准备状态…' : memberReadyLabel(member)}
           />
-          {canSetReady ? (
+          {showAction && canSetReady ? (
             <Button
               variant={ready ? 'secondary' : 'primary'}
               size="action"
@@ -54,7 +56,11 @@ export function SelfReadyCard({
             </Button>
           ) : (
             <span className="waiting-room__muted-action">
-              {room.status === 'waiting' ? '等房主开始准备检查' : '当前暂不能修改准备状态'}
+              {!showAction && room.status === 'ready_check'
+                ? '请在上方开局流程中确认准备'
+                : room.status === 'waiting'
+                  ? '等房主开始准备检查'
+                  : '当前暂不能修改准备状态'}
             </span>
           )}
         </div>
