@@ -62,6 +62,8 @@ interface ResponseEnvelope {
   data?: unknown;
 }
 
+const MAX_REDIRECTS = 3;
+
 const endpointFor = (config: ServerAIConfig): string => {
   if (config.apiType === 'siliconflow') {
     return 'https://api.siliconflow.cn/v1/chat/completions';
@@ -392,51 +394,102 @@ export class HttpAIProvider implements AIProvider {
       }, this.timeoutMs);
     });
     try {
-      const response = await Promise.race([
-        this.safeHttpClient.request(this.settings.endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(this.settings.apiKey
-              ? { Authorization: `Bearer ${this.settings.apiKey}` }
-              : {}),
-          },
-          body: JSON.stringify({
-            model: this.settings.model,
-            temperature: this.settings.temperature,
-            max_tokens: this.settings.maxTokens,
-            response_format: { type: 'json_object' },
-            messages: [
-              { role: 'system', content: prompt.system },
-              { role: 'user', content: prompt.user },
-            ],
-          }),
-          redirect: 'manual',
-          signal: controller.signal,
-          endpointContext: {
-            provider: this.settings.provider,
-            allowReservedTestHost: this.testTransport,
-          },
+      const requestOptions = {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.settings.apiKey
+            ? { Authorization: `Bearer ${this.settings.apiKey}` }
+            : {}),
+        },
+        body: JSON.stringify({
+          model: this.settings.model,
+          temperature: this.settings.temperature,
+          max_tokens: this.settings.maxTokens,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: prompt.system },
+            { role: 'user', content: prompt.user },
+          ],
         }),
-        timeout,
-      ]);
-      if (response.status === 429) {
-        return { status: response.status, headers: response.headers };
+        redirect: 'manual' as const,
+        signal: controller.signal,
+        endpointContext: {
+          provider: this.settings.provider,
+          allowReservedTestHost: this.testTransport,
+        },
+      };
+      const originalEndpoint = new URL(this.settings.endpoint);
+      let requestEndpoint = this.settings.endpoint;
+      let redirectCount = 0;
+
+      while (true) {
+        const response = await Promise.race([
+          this.safeHttpClient.request(requestEndpoint, requestOptions),
+          timeout,
+        ]);
+        if (response.status === 429) {
+          return { status: response.status, headers: response.headers };
+        }
+        if (response.status >= 300 && response.status < 400) {
+          if (redirectCount >= MAX_REDIRECTS) {
+            throw new ProviderError(
+              'redirect_blocked',
+              0,
+              response.status,
+              'TOO_MANY_REDIRECTS',
+            );
+          }
+          const location = response.headers.get('location');
+          if (!location) {
+            throw new ProviderError(
+              'redirect_blocked',
+              0,
+              response.status,
+              'MISSING_LOCATION',
+            );
+          }
+          let redirectEndpoint: URL;
+          try {
+            redirectEndpoint = new URL(location, requestEndpoint);
+          } catch {
+            throw new ProviderError(
+              'redirect_blocked',
+              0,
+              response.status,
+              'INVALID_LOCATION',
+            );
+          }
+          // Never let a provider redirect change the transport scheme or host.
+          // SafeHttpClient validates this URL again and pins its DNS answer
+          // before every redirected request.
+          if (
+            redirectEndpoint.protocol !== 'https:' ||
+            redirectEndpoint.hostname !== originalEndpoint.hostname
+          ) {
+            throw new ProviderError(
+              'redirect_blocked',
+              0,
+              response.status,
+              'UNSAFE_LOCATION',
+            );
+          }
+          requestEndpoint = redirectEndpoint.toString();
+          redirectCount += 1;
+          continue;
+        }
+        if (!response.ok) {
+          throw new ProviderError('http_error', 0, response.status);
+        }
+        let data: unknown;
+        try {
+          data = await Promise.race([response.json(), timeout]);
+        } catch (error) {
+          if (error instanceof ProviderError) throw error;
+          throw new ProviderError('invalid_response', 0);
+        }
+        return { status: response.status, headers: response.headers, data };
       }
-      if (response.status >= 300 && response.status < 400) {
-        throw new ProviderError('redirect_blocked', 0, response.status);
-      }
-      if (!response.ok) {
-        throw new ProviderError('http_error', 0, response.status);
-      }
-      let data: unknown;
-      try {
-        data = await Promise.race([response.json(), timeout]);
-      } catch (error) {
-        if (error instanceof ProviderError) throw error;
-        throw new ProviderError('invalid_response', 0);
-      }
-      return { status: response.status, headers: response.headers, data };
     } finally {
       if (timer !== undefined) clearTimeout(timer);
       parentSignal.removeEventListener('abort', abortFromParent);
