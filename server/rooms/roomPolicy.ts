@@ -432,6 +432,10 @@ export class RoomPolicy {
     }
     if (isHost && status === 'ready_check') {
       actions.add('cancel_ready_check');
+      // AI tuning is an independent host-only patch. Keep it available after
+      // rooms enter the default preparation phase; the full room rules remain
+      // locked and the patch still clears human readiness when it changes.
+      actions.add('update_ai_config');
       if (check.passed && isHumanPlayer) actions.add('start_game');
       if (canTransfer(room, this.options.isConnected)) actions.add('transfer_host');
     }

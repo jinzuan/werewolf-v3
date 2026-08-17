@@ -109,7 +109,7 @@ test('RoomPolicy authorizes only server-computed room actions', () => {
   });
   const policy = new RoomPolicy();
   assert.deepEqual(policy.allowedRoomActions(current, 'guest'), ['set_ready', 'leave']);
-  assert.deepEqual(policy.allowedRoomActions(current, 'host'), ['cancel_ready_check', 'set_ready', 'leave', 'invite', 'transfer_host', 'dissolve']);
+  assert.deepEqual(policy.allowedRoomActions(current, 'host'), ['update_ai_config', 'cancel_ready_check', 'set_ready', 'leave', 'invite', 'transfer_host', 'dissolve']);
   assert.equal(policy.canStart(current, 'host'), false);
 
   const ready = room({
