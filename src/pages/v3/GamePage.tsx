@@ -18,6 +18,7 @@ import { Card } from '../../ui/Card';
 import { ChatBubble } from '../../ui/ChatBubble';
 import { Input } from '../../ui/Input';
 import { RoleCard } from '../../ui/RoleCard';
+import { RoleRevealCard } from '../../ui/RoleRevealCard';
 import {
   ACTION_DEFINITIONS,
   buildGameCommand,
@@ -88,6 +89,8 @@ export function GamePage() {
     selectedTarget: null,
     message: '',
   });
+  const [roleRevealed, setRoleRevealed] = useState(false);
+  const [roleInfoOpen, setRoleInfoOpen] = useState(false);
 
   const state = snapshot?.gameState ?? null;
   const players = useMemo(() => snapshot?.players ?? [], [snapshot?.players]);
@@ -171,6 +174,21 @@ export function GamePage() {
   const isSpeechEvent = (event: (typeof visibleEvents)[number]): boolean =>
     event.eventType === 'day.speech' || event.eventType === 'wolf.message';
   const firstAllowedAction = isEliminated ? null : allowedActions[0] ?? null;
+
+  const isRoleConfirmation = state?.phase === 'role_confirm';
+  const canConfirmRole = isRoleConfirmation && allowedActions.includes('confirm_role');
+
+  useEffect(() => {
+    if (!isRoleConfirmation || !myPlayer?.role) {
+      setRoleRevealed(false);
+      setRoleInfoOpen(false);
+      return undefined;
+    }
+    setRoleRevealed(false);
+    setRoleInfoOpen(false);
+    const timer = window.setTimeout(() => setRoleRevealed(true), 520);
+    return () => window.clearTimeout(timer);
+  }, [isRoleConfirmation, myPlayer?.role]);
 
   useLayoutEffect(() => {
     setActionDraft({
@@ -307,20 +325,42 @@ export function GamePage() {
                   {myPlayer.role === 'wolf' ? '狼人阵营' : '好人阵营'}
                 </Badge>
               </div>
-              <RoleCard
-                role={myPlayer.role}
-                name={ROLE_LABELS[myPlayer.role]}
-                faction={myPlayer.role === 'wolf' ? '狼人阵营' : '好人阵营'}
-                factionTone={myPlayer.role === 'wolf' ? 'wolf' : 'village'}
-                description={ROLE_DESCRIPTIONS[myPlayer.role]}
-              />
-              {state?.phase === 'role_confirm' ? (
-                <p className="v3-panel-copy">
-                  {allowedActions.includes('confirm_role')
-                    ? '请确认你已查看身份牌；确认后首夜将开始。'
-                    : '身份牌已确认，等待其他玩家。'}
-                </p>
-              ) : null}
+              {isRoleConfirmation ? (
+                <>
+                  <RoleRevealCard
+                    role={myPlayer.role}
+                    faction={myPlayer.role === 'wolf' ? '狼人阵营' : '好人阵营'}
+                    factionTone={myPlayer.role === 'wolf' ? 'wolf' : 'village'}
+                    description={ROLE_DESCRIPTIONS[myPlayer.role]}
+                    revealed={roleRevealed}
+                    infoOpen={roleInfoOpen}
+                    onReveal={() => setRoleRevealed((current) => !current)}
+                    onToggleInfo={() => setRoleInfoOpen((current) => !current)}
+                  />
+                  <div className="v3-role-confirm">
+                    <p className="v3-panel-copy">
+                      {canConfirmRole ? '请确认你已查看身份牌；确认后首夜将开始。' : '身份牌已确认，等待其他玩家。'}
+                    </p>
+                    {canConfirmRole ? (
+                      <Button
+                        disabled={loading || !roleRevealed}
+                        onClick={() => void submitAction()}
+                      >
+                        <Check size={17} />
+                        确认身份
+                      </Button>
+                    ) : null}
+                  </div>
+                </>
+              ) : (
+                <RoleCard
+                  role={myPlayer.role}
+                  name={ROLE_LABELS[myPlayer.role]}
+                  faction={myPlayer.role === 'wolf' ? '狼人阵营' : '好人阵营'}
+                  factionTone={myPlayer.role === 'wolf' ? 'wolf' : 'village'}
+                  description={ROLE_DESCRIPTIONS[myPlayer.role]}
+                />
+              )}
             </Card>
           ) : null}
           <MatchShell
@@ -432,7 +472,7 @@ export function GamePage() {
                 </div>
               ) : null}
 
-              {allowedActions.length ? (
+              {allowedActions.length && activeAction !== 'confirm_role' ? (
                 <>
                   <div
                     className="v3-action-tabs"
@@ -554,6 +594,10 @@ export function GamePage() {
                     </Button>
                   </div>
                 </>
+              ) : allowedActions.includes('confirm_role') ? (
+                <div className="v3-inline-note">
+                  身份确认按钮已放在身份牌下方，请先查看卡牌。
+                </div>
               ) : (
                 <div className="v3-inline-note">
                   当前视角没有可提交的行动，等待服务端推送下一阶段。

@@ -720,6 +720,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
       current.session.actorId,
       current.session.roomCode,
       current.session.roomId,
+      true,
     );
     if (response.ok === false) {
       set({ error: responseMessage(response) });

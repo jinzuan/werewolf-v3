@@ -263,7 +263,19 @@ export class ReviewPipeline {
       const generator = job.generationMode === 'ai'
         ? this.aiGenerator
         : this.rulesGenerator;
-      if (!generator) throw new Error('REVIEW_AI_GENERATOR_UNAVAILABLE');
+      if (!generator && job.generationMode === 'ai') {
+        // A god-view archive is still useful without an LLM. Complete the job
+        // with no generated copy so the UI can explicitly say it degraded.
+        return this.repository.save({
+          ...job,
+          status: 'completed',
+          messages: [],
+          insights: [],
+          runningSince: undefined,
+          errorCode: undefined,
+        });
+      }
+      if (!generator) throw new Error('REVIEW_GENERATOR_UNAVAILABLE');
       const generated = await generator.generate({
         archive: clone(job.archive),
         events: clone(job.archive.events),

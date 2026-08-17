@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { BookOpen, Circle, Skull, Trophy } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import type { ReviewDeathCause, ReviewTimelineEntry } from '../../../shared/reviewContract';
 import { AppShell } from '../../components/shell/AppShell';
 import { useV3Store } from '../../stores/v3Store';
 import { Badge } from '../../ui/Badge';
@@ -25,7 +26,20 @@ const winnerLabel = (winner: 'wolf' | 'good' | 'draw' | null): string =>
       ? '好人阵营获胜'
       : winner === 'draw'
         ? '本局平局'
-        : '胜负结果待恢复';
+      : '胜负结果待恢复';
+
+const deathCauseLabel: Record<ReviewDeathCause, string> = {
+  night_kill: '🌙 夜刀',
+  vote: '🗳️ 票出',
+  poison: '💊 毒杀',
+  hunter_shot: '🔫 枪击',
+};
+
+const deathTiming = (cause: ReviewDeathCause, day: number): string =>
+  cause === 'night_kill' || cause === 'poison' ? `第${day}夜` : `第${day}天`;
+
+const timelineLabel = (entry: ReviewTimelineEntry): string =>
+  entry.summary || '对局事件已记录';
 
 export function MatchResultPage() {
   const connected = useV3Store((state) => state.connected);
@@ -91,8 +105,10 @@ export function MatchResultPage() {
     );
   }
 
-  const players = resultPlayers(snapshot);
-  const deaths = resultDeaths(snapshot, events);
+  const godReview = review?.omniscient === true ? review : null;
+  const godView = godReview !== null;
+  const players = godReview?.players ?? resultPlayers(snapshot);
+  const deaths = godReview?.deaths ?? resultDeaths(snapshot, events);
   const replay = reviewEvents(events);
   const winner = resultWinner(snapshot, events);
   const playerName = (id: string | null) =>
@@ -114,18 +130,20 @@ export function MatchResultPage() {
       <div className="v3-result-grid">
         <Card>
           <div className="v3-panel-heading">
-            <div><span>本局变化</span><h2>死亡记录</h2></div>
+            <div><span>{godView ? '上帝视角 · 死因已还原' : '本局变化'}</span><h2>死亡记录</h2></div>
             <Skull size={18} />
           </div>
           {deaths.length === 0 ? (
             <p className="v3-inline-note">本局没有记录到出局玩家。</p>
           ) : (
-            <div className="v3-summary-list">
+            <div className="v3-summary-list v3-result-deaths">
               {deaths.map((death) => (
                 <div key={`${death.playerId}:${death.sequence}`}>
                   <Skull size={16} />
                   <span>
-                    第 {death.day} 天 · {death.name} · {death.reason}
+                    {'cause' in death
+                      ? `${deathTiming(death.cause, death.day)} · ${deathCauseLabel[death.cause]} · ${death.name}`
+                      : `第 ${death.day} 天 · ${death.name} · ${death.reason}`}
                     {death.role ? ` · ${ROLE_LABELS[death.role]}` : ''}
                   </span>
                 </div>
@@ -155,11 +173,24 @@ export function MatchResultPage() {
       </div>
 
       <Card>
-        <div className="v3-panel-heading">
-          <div><span>按本视角可见内容</span><h2>对局时间线</h2></div>
-          <Badge tone="info">{replay.length} 条记录</Badge>
+          <div className="v3-panel-heading">
+          <div><span>{godView ? '上帝视角 · 所有行动与投票' : '按本视角可见内容'}</span><h2>对局时间线</h2></div>
+          <Badge tone="info">{godReview ? godReview.timeline.length : replay.length} 条记录</Badge>
         </div>
-        {replay.length === 0 ? (
+        {godReview && godReview.timeline.length > 0 ? (
+          <div className="v3-timeline v3-result-timeline">
+            {godReview.timeline.map((event) => (
+              <div key={event.eventId}>
+                <time>{formatEventTime(event.occurredAt)}</time>
+                <span className="v3-timeline__dot v3-timeline__dot--gold" />
+                <div>
+                  <strong>{timelineLabel(event)}</strong>
+                  <span>第 {event.sequence} 条服务端事件 · {event.eventType}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : replay.length === 0 ? (
           <p className="v3-inline-note">复盘记录正在恢复，或本局没有可公开的记录。</p>
         ) : (
           <div className="v3-timeline">
@@ -196,10 +227,12 @@ export function MatchResultPage() {
           <p className="v3-inline-note">本房间未启用局后复盘；服务端仍已保存本局权威时间线。</p>
         ) : review.status === 'failed' ? (
           <p className="v3-inline-note">复盘暂时未完成（{review.errorCode ?? '服务端处理失败'}），本局时间线不受影响。</p>
+        ) : review.generationMode === 'ai' && review.messages.length === 0 && review.insights.length === 0 ? (
+          <p className="v3-inline-note">未配置 LLM Key，已降级为纯上帝视角复盘；完整身份、行动和死因时间线仍可查看。</p>
         ) : (
-          <div className="v3-summary-list">
-            {review.messages.map((message) => (
-              <div key={message.id}><BookOpen size={16} /><span>{message.text}</span></div>
+          <div className="v3-summary-list v3-result-ai-copy">
+            {review.messages.map((message, index) => (
+              <div key={message.id}><BookOpen size={16} /><span><strong>{index === 0 ? 'AI 总结' : index === 1 ? '关键转折' : '总结发言'}：</strong>{message.text}</span></div>
             ))}
             {review.insights.map((insight) => (
               <div key={insight.id}><BookOpen size={16} /><span>角色心得：{insight.text}</span></div>

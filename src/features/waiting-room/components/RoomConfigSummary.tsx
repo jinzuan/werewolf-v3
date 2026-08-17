@@ -66,6 +66,7 @@ export function RoomConfigSummary({ room, onUpdateConfig, aiSummary, onUpdateAIC
         <div><dt>补位策略</dt><dd>{FILL_LABELS[config.aiFillPolicy]}</dd></div>
         <div><dt>准备规则</dt><dd>所有在线真人准备</dd></div>
         <div><dt>规则集</dt><dd>{config.rulesetVersion}</dd></div>
+        <div><dt>局后复盘</dt><dd>{config.reviewEnabled ? (config.reviewMode === 'ai' ? 'AI 复盘' : '上帝视角') : '关闭'}</dd></div>
       </dl>
 
       <div className="waiting-room__role-summary">

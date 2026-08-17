@@ -5,7 +5,7 @@ import type {
   RoomAccess,
   RoomView,
 } from '../../shared/protocol';
-import type { RoomAIProviderConfig } from '../../shared/roomContract';
+import type { RoomAIProviderConfig, RoomReviewMode } from '../../shared/roomContract';
 import type { Player, Role } from '../../shared/types';
 import type { SessionSnapshot } from '../session/types';
 import type { RuntimeEnvironment } from '../runtimeConfig';
@@ -48,6 +48,7 @@ export interface RoomConfigRecord {
   /** Useful to policy/diagnostic code without exposing storage provenance. */
   migratedFrom?: number;
   reviewEnabled?: boolean;
+  reviewMode?: RoomReviewMode;
   /** Non-sensitive provider tuning; credential values live in SecretStore. */
   aiProviderConfig?: RoomAIProviderConfig;
   /** Random reference into the room-scoped SecretStore. */

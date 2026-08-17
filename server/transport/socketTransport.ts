@@ -512,7 +512,7 @@ export function bindSocketTransport(
             if (command.payload.roomCode !== identity.roomCode) {
               throw new RoomServiceError({ code: 'ROOM_MISMATCH', messageKey: 'room.error.room_mismatch' });
             }
-            ack?.({ ok: true, review: await rooms.review(identity) });
+            ack?.({ ok: true, review: await rooms.review(identity, command.payload.godView === true) });
             return;
           }
 

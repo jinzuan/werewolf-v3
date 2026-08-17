@@ -1596,7 +1596,7 @@ export class RoomService {
     return result as EventHistoryPage;
   }
 
-  async review(identity: SocketIdentity) {
+  async review(identity: SocketIdentity, godView = false) {
     const room = await this.requireRoom(identity.roomCode);
     assertIdentityRoom(identity, room);
     const gameId = room.gameId ?? room.session?.state.gameId;
@@ -1607,22 +1607,25 @@ export class RoomService {
         roomId: room.id,
         status: 'disabled' as const,
         enabled: false,
-        generationMode: 'rules' as const,
-        operationId: `review:${gameId}:rules`,
+        generationMode: room.config?.reviewMode === 'ai' ? 'ai' as const : 'rules' as const,
+        operationId: `review:${gameId}:${room.config?.reviewMode === 'ai' ? 'ai' : 'rules'}`,
         timeline: [],
         messages: [],
         insights: [],
         updatedAt: Date.now(),
       };
     }
-    const review = await this.reviewPipeline.view(gameId, await this.viewerForIdentity(identity));
+    const viewer = godView && room.status === 'ended' && identity.kind === 'player'
+      ? { kind: 'spectator' as const, spectatorId: identity.actorId, omniscient: true }
+      : await this.viewerForIdentity(identity);
+    const review = await this.reviewPipeline.view(gameId, viewer);
     return review ?? {
       gameId,
       roomId: room.id,
       status: 'pending' as const,
       enabled: Boolean(room.config?.reviewEnabled),
-      generationMode: 'rules' as const,
-      operationId: `review:${gameId}:rules`,
+      generationMode: room.config?.reviewMode === 'ai' ? 'ai' as const : 'rules' as const,
+      operationId: `review:${gameId}:${room.config?.reviewMode === 'ai' ? 'ai' : 'rules'}`,
       timeline: [],
       messages: [],
       insights: [],
@@ -2394,6 +2397,7 @@ export class RoomService {
     let status: RoomRecord['status'] | undefined;
     let endedGameId: string | undefined;
     let endedReviewEnabled = false;
+    let endedReviewMode: 'ai' | 'rules' = 'rules';
     let autoRoom = false;
     await this.repository.mutate(roomCode, (room) => {
       // The coordinator owns the starting transaction. Do not let the initial
@@ -2411,6 +2415,7 @@ export class RoomService {
       if (status === 'ended') {
         endedGameId = snapshot.state.gameId;
         endedReviewEnabled = Boolean(room.config?.reviewEnabled);
+        endedReviewMode = room.config?.reviewMode === 'ai' ? 'ai' : 'rules';
       }
     });
     if (status === 'playing' || status === 'ended') {
@@ -2432,6 +2437,7 @@ export class RoomService {
         gameId: endedGameId,
         roomId: snapshot.state.roomId,
         reviewEnabled: endedReviewEnabled,
+        generationMode: endedReviewMode,
       }).catch(() => undefined);
     }
   }

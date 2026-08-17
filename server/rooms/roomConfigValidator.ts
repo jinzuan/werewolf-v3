@@ -320,6 +320,9 @@ export class RoomConfigValidator {
         issues.push(issue(path, 'room.config.boolean_required'));
       }
     }
+    if (input.reviewMode !== undefined && input.reviewMode !== 'rules' && input.reviewMode !== 'ai') {
+      issues.push(issue('reviewMode', 'room.config.review_mode_invalid'));
+    }
 
     addIntegerIssue(
       issues,
@@ -419,6 +422,7 @@ export class RoomConfigValidator {
         readyPolicy: 'all_connected_humans',
         allowPublicSpectators: input.allowPublicSpectators as boolean,
         reviewEnabled: input.reviewEnabled as boolean,
+        ...(input.reviewMode === 'ai' ? { reviewMode: 'ai' as const } : {}),
       },
     };
   }

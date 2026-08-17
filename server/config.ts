@@ -41,6 +41,36 @@ export function loadAIConfig(): ServerAIConfig {
       apiUrl: normalizeServerUrl((local.apiUrl as string) || cfg.local.apiUrl),
       model: (local.model as string) || cfg.local.model,
     };
+    // Deployment-level credentials are intentionally read only on the server.
+    // They are also used by the optional post-game review generator.
+    const envType = process.env.WW_API_TYPE;
+    const apiType = envType === 'siliconflow' || envType === 'deepseek' || envType === 'local'
+      ? envType
+      : cfg.apiType;
+    const envKey = process.env.WW_API_KEY?.trim();
+    const envModel = process.env.WW_MODEL?.trim();
+    const envUrl = process.env.WW_API_URL?.trim();
+    cfg.apiType = apiType;
+    if (apiType === 'local') {
+      cfg.local = {
+        ...cfg.local,
+        ...(envKey ? { apiKey: envKey } : {}),
+        ...(envModel ? { model: envModel } : {}),
+        ...(envUrl ? { apiUrl: normalizeServerUrl(envUrl) } : {}),
+      };
+    } else if (apiType === 'siliconflow') {
+      cfg.siliconflow = {
+        ...cfg.siliconflow,
+        ...(envKey ? { apiKey: envKey } : {}),
+        ...(envModel ? { model: envModel } : {}),
+      };
+    } else {
+      cfg.deepseek = {
+        ...cfg.deepseek,
+        ...(envKey ? { apiKey: envKey } : {}),
+        ...(envModel ? { model: envModel } : {}),
+      };
+    }
     return cfg;
   } catch (err) {
     console.warn(`[server] AI 配置加载失败（${configPath}），使用默认配置:`, err);

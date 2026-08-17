@@ -1225,6 +1225,14 @@ select {
 .v3-spectator-avatar { width: 40px; height: 40px; flex: 0 0 40px; display: block; border-radius: 50%; }
 .v3-identity-panel { margin-bottom: var(--ww-space-4); }
 .v3-identity-panel .ww-role-card { max-width: 720px; }
+.v3-result-hero { display: flex; align-items: center; gap: var(--ww-space-4); margin-bottom: var(--ww-space-4); padding: var(--ww-space-5); border: 1.5px solid var(--ww-wood-brown); border-radius: var(--ww-radius-card); background: linear-gradient(110deg, color-mix(in srgb, var(--ww-bg-raised) 92%, var(--ww-moon-yellow)), var(--ww-bg-surface)); }
+.v3-result-hero > div { min-width: 0; flex: 1; }
+.v3-result-hero h1 { margin: 3px 0 0; color: var(--ww-text-strong); font: 700 var(--ww-text-page-title-size)/var(--ww-text-page-title-line) var(--ww-font-family-display); }
+.v3-result-hero > span:first-child { color: var(--ww-moon-yellow); }
+.v3-result-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--ww-space-4); margin-bottom: var(--ww-space-4); }
+.v3-role-confirm { display: grid; gap: var(--ww-space-3); max-width: 720px; }
+.v3-role-confirm .v3-panel-copy { margin: 0; }
+.v3-role-confirm .v3-button { justify-self: start; min-width: 160px; }
 .v3-spectator-panel { min-height: 220px; }
 
 .v3-match-layout {
@@ -1396,6 +1404,8 @@ select {
 .v3-summary-list > div { grid-template-columns: 20px 1fr; }
 .v3-summary-list svg { color: var(--ww-wood-brown); }
 .v3-timeline { min-height: 0; max-height: min(62dvh, 660px); display: grid; gap: 0; overflow-y: auto; padding-right: var(--ww-space-1); scrollbar-gutter: stable; }
+.v3-result-deaths, .v3-result-ai-copy { max-height: min(34dvh, 360px); overflow-y: auto; padding-right: var(--ww-space-1); scrollbar-gutter: stable; }
+.v3-result-timeline { max-height: min(58dvh, 620px); }
 .v3-timeline > div { min-height: 68px; display: grid; grid-template-columns: 52px 14px minmax(0, 1fr); gap: 10px; }
 .v3-timeline time, .v3-console-events time, .v3-call-list time { color: var(--ww-text-muted); font: 600 var(--ww-text-caption-size)/20px var(--ww-font-family-number); }
 .v3-timeline__dot { position: relative; width: 11px; height: 11px; margin-top: 5px; border: 2px solid var(--ww-bg-surface); border-radius: 50%; background: var(--ww-border-strong); box-shadow: 0 0 0 1px var(--ww-border-strong); }
@@ -1519,6 +1529,109 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
 .ww-role-card__description { overflow: hidden; color: var(--ww-text-muted); font-size: var(--ww-text-caption-size); text-overflow: ellipsis; white-space: nowrap; }
 .ww-role-card__count { min-width: 32px; color: var(--ww-text-strong); font: 700 20px/28px var(--ww-font-family-number); text-align: center; }
 
+.ww-role-reveal {
+  position: relative;
+  width: min(100%, 720px);
+  min-height: 168px;
+  perspective: 1100px;
+}
+.ww-role-reveal__card {
+  position: relative;
+  width: 100%;
+  min-height: 168px;
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ww-radius-card);
+  background: transparent;
+  color: var(--ww-text-default);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transform-style: preserve-3d;
+  transition: transform 620ms cubic-bezier(.2,.72,.25,1);
+}
+.ww-role-reveal.is-revealed .ww-role-reveal__card { transform: rotateY(180deg); }
+.ww-role-reveal__face {
+  position: absolute;
+  inset: 0;
+  min-height: 168px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 5px;
+  padding: var(--ww-space-5);
+  overflow: hidden;
+  border: 1.5px solid var(--ww-wood-brown);
+  border-radius: var(--ww-radius-card);
+  backface-visibility: hidden;
+  box-shadow: var(--ww-shadow-card);
+}
+.ww-role-reveal__face--front {
+  background: radial-gradient(circle at 50% 20%, color-mix(in srgb, var(--ww-moon-yellow) 65%, transparent), transparent 44%), var(--ww-bg-raised);
+  color: var(--ww-text-strong);
+}
+.ww-role-reveal__face--front strong { font: 700 24px/32px var(--ww-font-family-display); }
+.ww-role-reveal__face--front > span:last-child { color: var(--ww-text-muted); font-size: var(--ww-text-caption-size); }
+.ww-role-reveal__moon { color: var(--ww-moon-yellow); font-size: 34px; text-shadow: 0 2px 0 var(--ww-wood-brown); }
+.ww-role-reveal__face--back {
+  grid-template-columns: 64px minmax(0, 1fr);
+  place-items: center start;
+  align-content: center;
+  gap: var(--ww-space-4);
+  padding-inline: var(--ww-space-5);
+  background: var(--ww-bg-surface);
+  transform: rotateY(180deg);
+}
+.ww-role-reveal__badge { width: 64px; height: 64px; display: grid; place-items: center; border: 2px solid var(--ww-wood-brown); border-radius: 50%; background: var(--ww-bg-subtle); }
+.ww-role-reveal__badge img { width: 100%; height: 100%; display: block; border-radius: inherit; }
+.ww-role-reveal__body { min-width: 0; display: grid; gap: 3px; }
+.ww-role-reveal__body strong { color: var(--ww-text-strong); font-size: 24px; line-height: 32px; }
+.ww-role-reveal__faction { font-size: var(--ww-text-caption-size); }
+.ww-role-reveal__faction--wolf { color: var(--ww-wolf-berry); }
+.ww-role-reveal__faction--village { color: var(--ww-state-success); }
+.ww-role-reveal__hint { color: var(--ww-text-muted); font-size: 12px; }
+.ww-role-reveal__info-button {
+  position: absolute;
+  z-index: 3;
+  top: 12px;
+  right: 12px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid var(--ww-border-strong);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ww-bg-surface) 90%, transparent);
+  color: var(--ww-text-muted);
+  cursor: pointer;
+}
+.ww-role-reveal__info-button:hover, .ww-role-reveal__info-button:focus-visible { color: var(--ww-action-primary); border-color: var(--ww-action-primary); }
+.ww-role-reveal__popover {
+  position: absolute;
+  z-index: 4;
+  top: 52px;
+  right: 10px;
+  width: min(270px, calc(100% - 20px));
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--ww-border-strong);
+  border-radius: var(--ww-radius-control);
+  background: var(--ww-bg-raised);
+  box-shadow: var(--ww-shadow-dialog);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity var(--ww-motion-fast) var(--ww-motion-easing), transform var(--ww-motion-fast) var(--ww-motion-easing);
+}
+.ww-role-reveal__popover.is-open { opacity: 1; pointer-events: auto; transform: translateY(0); }
+.ww-role-reveal:hover .ww-role-reveal__popover, .ww-role-reveal:focus-within .ww-role-reveal__popover { opacity: 1; pointer-events: auto; transform: translateY(0); }
+.ww-role-reveal__popover strong { color: var(--ww-text-strong); }
+.ww-role-reveal__popover span { color: var(--ww-text-muted); font-size: var(--ww-text-caption-size); line-height: 20px; }
+.ww-role-reveal__assistive { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.ww-role-reveal__eye { position: absolute; right: 20px; bottom: 16px; color: var(--ww-text-muted); }
+
 .v3-modal-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: var(--ww-space-4); background: var(--ww-overlay); }
 .v3-modal { width: min(100%, 520px); max-height: min(760px, calc(100dvh - var(--ww-space-8))); overflow: auto; border: 1.5px solid var(--ww-border-strong); border-radius: var(--ww-radius-dialog); background: var(--ww-bg-raised); box-shadow: var(--ww-shadow-dialog); }
 .v3-modal--wide { width: min(100%, 720px); }
@@ -1583,6 +1696,9 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
   .v3-match-layout__left { order: 3; }
   .v3-match-layout__right { order: 4; }
   .v3-target-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .v3-result-grid { grid-template-columns: minmax(0, 1fr); }
+  .v3-result-hero { align-items: flex-start; flex-wrap: wrap; padding: var(--ww-space-4); }
+  .v3-result-hero .v3-badge { margin-left: auto; }
   .v3-chat-list, .v3-timeline, .v3-console-events { max-height: min(52dvh, 460px); }
   .v3-action-panel__footer { align-items: stretch; flex-direction: column; }
   .v3-action-panel__footer .v3-button { width: 100%; }

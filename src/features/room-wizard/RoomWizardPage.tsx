@@ -591,7 +591,7 @@ function RulesStep({
         <div className="v3-card-heading"><Users size={20} /><div><h2>房间规则</h2><p>默认设置已适合直接开局，需要时再展开调整。</p></div></div>
         <div className="v3-wizard-settings-summary">
           <span><strong>{draft.visibility === 'listed' ? '大厅可见' : '仅凭邀请'}</strong> · {strategyLabel[draft.aiFillPolicy]}</span>
-          <span>在线真人准备后由房主开局 · {draft.reviewEnabled ? '开启复盘' : '关闭复盘'}</span>
+          <span>在线真人准备后由房主开局 · {draft.reviewEnabled ? (draft.reviewMode === 'ai' ? '开启 AI 复盘' : '开启复盘') : '关闭复盘'}</span>
         </div>
         <details className="v3-wizard-advanced">
           <summary>调整可见性、观战与复盘</summary>
@@ -607,6 +607,9 @@ function RulesStep({
             {draft.mode !== 'human' ? <p style={{ margin: 0, color: 'var(--ww-text-muted)' }}>创建后可在等待房的“电脑玩家设置”中配置模型与安全凭据。</p> : null}
             <label style={row}><input type="checkbox" checked={draft.allowPublicSpectators} onChange={(event) => update({ allowPublicSpectators: event.target.checked })} />允许公开观战<FieldError issue={issueFor('allowPublicSpectators')} /></label>
             <label style={row}><input type="checkbox" checked={draft.reviewEnabled} onChange={(event) => update({ reviewEnabled: event.target.checked })} />对局结束后开启复盘<FieldError issue={issueFor('reviewEnabled')} /></label>
+            {draft.reviewEnabled ? (
+              <label style={row}><input type="checkbox" checked={draft.reviewMode === 'ai'} onChange={(event) => update({ reviewMode: event.target.checked ? 'ai' : 'rules' })} />使用 AI 生成复盘总结<span style={{ color: 'var(--ww-text-muted)' }}>无 LLM Key 时自动保留上帝视角，不显示 AI 文案。</span></label>
+            ) : null}
           </div>
         </details>
       </Card>
@@ -645,7 +648,7 @@ function ConfirmStep({
         <FieldError issue={issueFor('roles')} />
       </Card> : null}
       {!compact ? <Card data-wizard-block="rules" tabIndex={-1}>
-        <div style={{ ...row, justifyContent: 'space-between' }}><div><h2 style={{ margin: 0 }}>房间规则</h2><p style={{ margin: 'var(--ww-space-2) 0 0' }}>{draft.visibility === 'listed' ? '大厅可见' : '仅凭邀请'} · {strategyLabel[draft.aiFillPolicy]} · {draft.allowPublicSpectators ? '允许公开观战' : '不开放公开观战'} · {draft.reviewEnabled ? '开启复盘' : '关闭复盘'}</p><p style={{ margin: 0, color: 'var(--ww-text-muted)' }}>所有在线真人玩家准备后，由房主开局。</p></div><Button variant="quiet" onClick={() => onEdit('players')}>修改</Button></div>
+        <div style={{ ...row, justifyContent: 'space-between' }}><div><h2 style={{ margin: 0 }}>房间规则</h2><p style={{ margin: 'var(--ww-space-2) 0 0' }}>{draft.visibility === 'listed' ? '大厅可见' : '仅凭邀请'} · {strategyLabel[draft.aiFillPolicy]} · {draft.allowPublicSpectators ? '允许公开观战' : '不开放公开观战'} · {draft.reviewEnabled ? (draft.reviewMode === 'ai' ? '开启 AI 复盘' : '开启复盘') : '关闭复盘'}</p><p style={{ margin: 0, color: 'var(--ww-text-muted)' }}>所有在线真人玩家准备后，由房主开局。</p></div><Button variant="quiet" onClick={() => onEdit('players')}>修改</Button></div>
         <FieldError issue={issueFor('players')} />
       </Card> : null}
       <Card tone="raised" data-wizard-block="confirm" tabIndex={-1}>

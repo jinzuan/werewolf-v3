@@ -598,13 +598,14 @@ export const getV3Review = (
   actorId: string,
   roomCode: string,
   roomId?: string,
+  godView = false,
 ): Promise<ClientAck<ReviewViewAck extends ProtocolAck<infer P> ? P : never>> =>
   emitAck(
     openRoomConnection(),
     'v3:command',
     {
       meta: commandMeta(actorId, roomId),
-      command: { type: 'review.get', payload: { roomCode } },
+      command: { type: 'review.get', payload: { roomCode, ...(godView ? { godView: true } : {}) } },
     } satisfies ClientCommand,
   );
 

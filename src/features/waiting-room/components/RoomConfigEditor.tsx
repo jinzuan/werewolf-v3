@@ -167,6 +167,19 @@ export function RoomConfigEditor({
           />
           <span>对局结束后开启复盘</span>
         </label>
+        {draft.reviewEnabled ? (
+          <label className="waiting-room__editor-check">
+            <input
+              type="checkbox"
+              checked={draft.reviewMode === 'ai'}
+              onChange={(event) => setDraft((current) => ({
+                ...current,
+                reviewMode: event.target.checked ? 'ai' : 'rules',
+              }))}
+            />
+            <span>使用 AI 生成复盘总结（无 Key 自动降级）</span>
+          </label>
+        ) : null}
       </div>
     </Modal>
   );

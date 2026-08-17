@@ -88,6 +88,7 @@ export interface WizardDraft {
   readyPolicy: 'all_connected_humans';
   allowPublicSpectators: boolean;
   reviewEnabled: boolean;
+  reviewMode?: 'rules' | 'ai';
 }
 
 export interface WizardIssue {
@@ -135,6 +136,7 @@ export const createInitialDraft = (
     readyPolicy: 'all_connected_humans',
     allowPublicSpectators: false,
     reviewEnabled: true,
+    reviewMode: 'rules',
   };
 };
 
@@ -161,7 +163,8 @@ const isDraft = (value: unknown): value is WizardDraft => {
     typeof value.rulesetVersion === 'string' &&
     value.readyPolicy === 'all_connected_humans' &&
     typeof value.allowPublicSpectators === 'boolean' &&
-    typeof value.reviewEnabled === 'boolean'
+    typeof value.reviewEnabled === 'boolean' &&
+    (value.reviewMode === undefined || value.reviewMode === 'rules' || value.reviewMode === 'ai')
   );
 };
 
@@ -396,7 +399,7 @@ export const canNavigateToStep = (
 
 export const stepForIssuePath = (path: string): LegacyWizardStep => {
   if (path.startsWith('roleSetup')) return 'roles';
-  if (path === 'visibility' || path === 'readyPolicy' || path === 'allowPublicSpectators' || path === 'reviewEnabled' || path.startsWith('ruleset')) return 'rules';
+  if (path === 'visibility' || path === 'readyPolicy' || path === 'allowPublicSpectators' || path === 'reviewEnabled' || path === 'reviewMode' || path.startsWith('ruleset')) return 'rules';
   return 'players';
 };
 
@@ -427,6 +430,7 @@ export const optionsFromDraft = (draft: WizardDraft): CreateRoomOptionsV31 => ({
   readyPolicy: draft.readyPolicy,
   allowPublicSpectators: draft.allowPublicSpectators,
   reviewEnabled: draft.reviewEnabled,
+  reviewMode: draft.reviewMode ?? 'rules',
 });
 
 export const cloneDraft = (draft: WizardDraft): WizardDraft => ({

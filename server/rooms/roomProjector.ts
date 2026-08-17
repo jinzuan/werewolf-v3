@@ -122,6 +122,7 @@ const projectConfig = (room: RoomRecord): RoomConfigView => {
     readyPolicy: config.readyPolicy,
     allowPublicSpectators: Boolean(config.allowPublicSpectators),
     reviewEnabled: Boolean(config.reviewEnabled),
+    ...(config.reviewMode === 'ai' ? { reviewMode: 'ai' as const } : {}),
   };
 };
 

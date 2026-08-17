@@ -6,6 +6,7 @@ export { Input } from './Input';
 export { Modal } from './Modal';
 export { ProgressBar } from './ProgressBar';
 export { RoleCard } from './RoleCard';
+export { RoleRevealCard } from './RoleRevealCard';
 export { Seat } from './Seat';
 export { Status } from './Status';
 export type { RoleFaction } from './RoleCard';

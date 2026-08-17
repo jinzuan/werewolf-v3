@@ -30,6 +30,7 @@ export type AIFillPolicy = (typeof AI_FILL_POLICIES)[number];
 export const READY_POLICIES = ['all_connected_humans'] as const;
 
 export type ReadyPolicy = (typeof READY_POLICIES)[number];
+export type RoomReviewMode = 'rules' | 'ai';
 
 /** Non-sensitive provider settings safe to persist with a room. */
 export type RoomAIProvider = 'siliconflow' | 'deepseek' | 'local' | 'custom';
@@ -128,6 +129,8 @@ export interface CreateRoomOptionsV31 {
   readyPolicy: ReadyPolicy;
   allowPublicSpectators: boolean;
   reviewEnabled: boolean;
+  /** Optional for backwards-compatible rooms; omitted means rules review. */
+  reviewMode?: RoomReviewMode;
   /** Create-time only; values are moved to SecretStore immediately. */
   aiConfig?: RoomAIConfig;
 }
@@ -158,6 +161,7 @@ export interface RoomConfigView {
   readyPolicy: ReadyPolicy;
   allowPublicSpectators: boolean;
   reviewEnabled: boolean;
+  reviewMode?: RoomReviewMode;
 }
 
 export interface RoomConfigIssue {
@@ -297,7 +301,7 @@ export type RoomReadCommand =
   | { type: 'room.get'; payload: { roomCode: string } }
   | { type: 'room.ai_config.get'; payload: EmptyRoomCommandPayload }
   | { type: 'room.command_receipt'; payload: { commandId: string } }
-  | { type: 'review.get'; payload: { roomCode: string } }
+  | { type: 'review.get'; payload: { roomCode: string; godView?: boolean } }
   | { type: 'review.insights.list'; payload: EmptyRoomCommandPayload };
 
 export type RoomMutationCommand =

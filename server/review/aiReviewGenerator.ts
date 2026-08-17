@@ -76,6 +76,7 @@ export class AIReviewGenerator implements ReviewGenerator {
         '你是服务端狼人杀复盘分析器。',
         '只能引用输入事件中的 eventId；不得泄露不属于消息受众的隐私事实。',
         '输出 JSON：{messages:[...],insights:[...]}，每条产物必须有 evidenceEventIds。',
+        'messages 面向所有已结束玩家：请优先给出本局总结、关键转折、谁的行动/判断有效、以及一条可读的总结发言；公共消息只能引用 public_timeline 事件。',
         '心得必须是具体的行动→结果经验，包含轮次、查验、投票、狼刀、放逐、守护、用药或遗言等可验证锚点；空泛建议会被拒绝。',
       ].join('\n'),
       user: JSON.stringify({

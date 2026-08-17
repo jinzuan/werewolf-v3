@@ -14,6 +14,7 @@ import { FileInsightStore, InMemoryInsightStore } from '../review/insightStore';
 import { FileReviewRepository } from '../review/fileReviewRepository';
 import { InMemoryReviewRepository } from '../review/reviewRepository';
 import { ReviewPipeline, RulesReviewGenerator } from '../review/reviewPipeline';
+import { createConfiguredAIReviewGenerator } from '../review/aiReviewClient';
 import { resolveRuntimeConfig, type RuntimeConfig } from '../runtimeConfig';
 import {
   EncryptedFileCredentialStore,
@@ -180,7 +181,6 @@ const createModernApplication = async (
         : new InMemoryCredentialStore();
   const reviewRepository = new FileReviewRepository(runtime.reviewsFile, { dataRoot: runtime.dataDir, ...persistence });
   const insightStore = new FileInsightStore(runtime.insightsFile, { dataRoot: runtime.dataDir, ...persistence });
-  const reviewPipeline = new ReviewPipeline(eventStore, reviewRepository, { insightStore });
   const endpointPolicy = new EndpointPolicy({
     environment: security.environment,
     allowPrivateEndpoints: security.allowPrivateAIEndpoints,
@@ -203,6 +203,11 @@ const createModernApplication = async (
     refillPerSecond: runtime.joinRateLimitRefillPerSecond,
   });
   const safeHttpClient = new SafeHttpClient(endpointPolicy);
+  const reviewPipeline = new ReviewPipeline(eventStore, reviewRepository, {
+    insightStore,
+    rulesGenerator: new RulesReviewGenerator(),
+    aiGenerator: createConfiguredAIReviewGenerator(safeHttpClient),
+  });
   const aiProviderFactory = (config: AIConfig, providerOptions: HttpAIProviderOptions) => {
     const provider = new HttpAIProvider(config, { ...providerOptions, safeHttpClient, telemetry: defaultAITelemetry });
     return {

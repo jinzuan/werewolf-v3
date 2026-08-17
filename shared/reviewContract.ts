@@ -15,6 +15,8 @@ export type ReviewAudience = 'public' | 'team' | 'role';
 export type ReviewTeam = 'wolf' | 'good';
 export type ReviewGenerationMode = 'ai' | 'rules';
 
+export type ReviewDeathCause = 'night_kill' | 'vote' | 'poison' | 'hunter_shot';
+
 /** A safe reference to an authoritative event. It is not the event itself. */
 export interface ReviewEvidenceRef {
   eventId: string;
@@ -50,6 +52,18 @@ export interface ReviewTimelineEntry {
   summary: string;
 }
 
+/** Death records are only attached to an authorized post-game god view. */
+export interface ReviewDeathRecord {
+  playerId: string;
+  name: string;
+  role: Role | null;
+  cause: ReviewDeathCause;
+  day: number;
+  sequence: number;
+  eventId: string;
+  occurredAt: number;
+}
+
 export interface PostGameReviewView {
   gameId: string;
   roomId: string;
@@ -61,6 +75,10 @@ export interface PostGameReviewView {
   timeline: ReviewTimelineEntry[];
   messages: ReviewMessage[];
   insights: ReviewInsight[];
+  /** Present when the caller explicitly requested the ended-game god view. */
+  omniscient?: boolean;
+  players?: ReviewArchivePlayer[];
+  deaths?: ReviewDeathRecord[];
   updatedAt: number;
 }
 

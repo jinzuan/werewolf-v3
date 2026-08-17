@@ -93,7 +93,8 @@ const isValidConfigShape = (room: RoomRecord): boolean => {
     typeof config.rulesetVersion !== 'string' ||
     config.rulesetVersion.length === 0 ||
     typeof config.allowPublicSpectators !== 'boolean' ||
-    (config.reviewEnabled !== undefined && typeof config.reviewEnabled !== 'boolean')
+    (config.reviewEnabled !== undefined && typeof config.reviewEnabled !== 'boolean') ||
+    (config.reviewMode !== undefined && config.reviewMode !== 'rules' && config.reviewMode !== 'ai')
   ) {
     return false;
   }

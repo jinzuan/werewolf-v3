@@ -3,3 +3,4 @@ export * from './insightStore';
 export * from './reviewPipeline';
 export * from './reviewProjector';
 export * from './reviewRepository';
+export * from './aiReviewClient';
