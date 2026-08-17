@@ -37,6 +37,9 @@ const allowed = (
   commandType: GameCommand['type'],
 ): boolean => context.allowedCommandTypes.includes(commandType);
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
 const cleanText = (value: unknown): string =>
   typeof value === 'string'
     ? value
@@ -297,6 +300,45 @@ const parseObject = (
   object: Record<string, unknown>,
   context: ParseContext,
 ): ParsedAIOutput => {
+  const wrappedCommand = object.command;
+  if (wrappedCommand && typeof wrappedCommand === 'object' && !Array.isArray(wrappedCommand)) {
+    const command = wrappedCommand as Record<string, unknown>;
+    const payload = command.payload;
+    if (!isRecord(payload) || typeof command.type !== 'string') {
+      return fail('MALFORMED_OUTPUT', 'The command wrapper is malformed.');
+    }
+    switch (command.type) {
+      case 'game.confirm_role':
+        return allowed(context, 'game.confirm_role')
+          ? {
+              ok: true,
+              command: { type: 'game.confirm_role', payload: {} },
+              reason: 'parsed role confirmation',
+            }
+          : fail('ACTION_NOT_ALLOWED', 'Role confirmation is not allowed.');
+      case 'game.speak':
+        return parseSpeech(cleanText(payload.content), context, 'game.speak');
+      case 'game.wolf_speak':
+        return parseSpeech(cleanText(payload.content), context, 'game.wolf_speak');
+      case 'game.skip_speech':
+        return parseSkipSpeech(payload.reason, context);
+      case 'game.vote':
+        return parseVote(payload.targetId, payload.reason, context, 'game.vote');
+      case 'game.wolf_vote':
+        return parseVote(payload.targetId, payload.reason, context, 'game.wolf_vote');
+      case 'game.night_action':
+        if (payload.playerId !== undefined && payload.playerId !== context.playerId) {
+          return fail('ACTION_NOT_ALLOWED', 'The night action actor is not the current player.');
+        }
+        return parseNightAction(payload.action, payload.targetId, context);
+      case 'game.skip_night':
+        return parseSkipNight(context);
+      case 'game.hunter_shoot':
+        return parseHunter(payload.targetId, payload.targetId === null ? 'skip' : undefined, context);
+      default:
+        return fail('MALFORMED_OUTPUT', `Unknown command type "${command.type}".`);
+    }
+  }
   const action = cleanText(object.action).toLowerCase();
   switch (action) {
     case 'confirm_role':

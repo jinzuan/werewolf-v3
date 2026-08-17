@@ -18,8 +18,12 @@ import type {
   AIRequestContext,
   AISuggestion,
 } from './types';
-import { AIProviderError as ProviderError } from './types';
+import {
+  AIProviderError as ProviderError,
+  type AILogger,
+} from './types';
 import { buildPromptPipeline } from './promptPipeline';
+import { parseAIOutput } from './outputParser';
 
 interface ProviderSettings {
   key: string;
@@ -48,6 +52,7 @@ export interface HttpAIProviderOptions {
   safeHttpClient?: SafeHttpClient;
   promptMaxChars?: number;
   promptMaxEvents?: number;
+  logger?: AILogger;
 }
 
 interface ResponseEnvelope {
@@ -198,36 +203,33 @@ const parseSuggestion = (
     throw new ProviderError('invalid_response', retryCount);
   }
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(message.content);
-  } catch {
-    throw new ProviderError('invalid_output', retryCount);
-  }
-  if (!isRecord(parsed) || !isRecord(parsed.command)) {
-    throw new ProviderError('invalid_output', retryCount);
-  }
-  const command = parsed.command as Partial<GameCommand>;
-  if (
-    typeof command.type !== 'string' ||
-    !context.allowedCommandTypes.includes(
-      command.type as GameCommand['type'],
-    ) ||
-    !validCommandPayload(command as GameCommand, context)
-  ) {
-    throw new ProviderError('invalid_output', retryCount);
+  const parserContext = {
+    allowedCommandTypes: context.allowedCommandTypes,
+    players: context.players,
+    playerId: context.playerId,
+    role: context.role,
+    phase: context.phase,
+    stage: context.stage,
+    promptContext: {
+      ...(context.promptContext ?? {}),
+      legalActions: context.promptContext?.legalActions ?? context.allowedActions ?? [],
+      legalTargets: context.promptContext?.legalTargets ?? context.players
+        .filter((player) => player.isAlive)
+        .map((player) => ({ id: player.id, name: player.name })),
+    },
+  };
+  const parsedOutput = parseAIOutput(message.content, parserContext);
+  if (parsedOutput.ok === false) {
+    throw new ProviderError('invalid_output', retryCount, undefined, parsedOutput.code);
   }
   const allowedActions = context.allowedActions ?? [];
-  const action = actionForCommand(command as GameCommand);
+  const action = actionForCommand(parsedOutput.command);
   if (allowedActions.length > 0 && (!action || !allowedActions.includes(action))) {
-    throw new ProviderError('invalid_output', retryCount);
+    throw new ProviderError('invalid_output', retryCount, undefined, 'ACTION_NOT_ALLOWED');
   }
   return {
-    command: command as GameCommand,
-    reason:
-      typeof parsed.reason === 'string'
-        ? parsed.reason.slice(0, 300)
-        : 'provider suggestion',
+    command: parsedOutput.command,
+    reason: parsedOutput.reason.slice(0, 300),
     providerMeta: { retryCount },
   };
 };
@@ -241,6 +243,7 @@ const normalizeError = (
       error.errorClass,
       Math.max(retryCount, error.retryCount),
       error.status,
+      error.detail,
     );
   }
   if (error instanceof Error && error.name === 'AbortError') {

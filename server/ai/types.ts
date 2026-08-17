@@ -125,11 +125,44 @@ export class AIProviderError extends Error {
     readonly errorClass: string,
     readonly retryCount: number,
     readonly status?: number,
+    readonly detail?: string,
   ) {
     super(errorClass);
     this.name = 'AIProviderError';
   }
 }
+
+export interface AILogEntry {
+  layer: 'provider' | 'orchestrator' | 'scheduler';
+  status: 'started' | 'success' | 'fallback' | 'failed';
+  roomId?: string;
+  gameId?: string;
+  playerId?: string;
+  callId?: string;
+  stage?: string | null;
+  actionClass?: string;
+  commandType?: GameCommand['type'];
+  provider?: string;
+  model?: string;
+  endpoint?: string;
+  durationMs?: number;
+  retryCount?: number;
+  errorClass?: string;
+  detail?: string;
+  httpStatus?: number;
+}
+
+export type AILogger = (entry: AILogEntry) => void;
+
+/**
+ * Operational AI logs deliberately contain no prompt, completion, or
+ * credential data.  They are enough to tell whether a turn reached the
+ * provider, parsed successfully, fell back, or failed before dispatch.
+ */
+export const defaultAILogger: AILogger = (entry) => {
+  const level = entry.status === 'failed' ? 'warn' : 'info';
+  console[level]('[server:ai]', JSON.stringify(entry));
+};
 
 export interface AIProvider {
   /** real_ai is the only production provider mode; rules-degraded is explicit. */

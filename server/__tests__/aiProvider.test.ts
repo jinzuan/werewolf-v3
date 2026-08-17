@@ -125,6 +125,39 @@ test('429 honors Retry-After before succeeding', async () => {
   assert.deepEqual(sleeps, [2_000]);
 });
 
+test('HTTP provider accepts the action JSON contract used by the prompt', async () => {
+  const provider = new HttpAIProvider(providerConfig(), {
+    fetch: async () => new Response(
+      JSON.stringify({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              action: 'speak',
+              content: '我会先核对新的票型证据。',
+            }),
+          },
+        }],
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ),
+    maxRetries: 0,
+  });
+
+  const result = await provider.suggest({
+    ...guardianContext(),
+    role: 'villager',
+    phase: 'day',
+    stage: 'speech',
+    allowedActions: ['speak'],
+    allowedCommandTypes: ['game.speak'],
+  });
+
+  assert.deepEqual(result.command, {
+    type: 'game.speak',
+    payload: { content: '我会先核对新的票型证据。' },
+  });
+});
+
 test('429 exhaustion uses one deterministic fallback and keeps the stage moving', async () => {
   const calls: number[] = [];
   const { players, session, guardian } = await createGuardianSession();
