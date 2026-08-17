@@ -8,6 +8,7 @@ export const canViewerSeeVisibility = (
   visibility: EventVisibility,
   viewer: ViewerContext,
   audienceIds: readonly string[] = [],
+  eventType?: string,
 ): boolean => {
   const omniscient =
     viewer.kind === 'spectator' && viewer.omniscient;
@@ -19,6 +20,7 @@ export const canViewerSeeVisibility = (
       omniscient ||
       (viewer.kind === 'player' &&
         viewer.isAlive !== false &&
+        (eventType !== 'seer.result' || viewer.role === 'seer') &&
         audienceIds.includes(viewer.playerId))
     );
   }
@@ -41,6 +43,7 @@ export const filterVisibleEvents = (
       event.visibility,
       viewer,
       event.audienceIds,
+      event.eventType,
     ),
   );
 };

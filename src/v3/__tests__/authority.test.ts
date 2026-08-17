@@ -579,6 +579,40 @@ test('public spectator snapshots and events cannot expose roles or private data'
   );
 });
 
+test('seer result visibility requires the seer role as well as its audience id', () => {
+  const seerEvent: DomainEvent = domainEvent(
+    4,
+    'seer.result',
+    'role_private',
+    { targetId: 'p2', alignment: 'wolf' },
+    ['p1', 'p2'],
+  );
+  const envelope: GameEventsMessage = {
+    type: 'game.events',
+    roomId: 'room-1',
+    gameId: 'game-1',
+    afterSequence: 0,
+    events: [seerEvent],
+  };
+
+  assert.equal(
+    mergeEventEnvelope(
+      { roomId: 'room-1', gameId: 'game-1', lastSeenSeq: 0, events: [] },
+      envelope,
+      { kind: 'player', playerId: 'p1', role: 'seer' },
+    ).events.length,
+    1,
+  );
+  assert.equal(
+    mergeEventEnvelope(
+      { roomId: 'room-1', gameId: 'game-1', lastSeenSeq: 0, events: [] },
+      envelope,
+      { kind: 'player', playerId: 'p2', role: 'villager' },
+    ).events.length,
+    0,
+  );
+});
+
 test('all shared allowed actions render in stable order and build commands', () => {
   assert.deepEqual(orderedAllowedActions([...GAME_ACTIONS].reverse()), [
     ...GAME_ACTIONS,

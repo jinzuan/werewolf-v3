@@ -43,6 +43,9 @@ const canSeeEvent = (event: DomainEvent, viewer: ViewerContext): boolean => {
       return (
         isOmniscient(viewer) ||
         (isLivePlayer(viewer) &&
+          // A seer result is private to the seer even if a malformed or
+          // migrated event carries a broader audience list.
+          (event.eventType !== 'seer.result' || viewer.role === 'seer') &&
           (event.audienceIds ?? []).includes(viewer.playerId))
       );
     case 'wolf_private':

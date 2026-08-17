@@ -68,6 +68,13 @@ test('private night facts never leak to villagers or public spectators', async (
     events: await session.eventsFor(omniscient),
     snapshot: await session.snapshotFor(omniscient),
   });
+  const seerPayload = serialized(
+    await session.eventsFor({
+      kind: 'player',
+      playerId: seer.id,
+      role: 'seer',
+    }),
+  );
 
   for (const payload of [villagerPayload, publicPayload]) {
     assert.doesNotMatch(payload, /SECRET_WOLF_CHAT/);
@@ -79,6 +86,10 @@ test('private night facts never leak to villagers or public spectators', async (
     assert.doesNotMatch(payload, new RegExp(`"playerId":"${guardian.id}"`));
     assert.doesNotMatch(payload, new RegExp(`"playerId":"${seer.id}"`));
   }
+
+  assert.match(seerPayload, /seer\.result/);
+  assert.match(seerPayload, new RegExp(`"targetId":"${wolf.id}"`));
+  assert.match(seerPayload, /"alignment":"wolf"/);
 
   assert.match(omniscientPayload, /SECRET_WOLF_CHAT/);
   assert.match(omniscientPayload, /guardian\.completed/);

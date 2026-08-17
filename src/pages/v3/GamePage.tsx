@@ -153,6 +153,12 @@ export function GamePage() {
         .slice(-MAX_EVENT_WINDOW),
     [events, snapshot?.viewer],
   );
+  const latestSeerResult = useMemo(
+    () => myPlayer?.role === 'seer'
+      ? [...visibleEvents].reverse().find((event) => event.eventType === 'seer.result') ?? null
+      : null,
+    [myPlayer?.role, visibleEvents],
+  );
   const playerName = useMemo(
     () => createPlayerNameResolver(players, room?.members ?? []),
     [players, room?.members],
@@ -642,6 +648,11 @@ export function GamePage() {
               {typeof wolfKillTargetId === 'string' ? (
                 <div className="v3-wolf-resolution" role="status" aria-live="polite">
                   今晚狼队袭击目标：<strong>{playerName(wolfKillTargetId)}</strong>
+                </div>
+              ) : null}
+              {latestSeerResult ? (
+                <div className="v3-inline-note" role="status" aria-live="polite">
+                  <strong>最近查验：</strong>{describeEvent(latestSeerResult, playerName, { viewer: snapshot.viewer })}
                 </div>
               ) : null}
               <div className="v3-chat-list">
