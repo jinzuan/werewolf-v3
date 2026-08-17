@@ -15,6 +15,7 @@ import type { AILogEntry, AIRequestContext } from '../ai/types';
 import { AICircuitBreaker } from '../ai/providerQueue';
 import { InMemoryEventStore } from '../events/store';
 import { GameSession } from '../session/gameSession';
+import { EndpointPolicy } from '../security/endpointPolicy';
 
 const providerConfig = (): ServerAIConfig => {
   const config = structuredClone(SERVER_AI_DEFAULTS);
@@ -69,6 +70,9 @@ const guardResponse = (targetId: string): Response =>
     }),
     { status: 200, headers: { 'content-type': 'application/json' } },
   );
+
+const redirectResponse = (location: string, status = 302): Response =>
+  new Response('', { status, headers: { location } });
 
 const createGuardianSession = async () => {
   const players = createPlayers();
@@ -126,6 +130,89 @@ test('429 honors Retry-After before succeeding', async () => {
   assert.equal(result.providerMeta?.retryCount, 1);
   assert.equal(calls.length, 2);
   assert.deepEqual(sleeps, [2_000]);
+});
+
+test('HTTP provider follows a same-host HTTPS redirect and preserves the POST request', async () => {
+  const requests: Array<{ url: string; method?: string; body?: BodyInit | null }> = [];
+  const provider = new HttpAIProvider(providerConfig(), {
+    fetch: async (input, init) => {
+      requests.push({
+        url: String(input),
+        method: init?.method,
+        body: init?.body,
+      });
+      return requests.length === 1
+        ? redirectResponse('/v1/chat/completions')
+        : guardResponse(createPlayers().find((player) => player.role !== 'guardian')!.id);
+    },
+    maxRetries: 0,
+  });
+
+  const result = await provider.suggest(guardianContext());
+
+  assert.equal(result.command.type, 'game.night_action');
+  assert.deepEqual(requests.map((request) => request.url), [
+    'https://provider.test/v1/chat/completions',
+    'https://provider.test/v1/chat/completions',
+  ]);
+  assert.deepEqual(requests.map((request) => request.method), ['POST', 'POST']);
+  assert.equal(requests[0].body, requests[1].body);
+});
+
+test('HTTP provider blocks cross-host redirects before issuing the redirected request', async () => {
+  const requests: string[] = [];
+  const logs: AILogEntry[] = [];
+  const provider = new HttpAIProvider(providerConfig(), {
+    fetch: async (input) => {
+      requests.push(String(input));
+      return redirectResponse('https://attacker.test/v1/chat/completions');
+    },
+    maxRetries: 0,
+    logger: (entry) => logs.push(entry),
+  });
+
+  await assert.rejects(() => provider.suggest(guardianContext()));
+
+  assert.deepEqual(requests, ['https://provider.test/v1/chat/completions']);
+  assert.equal(logs.at(-1)?.errorClass, 'redirect_blocked');
+  assert.equal(logs.at(-1)?.httpStatus, 302);
+  assert.equal(logs.at(-1)?.detail, 'UNSAFE_LOCATION');
+});
+
+test('HTTP provider revalidates a redirect with endpoint policy before transport', async () => {
+  let lookupCount = 0;
+  let transportCalls = 0;
+  const provider = new HttpAIProvider(
+    {
+      ...providerConfig(),
+      local: {
+        ...providerConfig().local,
+        apiUrl: 'https://provider.example/v1/chat/completions',
+      },
+    },
+    {
+      endpoint: 'https://provider.example/v1/chat/completions',
+      endpointPolicy: new EndpointPolicy({
+        environment: 'production',
+        allowlist: 'provider.example',
+        lookup: async () => {
+          lookupCount += 1;
+          return lookupCount === 1
+            ? [{ address: '203.0.113.10', family: 4 }]
+            : [{ address: '169.254.169.254', family: 4 }];
+        },
+      }),
+      fetch: async () => {
+        transportCalls += 1;
+        return redirectResponse('/v1/chat/completions');
+      },
+      maxRetries: 0,
+    },
+  );
+
+  await assert.rejects(() => provider.suggest(guardianContext()));
+  assert.equal(transportCalls, 1);
+  assert.equal(lookupCount, 2);
 });
 
 test('HTTP provider accepts the action JSON contract used by the prompt', async () => {
