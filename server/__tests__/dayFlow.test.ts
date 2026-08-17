@@ -222,6 +222,25 @@ test('last words skip requires a reason and records a reasoned skip', async () =
   await clock.advance(100);
   assert.equal(session.serialize().state.dayFlow.stage, 'last_words');
 
+  const projected = await session.snapshotFor({
+    kind: 'player',
+    playerId: exiled.id,
+    role: exiled.role!,
+    isAlive: false,
+  });
+  assert.deepEqual(projected.gameState.allowedActions, ['speak', 'skip_speech']);
+  assert.deepEqual(projected.gameState.allowedActors, [{
+    playerId: exiled.id,
+    actions: ['speak', 'skip_speech'],
+  }]);
+  const visibleEvents = await session.eventsFor({
+    kind: 'player',
+    playerId: exiled.id,
+    role: exiled.role!,
+    isAlive: false,
+  });
+  assert.ok(visibleEvents.some((event) => event.eventType === 'day.exiled'));
+
   const missingReason = await dispatch(session, exiled.id, {
     type: 'game.skip_speech',
     payload: {},

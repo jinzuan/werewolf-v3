@@ -97,6 +97,12 @@ export function GamePage() {
   const myId = session?.actorId ?? '';
   const myPlayer = players.find((player) => player.id === myId);
   const isEliminated = myPlayer?.isAlive === false;
+  const dayStage = (state as (GameState & { dayStage?: string | null }) | null)?.dayStage;
+  const isLastWordsTurn =
+    isEliminated &&
+    dayStage === 'last_words' &&
+    state?.lastWordsPlayer === myId &&
+    state.currentSpeaker === myId;
   // `orderedAllowedActions` returns a new array. Memoize it so the draft reset
   // effect below only runs when the authoritative action set changes; without
   // this, the pre-snapshot empty array caused an update loop and a white page.
@@ -136,7 +142,7 @@ export function GamePage() {
     actionKey,
     voteRound?.key ?? 'no-vote',
   ].join(':');
-  const activeAction = isEliminated
+  const activeAction = isEliminated && !isLastWordsTurn
     ? null
     : actionDraft.activeAction && allowedActions.includes(actionDraft.activeAction)
       ? actionDraft.activeAction
@@ -151,7 +157,6 @@ export function GamePage() {
     () => createPlayerNameResolver(players, room?.members ?? []),
     [players, room?.members],
   );
-  const dayStage = (state as (GameState & { dayStage?: string | null }) | null)?.dayStage;
   const hasActiveSpeaker =
     (state?.phase === 'day' &&
       (dayStage === 'speech' || dayStage === 'discussion' || dayStage === 'last_words')) ||
@@ -177,7 +182,9 @@ export function GamePage() {
         .reverse()
         .find((event) => event.eventType === 'wolf.kill_locked')?.payload.targetId
     : undefined;
-  const firstAllowedAction = isEliminated ? null : allowedActions[0] ?? null;
+  const firstAllowedAction = isEliminated && !isLastWordsTurn
+    ? null
+    : allowedActions[0] ?? null;
 
   const isRoleConfirmation = state?.phase === 'role_confirm';
   const canConfirmRole = isRoleConfirmation && allowedActions.includes('confirm_role');
@@ -432,7 +439,7 @@ export function GamePage() {
               </div>
             </Card>
           }
-          center={isEliminated ? (
+          center={isEliminated && !isLastWordsTurn ? (
             <Card className="v3-action-panel v3-spectator-panel">
               <div className="v3-panel-heading">
                 <div>
@@ -459,8 +466,8 @@ export function GamePage() {
             <Card className="v3-action-panel">
               <div className="v3-panel-heading">
                 <div>
-                  <span>当前阶段</span>
-                  <h2>行动面板</h2>
+                  <span>{isLastWordsTurn ? '票出者专属' : '当前阶段'}</span>
+                  <h2>{isLastWordsTurn ? '遗言' : '行动面板'}</h2>
                 </div>
                 <Badge tone={allowedActions.length ? 'warning' : 'info'}>
                   {allowedActions.length ? '轮到你' : '等待队友'}
@@ -473,6 +480,11 @@ export function GamePage() {
                 >
                   <span className="v3-current-speaker__dot" />
                   正在发言：<strong>{currentSpeakerName}</strong>
+                </div>
+              ) : null}
+              {isLastWordsTurn ? (
+                <div className="v3-inline-note">
+                  仅被投票放逐的玩家可以在此提交遗言；夜间死亡不会进入遗言阶段。
                 </div>
               ) : null}
 

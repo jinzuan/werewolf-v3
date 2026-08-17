@@ -20,6 +20,21 @@ const isLivePlayer = (
 ): viewer is Extract<ViewerContext, { kind: 'player' }> =>
   viewer.kind === 'player' && viewer.isAlive !== false;
 
+/**
+ * Exile is the one death that keeps a player in the action projection: the
+ * eliminated seat owns the public last-words turn until it is completed.
+ * Night deaths (and every other dead player) remain read-only.
+ */
+const isExiledLastWordsPlayer = (
+  state: GameState,
+  viewer: ViewerContext,
+): viewer is Extract<ViewerContext, { kind: 'player' }> =>
+  viewer.kind === 'player' &&
+  viewer.isAlive === false &&
+  (state as GameState & { dayStage?: string | null }).dayStage === 'last_words' &&
+  state.lastWordsPlayer === viewer.playerId &&
+  state.currentSpeaker === viewer.playerId;
+
 const canSeeEvent = (event: DomainEvent, viewer: ViewerContext): boolean => {
   switch (event.visibility) {
     case 'public_timeline':
@@ -77,7 +92,8 @@ const projectGameState = (
   // An eliminated player stays authenticated as a player so the browser can
   // recover its room session, but receives the same private-state boundary as
   // a public spectator.  Own identity remains available through projectPlayers.
-  const playerId = isLivePlayer(viewer) ? viewer.playerId : null;
+  const canActAsPlayer = isLivePlayer(viewer) || isExiledLastWordsPlayer(state, viewer);
+  const playerId = canActAsPlayer ? viewer.playerId : null;
   const role = isLivePlayer(viewer) ? viewer.role : null;
   const ownActor =
     playerId === null
