@@ -20,6 +20,7 @@ import { RoleCard } from '../../ui/RoleCard';
 import { Seat } from '../../ui/Seat';
 import { avatarAssetMap } from '../../ui/assetRegistry';
 import { Modal } from '../../ui/Modal';
+import { readPlayerNickname, writePlayerNickname } from '../../runtime/playerProfile';
 import type { RoomCreationCatalog } from '../../../shared/roomContract';
 import {
   clearWizardDraft,
@@ -741,7 +742,7 @@ export function RoomWizardPage() {
     const saved = readWizardDraft(storageTarget());
     const next = saved
       ? { ...cloneDraft(saved), catalogVersion: catalog.catalogVersion }
-      : createInitialDraft(catalog);
+      : createInitialDraft(catalog, readPlayerNickname());
     setDraft(next);
     writeWizardDraft(storageTarget(), next);
   }, [catalog, draft]);
@@ -831,6 +832,7 @@ export function RoomWizardPage() {
       navigate(wizardPathForStep(issues[0].step));
       return;
     }
+    writePlayerNickname(draft.creator.name);
     setBusy(true);
     const response = await createRoomWithOptions(optionsFromDraft(draft));
     if (response.ok === false) {

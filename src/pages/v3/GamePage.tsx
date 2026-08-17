@@ -173,6 +173,11 @@ export function GamePage() {
   };
   const isSpeechEvent = (event: (typeof visibleEvents)[number]): boolean =>
     event.eventType === 'day.speech' || event.eventType === 'wolf.message';
+  const wolfKillTargetId = myPlayer?.role === 'wolf'
+    ? [...visibleEvents]
+        .reverse()
+        .find((event) => event.eventType === 'wolf.kill_locked')?.payload.targetId
+    : undefined;
   const firstAllowedAction = isEliminated ? null : allowedActions[0] ?? null;
 
   const isRoleConfirmation = state?.phase === 'role_confirm';
@@ -621,6 +626,11 @@ export function GamePage() {
                 >
                   <span className="v3-current-speaker__dot" />
                   正在发言：<strong>{currentSpeakerName}</strong>
+                </div>
+              ) : null}
+              {typeof wolfKillTargetId === 'string' ? (
+                <div className="v3-wolf-resolution" role="status" aria-live="polite">
+                  今晚狼队袭击目标：<strong>{playerName(wolfKillTargetId)}</strong>
                 </div>
               ) : null}
               <div className="v3-chat-list">

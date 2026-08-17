@@ -218,7 +218,11 @@ export const describeEvent = (
     case 'wolf.vote_unresolved':
       return '狼人尚未选出今晚的目标。';
     case 'wolf.kill_locked':
-      return isAdvancedView(event, options) && idFrom(payload, 'targetId')
+      return (
+        (isAdvancedView(event, options) ||
+          (options.viewer?.kind === 'player' && options.viewer.role === 'wolf')) &&
+        idFrom(payload, 'targetId')
+      )
         ? `狼人已决定今晚的目标：${target}。`
         : '狼人已决定今晚的目标。';
     case 'wolf.discussion_timed_out':

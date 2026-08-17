@@ -18,6 +18,7 @@ export interface TopStatusBarProps {
   connected?: boolean;
   scene?: RoomScene;
   onMenu?: () => void;
+  menuOpen?: boolean;
 }
 
 export function TopStatusBar({
@@ -30,6 +31,7 @@ export function TopStatusBar({
   connected = false,
   scene = 'lobby',
   onMenu,
+  menuOpen = false,
 }: TopStatusBarProps) {
   const [rulesOpen, setRulesOpen] = useState(false);
   const phaseAsset = phaseAssetMap[scene];
@@ -61,7 +63,15 @@ export function TopStatusBar({
       ) : null}
 
       <div className="v3-topbar__actions">
-        <Button className="v3-topbar__menu" variant="icon" aria-label="打开导航" title="导航" onClick={onMenu}>
+        <Button
+          className="v3-topbar__menu"
+          variant="icon"
+          aria-label="打开导航"
+          aria-controls="v3-side-nav"
+          aria-expanded={menuOpen}
+          title="导航"
+          onClick={onMenu}
+        >
           <Menu size={18} />
         </Button>
         <Badge tone={connected ? 'success' : 'warning'}>

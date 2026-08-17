@@ -1345,6 +1345,8 @@ select {
 }
 .v3-current-speaker strong { color: var(--ww-text-strong); }
 .v3-current-speaker__dot { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: var(--v3-speaker-color, var(--ww-action-primary)); box-shadow: 0 0 0 4px color-mix(in srgb, var(--v3-speaker-color, var(--ww-action-primary)) 18%, transparent); }
+.v3-wolf-resolution { margin: calc(-1 * var(--ww-space-2)) 0 var(--ww-space-3); padding: 9px 10px; border-left: 4px solid var(--ww-wolf-berry); border-radius: var(--ww-radius-control); background: color-mix(in srgb, var(--ww-wolf-berry) 12%, var(--ww-bg-subtle)); color: var(--ww-text-muted); font-size: var(--ww-text-caption-size); }
+.v3-wolf-resolution strong { color: var(--ww-text-strong); }
 
 .v3-target-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--ww-space-3); }
 

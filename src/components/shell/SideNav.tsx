@@ -27,7 +27,12 @@ export function SideNav({ open, onClose }: { open: boolean; onClose: () => void 
         tabIndex={open ? 0 : -1}
         onClick={onClose}
       />
-      <nav className={`v3-side-nav${open ? ' is-open' : ''}`} aria-label="主导航">
+      <nav
+        id="v3-side-nav"
+        className={`v3-side-nav${open ? ' is-open' : ''}`}
+        aria-label="主导航"
+        aria-hidden={!open}
+      >
         <div className="v3-side-nav__header">
           <strong>村庄导航</strong>
           <button type="button" className="v3-button v3-button--icon" aria-label="关闭导航" onClick={onClose}>

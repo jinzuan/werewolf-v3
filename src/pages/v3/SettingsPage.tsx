@@ -1,4 +1,4 @@
-import { ArrowRight, Monitor, Save, Volume2 } from 'lucide-react';
+import { ArrowRight, Monitor, Save, UserRound, Volume2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AppShell } from '../../components/shell/AppShell';
@@ -7,6 +7,11 @@ import { useV3Store } from '../../stores/v3Store';
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { Input } from '../../ui/Input';
+import {
+  PLAYER_NICKNAME_MAX_LENGTH,
+  readPlayerNickname,
+  writePlayerNickname,
+} from '../../runtime/playerProfile';
 
 type MotionPreference = 'system' | 'reduced' | 'full';
 
@@ -19,6 +24,7 @@ const readMotionPreference = (): MotionPreference => {
 export function SettingsPage() {
   const connected = useV3Store((state) => state.connected);
   const [motionPreference, setMotionPreference] = useState<MotionPreference>(readMotionPreference);
+  const [nickname, setNickname] = useState(() => readPlayerNickname());
   const diagnosticsEnabled = endpointDiagnosticsEnabled();
   const [serverUrl, updateServerUrl] = useState(() => getServerUrl());
   const [saved, setSaved] = useState(false);
@@ -29,6 +35,7 @@ export function SettingsPage() {
 
   const save = () => {
     localStorage.setItem('werewolf-v3-motion-mode', motionPreference);
+    setNickname(writePlayerNickname(nickname));
     if (diagnosticsEnabled) setServerUrl(serverUrl.trim());
     setSaved(true);
   };
@@ -41,6 +48,25 @@ export function SettingsPage() {
       </div>
 
       <div className="v3-settings-layout">
+        <Card>
+          <div className="v3-panel-heading">
+            <div><span>局外个人资料</span><h2>我的昵称</h2></div>
+            <UserRound size={18} aria-hidden="true" />
+          </div>
+          <label className="v3-field">
+            <span>显示名称</span>
+            <Input
+              value={nickname}
+              maxLength={PLAYER_NICKNAME_MAX_LENGTH}
+              autoComplete="nickname"
+              onChange={(event) => {
+                setNickname(event.target.value);
+                setSaved(false);
+              }}
+            />
+            <span className="v3-field__hint">保存后会用于大厅、开房和入座，不用每次重新填写。</span>
+          </label>
+        </Card>
         {diagnosticsEnabled ? (
           <Card>
             <div className="v3-panel-heading"><div><span>开发诊断</span><h2>服务连接</h2></div></div>

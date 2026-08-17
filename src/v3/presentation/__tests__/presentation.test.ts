@@ -110,6 +110,23 @@ test('狼人时间线展示逐狼投票目标，普通视角只看到安全提�
   );
 });
 
+test('狼人能看到狼队最终锁定的袭击目标，其他玩家只能看到安全提示', () => {
+  const playerName = (id: string | null) => id === 'p2' ? '二号玩家' : '未知目标';
+  const kill = event('wolf.kill_locked', { targetId: 'p2' });
+  assert.equal(
+    describeEvent(kill, playerName, {
+      viewer: { kind: 'player', playerId: 'p1', role: 'wolf' },
+    }),
+    '狼人已决定今晚的目标：二号玩家。',
+  );
+  assert.equal(
+    describeEvent(kill, playerName, {
+      viewer: { kind: 'player', playerId: 'p2', role: 'villager' },
+    }),
+    '狼人已决定今晚的目标。',
+  );
+});
+
 test('未知错误码使用安全兜底并提供恢复意图', () => {
   assert.equal(getErrorMessage('not-a-protocol-code'), '请求未完成，请稍后重试。');
   assert.equal(getErrorMessage('__proto__'), '请求未完成，请稍后重试。');

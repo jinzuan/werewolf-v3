@@ -7,6 +7,7 @@ import { useV3Store } from '../../stores/v3Store';
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { Input } from '../../ui/Input';
+import { readPlayerNickname, writePlayerNickname } from '../../runtime/playerProfile';
 import { joinActionLabel, joinIntentFromQuery, normalizeJoinCode, type JoinIntent } from './model';
 
 export function JoinRoomPage() {
@@ -20,7 +21,7 @@ export function JoinRoomPage() {
   const spectateRoom = useV3Store((state) => state.spectateRoom);
   const clearError = useV3Store((state) => state.clearError);
   const [intent, setIntent] = useState<JoinIntent>(() => joinIntentFromQuery(searchParams.get('intent')));
-  const [name, setName] = useState('玩家');
+  const [name, setName] = useState(() => readPlayerNickname());
   const [roomCode, setRoomCode] = useState(() => normalizeJoinCode(searchParams.get('code')));
   const [joinPassword, setJoinPassword] = useState('');
 
@@ -48,11 +49,13 @@ export function JoinRoomPage() {
 
   const enter = async (nextIntent: JoinIntent) => {
     const code = normalizeJoinCode(roomCode);
+    const playerName = writePlayerNickname(name);
+    setName(playerName);
     setIntent(nextIntent);
     clearError();
     const accepted = nextIntent === 'watch'
-      ? await spectateRoom(name, code, joinPassword)
-      : await joinRoom(name, code, joinPassword);
+      ? await spectateRoom(playerName, code, joinPassword)
+      : await joinRoom(playerName, code, joinPassword);
     if (accepted) navigate(roomPath(code), { replace: true });
   };
 
