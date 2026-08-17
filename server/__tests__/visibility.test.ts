@@ -124,6 +124,57 @@ test('wolves see teammate roles and wolf events but not role-private events', as
   assert.doesNotMatch(payload, new RegExp(`"targetId":"${villager.id}"`));
 });
 
+test('every living wolf receives every night chat message in speaker order', async () => {
+  const players = createPlayers();
+  const session = new GameSession(
+    'room-1',
+    players,
+    new InMemoryEventStore(),
+  );
+  await initializeSession(session, players);
+  const guardian = players.find((player) => player.role === 'guardian')!;
+  const seer = players.find((player) => player.role === 'seer')!;
+  const wolves = players.filter((player) => player.role === 'wolf');
+  const villager = players.find((player) => player.role === 'villager')!;
+
+  await dispatch(session, guardian.id, {
+    type: 'game.skip_night',
+    payload: { action: 'guard' },
+  });
+  await dispatch(session, seer.id, {
+    type: 'game.skip_night',
+    payload: { action: 'check' },
+  });
+
+  for (const [index, wolf] of wolves.entries()) {
+    const result = await dispatch(session, wolf.id, {
+      type: 'game.wolf_speak',
+      payload: { content: `狼聊-${index + 1}` },
+    });
+    assert.equal(result.ok, true);
+    const message = result.events.find((event) => event.eventType === 'wolf.message');
+    assert.deepEqual(message?.audienceIds, wolves.map((player) => player.id));
+  }
+
+  for (const wolf of wolves) {
+    const messages = (await session.eventsFor({
+      kind: 'player',
+      playerId: wolf.id,
+      role: 'wolf',
+    }))
+      .filter((event) => event.eventType === 'wolf.message')
+      .map((event) => (event.payload as { content: string }).content);
+    assert.deepEqual(messages, ['狼聊-1', '狼聊-2', '狼聊-3', '狼聊-4']);
+  }
+
+  const villagerMessages = (await session.eventsFor({
+    kind: 'player',
+    playerId: villager.id,
+    role: 'villager',
+  })).filter((event) => event.eventType === 'wolf.message');
+  assert.equal(villagerMessages.length, 0);
+});
+
 test('dead wolves do not receive new wolf-private events', async () => {
   const players = createPlayers();
   const deadWolf = players.find((player) => player.role === 'wolf')!;

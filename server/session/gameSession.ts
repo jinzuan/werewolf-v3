@@ -583,7 +583,7 @@ export class GameSession {
             content: command.payload.content,
           },
           'wolf_private',
-          undefined,
+          this.alivePlayers('wolf').map((player) => player.id),
           correlationId,
           actor.id,
         ),
@@ -1947,6 +1947,7 @@ export class GameSession {
       this.state.dayFlow.voteRound,
       this.state.dayFlow.lastWordsRemaining,
       this.state.gameState.currentSpeaker,
+      this.state.gameState.wolfCurrentSpeaker,
     ].join(':');
   }
 
