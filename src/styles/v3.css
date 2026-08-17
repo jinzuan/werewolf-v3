@@ -1903,6 +1903,51 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
   }
 }
 
+/* Tablet wizard: use the available width for form controls while keeping the
+   preview as a clearly separated, readable block above the form. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .v3-wizard-grid {
+    gap: var(--ww-space-4);
+  }
+
+  .v3-wizard-preview {
+    align-self: stretch;
+  }
+
+  .v3-wizard-preview > summary {
+    padding: var(--ww-space-3) var(--ww-space-4);
+  }
+
+  .v3-wizard-preview__content {
+    padding-top: var(--ww-space-2);
+  }
+
+  .v3-wizard-mode-grid {
+    gap: var(--ww-space-2);
+  }
+
+  .v3-wizard-mode-card {
+    min-height: 136px;
+    gap: var(--ww-space-2);
+    padding: var(--ww-space-3);
+  }
+
+  .v3-wizard-mode-card__icon {
+    width: 34px;
+    height: 34px;
+    flex-basis: 34px;
+  }
+
+  .v3-wizard-mode-card__description {
+    line-height: 18px;
+  }
+
+  .v3-wizard-actions,
+  .v3-wizard-confirm-actions {
+    gap: var(--ww-space-3);
+  }
+}
+
 @media (max-width: 767px) {
   .v3-lobby-hero {
     min-height: 0;
