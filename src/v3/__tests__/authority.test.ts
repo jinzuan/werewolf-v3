@@ -472,7 +472,7 @@ test('matching event envelopes advance a monotonic cursor and deduplicate', () =
   );
 });
 
-test('cross-room, cross-game, stale, and sensitive envelopes are isolated', () => {
+test('cross-room, cross-game, and sensitive envelopes are isolated', () => {
   const viewer: ViewerContext = {
     kind: 'spectator',
     spectatorId: 's1',
@@ -503,13 +503,6 @@ test('cross-room, cross-game, stale, and sensitive envelopes are isolated', () =
       type: 'game.events',
       roomId: 'room-1',
       gameId: 'game-1',
-      afterSequence: 4,
-      events: [],
-    },
-    {
-      type: 'game.events',
-      roomId: 'room-1',
-      gameId: 'game-1',
       afterSequence: 6,
       events: [
         domainEvent(6, 'day.started', 'public_timeline', {
@@ -525,6 +518,43 @@ test('cross-room, cross-game, stale, and sensitive envelopes are isolated', () =
       false,
     );
   }
+});
+
+test('out-of-order automatic-turn pushes retain newer public content', () => {
+  const state = {
+    roomId: 'room-1',
+    gameId: 'game-1',
+    lastSeenSeq: 5,
+    events: [],
+  };
+  const result = mergeEventEnvelope(
+    state,
+    {
+      type: 'game.events',
+      roomId: 'room-1',
+      gameId: 'game-1',
+      // This envelope started from an older socket cursor, but carries newer
+      // committed events from the same authoritative stream.
+      afterSequence: 4,
+      events: [
+        domainEvent(6, 'day.speech', 'public_timeline', {
+          actorId: 'p1',
+          content: '白天公开发言内容',
+        }),
+        domainEvent(7, 'night.resolved', 'public_timeline', {
+          deaths: ['p2'],
+          peacefulNight: false,
+        }),
+      ],
+    },
+    { kind: 'spectator', spectatorId: 's1', omniscient: false },
+  );
+
+  assert.equal(result.accepted, true);
+  assert.deepEqual(result.events.map((event) => event.sequence), [6, 7]);
+  assert.equal(result.events[0].payload.content, '白天公开发言内容');
+  assert.deepEqual(result.events[1].payload.deaths, ['p2']);
+  assert.equal(result.lastSeenSeq, 7);
 });
 
 test('public spectator snapshots and events cannot expose roles or private data', () => {

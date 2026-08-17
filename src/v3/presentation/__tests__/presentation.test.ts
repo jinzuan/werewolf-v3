@@ -80,6 +80,14 @@ test('事件模板只显示安全中文，未知事件不回显原始值', () =>
     '天亮了，昨夜是平安夜。',
   );
   assert.equal(
+    describeEvent(event('day.speech', { actorId: 'p1', content: '我昨晚认真盘了票型。' }), playerName),
+    '一号玩家：我昨晚认真盘了票型。',
+  );
+  assert.equal(
+    describeEvent(event('night.resolved', { deaths: ['p1'], peacefulNight: false }), playerName),
+    '天亮了，昨夜出局：一号玩家。',
+  );
+  assert.equal(
     describeEvent(event('future.internal_event'), playerName),
     UNKNOWN_EVENT_MESSAGE,
   );

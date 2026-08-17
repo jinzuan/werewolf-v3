@@ -27,12 +27,16 @@ export const mergeEventEnvelope = (
   if (
     envelope.roomId !== state.roomId ||
     envelope.gameId !== state.gameId ||
-    envelope.afterSequence < state.lastSeenSeq ||
     containsSensitiveKeys(envelope)
   ) {
     return { ...state, accepted: false };
   }
 
+  // Pushes from automatic turns can overlap while the server is projecting
+  // the same room for multiple sockets.  `afterSequence` is a transport
+  // cursor, not an ordering guarantee for the events carried in the envelope:
+  // merge any newer event by its authoritative sequence and treat older
+  // duplicates as harmless no-ops.
   const scoped = envelope.events.filter(
     (event) =>
       event.roomId === state.roomId &&
