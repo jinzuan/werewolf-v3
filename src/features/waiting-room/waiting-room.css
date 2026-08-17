@@ -336,6 +336,79 @@
 .waiting-room__spin { animation: waiting-room-spin .8s linear infinite; }
 @keyframes waiting-room-spin { to { transform: rotate(360deg); } }
 
+@media (min-width: 768px) and (max-width: 1023px) {
+  .waiting-room {
+    gap: var(--ww-space-4);
+  }
+
+  .waiting-room__header-card {
+    padding: var(--ww-space-5);
+  }
+
+  .waiting-room__header-main {
+    gap: var(--ww-space-4);
+  }
+
+  .waiting-room__header-main > div {
+    min-width: 0;
+  }
+
+  .waiting-room__header-meta {
+    gap: var(--ww-space-2) var(--ww-space-3);
+    padding-top: var(--ww-space-3);
+  }
+
+  .waiting-room__meta-item {
+    padding-right: var(--ww-space-3);
+  }
+
+  .waiting-room__workspace {
+    grid-template-columns: minmax(0, 1.55fr) minmax(280px, .95fr);
+    gap: var(--ww-space-4);
+  }
+
+  .waiting-room__players {
+    padding: var(--ww-space-4);
+  }
+
+  .waiting-room__section-heading {
+    grid-template-columns: 36px minmax(0, 1fr) auto;
+    gap: var(--ww-space-2);
+  }
+
+  .waiting-room__section-icon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .waiting-room__seat-grid {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: var(--ww-space-2);
+  }
+
+  .waiting-room__config-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .waiting-room__action-list--flow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .waiting-room__action-list--flow .v3-button {
+    min-width: 0;
+  }
+
+  .waiting-room__editor-grid,
+  .waiting-room__editor-role-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .waiting-room__ai-summary {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
 @media (max-width: 767px) {
   .waiting-room { display: flex; flex-direction: column; gap: var(--ww-space-4); }
   .waiting-room__workspace { display: contents; }
