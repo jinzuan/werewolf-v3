@@ -21,7 +21,8 @@ import {
   ROOM_LIST_DEFAULT_LIMIT,
   ROOM_LIST_MAX_LIMIT,
 } from '../../shared/protocol';
-import { SERVER_AI_DEFAULTS } from '../ai/config';
+import { SERVER_AI_DEFAULTS, type ServerAIConfig, type ServerAIProviderSettings } from '../ai/config';
+import { loadAIConfig } from '../config';
 import type {
   RoomAIConfig,
   RoomAIConfigPatch,
@@ -32,7 +33,6 @@ import {
   endpointMatchesCapability,
   getAIProviderCapability,
 } from '../../shared/aiProviderCapabilities';
-import type { ServerAIConfig } from '../ai/config';
 import type { Player } from '../../shared/types';
 import { defaultAITelemetry, type AITelemetry } from '../ai/aiTelemetry';
 import { DeterministicAIProvider } from '../ai/deterministicProvider';
@@ -233,6 +233,8 @@ export interface RoomServiceOptions {
     config: ServerAIConfig,
     options: HttpAIProviderOptions,
   ) => AIProvider;
+  /** Optional test/composition override for the deployment AI settings. */
+  serverAIConfig?: ServerAIConfig;
   reviewPipeline?: ReviewPipeline;
   insightStore?: InsightStore;
   aiTelemetry?: AITelemetry;
@@ -264,6 +266,7 @@ export class RoomService {
   private readonly credentialNamespace: string;
   private readonly endpointPolicy: EndpointPolicy;
   private readonly aiProviderFactory: NonNullable<RoomServiceOptions['aiProviderFactory']>;
+  private readonly serverAIConfig: ServerAIConfig;
   private readonly reviewPipeline?: ReviewPipeline;
   private readonly insightStore?: InsightStore;
   private closed = false;
@@ -348,6 +351,7 @@ export class RoomService {
     this.endpointPolicy = options.endpointPolicy ?? new EndpointPolicy({ environment: this.environment });
     this.aiProviderFactory = options.aiProviderFactory ?? ((config, providerOptions) =>
       new HttpAIProvider(config, providerOptions));
+    this.serverAIConfig = structuredClone(options.serverAIConfig ?? loadAIConfig());
     this.lifecycle = options.lifecycleService ?? new RoomLifecycleService(repository, {
       environment: this.environment,
       deploymentNamespace: this.deploymentNamespace,
@@ -469,8 +473,8 @@ export class RoomService {
     const roomId = randomUUID();
     const roomCode = await this.uniqueCode();
     let candidateCredentialRef: string | undefined;
-    if (options.aiConfig) {
-      const aiConfig = this.normalizeRoomAIConfig(options.aiConfig);
+    const aiConfig = this.createRoomAIConfig(options);
+    if (aiConfig) {
       if (!aiConfig) throw this.error('INVALID_ROOM_CONFIG', 'room.error.invalid_ai_config');
       if (!endpointMatchesCapability(aiConfig.provider, aiConfig.endpoint)) {
         throw this.error('AI_ENDPOINT_NOT_ALLOWED', 'room.error.ai_endpoint_not_allowed');
@@ -479,25 +483,29 @@ export class RoomService {
         await this.endpointPolicy.validate(aiConfig.endpoint, {
           provider: aiConfig.provider,
         });
-        const legacyKey = options.aiConfig.apiKey?.trim();
-        const legacyToken = options.aiConfig.token?.trim();
-        const hasCanonicalCredential = options.aiConfig.bearerCredential !== undefined;
-        const hasLegacyCredential = options.aiConfig.apiKey !== undefined || options.aiConfig.token !== undefined;
+        const explicitAIConfig = options.aiConfig !== undefined;
+        const serverCredential = this.serverCredentialFor(aiConfig.provider);
+        const legacyKey = explicitAIConfig ? options.aiConfig?.apiKey?.trim() : undefined;
+        const legacyToken = explicitAIConfig ? options.aiConfig?.token?.trim() : undefined;
+        const hasCanonicalCredential = explicitAIConfig && options.aiConfig?.bearerCredential !== undefined;
+        const hasLegacyCredential = explicitAIConfig && (options.aiConfig?.apiKey !== undefined || options.aiConfig?.token !== undefined);
         const mixedCredentialSchema = hasCanonicalCredential && hasLegacyCredential;
         const legacyAmbiguous = mixedCredentialSchema || Boolean(legacyKey && legacyToken && legacyKey !== legacyToken);
-        const credentialValues = mixedCredentialSchema
-          ? {
-              bearerCredential: options.aiConfig.bearerCredential?.trim(),
-              apiKey: legacyKey,
-              token: legacyToken,
-            }
-          : options.aiConfig.bearerCredential !== undefined
-          ? canonicalCredentialValues({ bearerCredential: options.aiConfig.bearerCredential })
-          : legacyAmbiguous
-            // Keep the legacy values isolated for offline migration. The room
-            // is marked ambiguous and providerForRoom refuses to call out.
-            ? { apiKey: legacyKey, token: legacyToken }
-            : canonicalCredentialValues({ apiKey: legacyKey, token: legacyToken });
+        const credentialValues = !explicitAIConfig
+          ? canonicalCredentialValues({ apiKey: serverCredential?.apiKey })
+          : mixedCredentialSchema
+            ? {
+                bearerCredential: options.aiConfig?.bearerCredential?.trim(),
+                apiKey: legacyKey,
+                token: legacyToken,
+              }
+            : options.aiConfig?.bearerCredential !== undefined
+            ? canonicalCredentialValues({ bearerCredential: options.aiConfig.bearerCredential })
+            : legacyAmbiguous
+              // Keep the legacy values isolated for offline migration. The room
+              // is marked ambiguous and providerForRoom refuses to call out.
+              ? { apiKey: legacyKey, token: legacyToken }
+              : canonicalCredentialValues({ apiKey: legacyKey, token: legacyToken });
         candidateCredentialRef = await this.credentialStore.put(
           { namespace: this.credentialNamespace, roomCode },
           credentialValues,
@@ -1703,7 +1711,10 @@ export class RoomService {
     const result = this.catalog.validator.validate(options);
     if (result.ok === false) throw this.validationError(result);
     const config = clone(result.config as RoomConfigRecord);
-    const aiProviderConfig = this.normalizeRoomAIConfig(options.aiConfig);
+    const aiProviderConfig = this.createRoomAIConfig(options);
+    if (options.aiConfig !== undefined && !aiProviderConfig) {
+      throw this.error('INVALID_ROOM_CONFIG', 'room.error.invalid_ai_config');
+    }
     if (aiProviderConfig) {
       const {
         apiKey: _apiKey,
@@ -1859,6 +1870,48 @@ export class RoomService {
     };
   }
 
+  private createRoomAIConfig(options: CreateRoomOptionsV31): RoomAIConfig | undefined {
+    if (options.aiConfig !== undefined) return this.normalizeRoomAIConfig(options.aiConfig);
+    if (options.mode === 'human' || !this.hasConfiguredServerAI()) return undefined;
+    const provider = this.serverAIConfig.apiType;
+    const settings = this.serverSettingsFor(provider);
+    const endpoint = provider === 'local'
+      ? settings.apiUrl
+      : getAIProviderCapability(provider).defaultEndpoint;
+    if (!settings.model || !endpoint) return undefined;
+    return {
+      provider,
+      model: settings.model,
+      endpoint,
+      temperature: settings.temperature,
+      maxTokens: settings.maxTokens,
+      behavior: this.serverAIConfig.defaultBehavior,
+    };
+  }
+
+  private hasConfiguredServerAI(): boolean {
+    const configuredByEnvironment = Boolean(process.env.WW_API_URL?.trim());
+    if (configuredByEnvironment) return true;
+    if (this.serverAIConfig.apiType !== SERVER_AI_DEFAULTS.apiType) return true;
+    const settings = this.serverSettingsFor('local');
+    return settings.apiUrl !== SERVER_AI_DEFAULTS.local.apiUrl ||
+      settings.model !== SERVER_AI_DEFAULTS.local.model ||
+      Boolean(settings.apiKey.trim());
+  }
+
+  private serverSettingsFor(provider: ServerAIConfig['apiType']): ServerAIProviderSettings {
+    return provider === 'siliconflow'
+      ? this.serverAIConfig.siliconflow
+      : provider === 'deepseek'
+        ? this.serverAIConfig.deepseek
+        : this.serverAIConfig.local;
+  }
+
+  private serverCredentialFor(provider: RoomAIConfig['provider']): ServerAIProviderSettings | undefined {
+    if (provider === 'custom') return undefined;
+    return this.serverSettingsFor(provider);
+  }
+
   private validateAIConfigPatch(value: RoomAIConfigPatch): RoomAIConfigPatch {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       throw this.error('INVALID_ROOM_CONFIG', 'room.error.invalid_ai_config');
@@ -1964,17 +2017,22 @@ export class RoomService {
       patch.token,
     ].some((value) => value !== undefined);
     if (!existing && !hasMeaningfulCreateField) return undefined;
-    const provider = patch.provider ?? existing?.provider ?? 'local';
-    const defaults = provider === 'siliconflow'
+    const provider = patch.provider ?? existing?.provider ?? this.serverAIConfig.apiType;
+    const serverDefaults = provider === this.serverAIConfig.apiType
+      ? this.serverSettingsFor(provider)
+      : undefined;
+    const defaults = serverDefaults ?? (provider === 'siliconflow'
       ? SERVER_AI_DEFAULTS.siliconflow
       : provider === 'deepseek'
         ? SERVER_AI_DEFAULTS.deepseek
-        : SERVER_AI_DEFAULTS.local;
+        : SERVER_AI_DEFAULTS.local);
     const model = patch.model ?? existing?.model ?? defaults.model;
     const capability = getAIProviderCapability(provider);
     const providerChanged = patch.provider !== undefined && patch.provider !== existing?.provider;
     const endpoint = patch.endpoint ??
-      (providerChanged ? capability.defaultEndpoint : existing?.endpoint ?? capability.defaultEndpoint);
+      (providerChanged
+        ? (serverDefaults?.apiUrl ?? capability.defaultEndpoint)
+        : existing?.endpoint ?? serverDefaults?.apiUrl ?? capability.defaultEndpoint);
     if (!model || !endpoint) return undefined;
     return {
       provider,
@@ -2099,6 +2157,8 @@ export class RoomService {
       endpointPolicy: this.endpointPolicy,
       endpoint: roomConfig.endpoint,
     });
+    const endpoint = new URL(roomConfig.endpoint);
+    console.info(`[server:ai] provider=${roomConfig.provider} endpoint=${endpoint.origin}${endpoint.pathname} model=${roomConfig.model}`);
     this.roomAIProviders.set(roomKey, provider);
     return provider;
   }
