@@ -45,6 +45,20 @@ export const filterVisibleEvents = (
   );
 };
 
+/**
+ * Build the chat projection from the same viewer-scoped event stream used by
+ * recovery/live pushes.  Sequence ordering is explicit here because a socket
+ * page may contain hidden events and therefore must not rely on arrival order
+ * to render the next wolf speaker's message.
+ */
+export const chatEventsForViewer = (
+  events: readonly DomainEvent[],
+  viewer: ViewerContext | null,
+): DomainEvent[] =>
+  filterVisibleEvents(events, viewer)
+    .filter((event) => event.eventType !== 'game.state_updated')
+    .sort((left, right) => left.sequence - right.sequence);
+
 export const publicSpectatorEvents = (
   events: readonly DomainEvent[],
 ): DomainEvent[] =>

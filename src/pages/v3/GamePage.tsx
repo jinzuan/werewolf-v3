@@ -43,7 +43,7 @@ import {
 } from '../../v3/serverClock';
 import { formatCountdown } from '../../v3/countdown';
 import { MAX_EVENT_WINDOW } from '../../v3/eventStream';
-import { filterVisibleEvents } from '../../v3/visibility';
+import { chatEventsForViewer } from '../../v3/visibility';
 
 const ROLE_DESCRIPTIONS = {
   wolf: '夜间与狼人队友讨论并决定袭击目标。',
@@ -143,8 +143,7 @@ export function GamePage() {
       : allowedActions[0] ?? null;
   const visibleEvents = useMemo(
     () =>
-      filterVisibleEvents(events, snapshot?.viewer ?? null)
-        .filter((event) => event.eventType !== 'game.state_updated')
+      chatEventsForViewer(events, snapshot?.viewer ?? null)
         .slice(-MAX_EVENT_WINDOW),
     [events, snapshot?.viewer],
   );
