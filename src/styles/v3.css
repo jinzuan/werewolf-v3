@@ -1948,6 +1948,52 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
   }
 }
 
+/* Portrait tablet match layout: a narrow two-column seat rail makes player
+   names and action targets too small, so each primary surface gets the full
+   reading width while keeping the action panel first. */
+@media (min-width: 768px) and (max-width: 899px) {
+  .v3-match-layout,
+  .v3-spectate-layout,
+  .v3-monitor-layout {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ww-space-4);
+  }
+
+  .v3-match-layout__center {
+    order: 1;
+  }
+
+  .v3-match-layout__left {
+    order: 2;
+  }
+
+  .v3-match-layout__right {
+    order: 3;
+  }
+
+  .v3-match-layout__footer {
+    order: 4;
+  }
+
+  .v3-match-layout__left > .v3-card,
+  .v3-match-layout__center > .v3-card,
+  .v3-match-layout__right > .v3-card {
+    height: auto;
+  }
+
+  .v3-player-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--ww-space-3);
+  }
+
+  .v3-chat-list,
+  .v3-timeline,
+  .v3-console-events {
+    max-height: min(48dvh, 520px);
+  }
+}
+
 @media (max-width: 767px) {
   .v3-lobby-hero {
     min-height: 0;
