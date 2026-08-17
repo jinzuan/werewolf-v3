@@ -12,6 +12,10 @@ export interface AITurnExecution extends AITurnTask {
   signal: AbortSignal;
 }
 
+/** Human-readable pacing for computer-player speech in production rooms. */
+export const AI_SPEECH_DELAY_MIN_MS = 8_000;
+export const AI_SPEECH_DELAY_MAX_MS = 15_000;
+
 export type AITurnExecutor = (task: AITurnExecution) => Promise<void>;
 export type AITurnIdleHandler = (task: AITurnTask) => void;
 

@@ -35,6 +35,10 @@ import {
 } from '../../shared/aiProviderCapabilities';
 import type { Player } from '../../shared/types';
 import { defaultAITelemetry, type AITelemetry } from '../ai/aiTelemetry';
+import {
+  AI_SPEECH_DELAY_MAX_MS,
+  AI_SPEECH_DELAY_MIN_MS,
+} from '../ai/aiTurnScheduler';
 import { defaultAILogger, type AILogger } from '../ai/types';
 import { DeterministicAIProvider } from '../ai/deterministicProvider';
 import { HttpAIProvider } from '../ai/httpProvider';
@@ -206,6 +210,9 @@ export interface RoomServiceOptions {
   session?: Omit<SessionOptions, 'onChanged'>;
   aiProvider?: AIProvider;
   aiTimeoutMs?: number;
+  /** Delay bounds for AI speech turns; test environments default to zero. */
+  aiSpeechDelayMinMs?: number;
+  aiSpeechDelayMaxMs?: number;
   autoDrive?: boolean;
   catalog?: RoomCatalogService;
   policy?: RoomPolicy;
@@ -332,6 +339,10 @@ export class RoomService {
       now: options.session?.now,
       telemetry: this.aiTelemetry,
       logger: this.aiLogger,
+      aiSpeechDelayMinMs: options.aiSpeechDelayMinMs ??
+        (this.environment === 'test' ? 0 : AI_SPEECH_DELAY_MIN_MS),
+      aiSpeechDelayMaxMs: options.aiSpeechDelayMaxMs ??
+        (this.environment === 'test' ? 0 : AI_SPEECH_DELAY_MAX_MS),
     });
     this.connectionRegistry = options.connectionRegistry ?? new ConnectionRegistry();
     for (const fact of repository.takeLegacyConnectionFacts?.() ?? []) {

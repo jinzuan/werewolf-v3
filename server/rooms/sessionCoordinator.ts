@@ -1,7 +1,12 @@
 import type { GameAction, Player } from '../../shared/types';
 import type { GameCommand } from '../../shared/protocol';
 import { AIOrchestrator } from '../ai/orchestrator';
-import { AITurnScheduler, type AITurnTask } from '../ai/aiTurnScheduler';
+import {
+  AI_SPEECH_DELAY_MAX_MS,
+  AI_SPEECH_DELAY_MIN_MS,
+  AITurnScheduler,
+  type AITurnTask,
+} from '../ai/aiTurnScheduler';
 import { buildAIRuntimeContext } from '../ai/runtimeContext';
 import { PromptContextCache } from '../ai/promptContextCache';
 import { experienceLibrary } from '../ai/experienceLibrary';
@@ -21,6 +26,9 @@ export interface SessionCoordinatorOptions {
   now?: () => number;
   telemetry?: AITelemetry;
   logger?: AILogger;
+  /** Server-owned delay between computer-player speech turns. */
+  aiSpeechDelayMinMs?: number;
+  aiSpeechDelayMaxMs?: number;
 }
 
 export interface ScheduleEligibleAIInput {
@@ -68,8 +76,18 @@ export class SessionCoordinator {
   readonly contextCache = new PromptContextCache();
   readonly scheduler: AITurnScheduler;
   private closed = false;
+  private readonly aiSpeechDelayMinMs: number;
+  private readonly aiSpeechDelayMaxMs: number;
 
   constructor(private readonly options: SessionCoordinatorOptions) {
+    this.aiSpeechDelayMinMs = Math.max(
+      0,
+      Math.floor(options.aiSpeechDelayMinMs ?? AI_SPEECH_DELAY_MIN_MS),
+    );
+    this.aiSpeechDelayMaxMs = Math.max(
+      this.aiSpeechDelayMinMs,
+      Math.floor(options.aiSpeechDelayMaxMs ?? AI_SPEECH_DELAY_MAX_MS),
+    );
     this.scheduler = new AITurnScheduler(
       (task) => this.execute(task),
       undefined,
@@ -146,6 +164,22 @@ export class SessionCoordinator {
       );
       return;
     }
+    if (isSpeechAction(task.actionClass)) {
+      const delay = this.nextSpeechDelayMs();
+      if (!(await waitForDelay(delay, task.signal))) return;
+      // The stage may have timed out while the AI was waiting. Do not spend a
+      // provider call on a speaker whose authoritative turn has already gone.
+      const current = this.options.getSession(task.roomCode);
+      const currentState = current?.serialize().state;
+      if (
+        !current ||
+        current.gameId !== task.gameId ||
+        current.stageRevision !== task.stageRevision ||
+        !currentState?.gameState.allowedActors?.some(
+          (entry) => entry.playerId === task.actorId && entry.actions.includes(task.actionClass as GameAction),
+        )
+      ) return;
+    }
     const provider = await this.options.providerForRoom(room);
     const events = await this.contextCache.eventsFor(session, {
       kind: 'player',
@@ -210,4 +244,38 @@ export class SessionCoordinator {
       signal: task.signal,
     });
   }
+
+  private nextSpeechDelayMs(): number {
+    if (this.aiSpeechDelayMinMs === this.aiSpeechDelayMaxMs) {
+      return this.aiSpeechDelayMinMs;
+    }
+    return this.aiSpeechDelayMinMs + Math.floor(
+      Math.random() * (this.aiSpeechDelayMaxMs - this.aiSpeechDelayMinMs + 1),
+    );
+  }
 }
+
+const isSpeechAction = (actionClass: string): boolean =>
+  actionClass === 'speak' || actionClass === 'skip_speech' || actionClass === 'wolf_speak';
+
+const waitForDelay = (delayMs: number, signal: AbortSignal): Promise<boolean> =>
+  new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve(false);
+      return;
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const cleanup = (): void => {
+      if (timer !== undefined) clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+    };
+    const onAbort = (): void => {
+      cleanup();
+      resolve(false);
+    };
+    timer = setTimeout(() => {
+      cleanup();
+      resolve(true);
+    }, delayMs);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
