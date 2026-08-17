@@ -432,15 +432,15 @@ export class HttpAIProvider implements AIProvider {
           return { status: response.status, headers: response.headers };
         }
         if (response.status >= 300 && response.status < 400) {
+          const location = response.headers.get('location');
           if (redirectCount >= MAX_REDIRECTS) {
             throw new ProviderError(
               'redirect_blocked',
               0,
               response.status,
-              'TOO_MANY_REDIRECTS',
+              `TOO_MANY_REDIRECTS:${location ?? '(no-location)'}`,
             );
           }
-          const location = response.headers.get('location');
           if (!location) {
             throw new ProviderError(
               'redirect_blocked',
