@@ -176,7 +176,7 @@ test('HTTP provider blocks cross-host redirects before issuing the redirected re
   assert.deepEqual(requests, ['https://provider.test/v1/chat/completions']);
   assert.equal(logs.at(-1)?.errorClass, 'redirect_blocked');
   assert.equal(logs.at(-1)?.httpStatus, 302);
-  assert.equal(logs.at(-1)?.detail, 'UNSAFE_LOCATION');
+  assert.match(logs.at(-1)?.detail ?? '', /^UNSAFE_LOCATION:/);
 });
 
 test('HTTP provider revalidates a redirect with endpoint policy before transport', async () => {

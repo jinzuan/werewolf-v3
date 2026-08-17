@@ -471,7 +471,7 @@ export class HttpAIProvider implements AIProvider {
               'redirect_blocked',
               0,
               response.status,
-              'UNSAFE_LOCATION',
+              `UNSAFE_LOCATION:${redirectEndpoint.hostname}:${redirectEndpoint.pathname}`,
             );
           }
           requestEndpoint = redirectEndpoint.toString();
