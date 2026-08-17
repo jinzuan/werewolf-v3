@@ -1994,6 +1994,41 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
   }
 }
 
+/* Tablet settings: keep descriptions flexible and cap wide controls so a
+   diagnostic field cannot force the card beyond the viewport. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .v3-settings-layout {
+    gap: var(--ww-space-4);
+  }
+
+  .v3-settings-layout > .v3-card {
+    min-width: 0;
+  }
+
+  .v3-setting-row {
+    gap: var(--ww-space-4);
+  }
+
+  .v3-setting-row > div {
+    min-width: 0;
+  }
+
+  .v3-setting-row > .v3-input {
+    width: min(100%, 360px);
+    min-width: 0;
+  }
+
+  .v3-setting-row > .v3-segmented {
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .v3-settings-note {
+    align-items: flex-start;
+  }
+}
+
 @media (max-width: 767px) {
   .v3-lobby-hero {
     min-height: 0;
