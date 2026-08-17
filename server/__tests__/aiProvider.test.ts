@@ -3,13 +3,16 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { GameCommandMeta } from '../../shared/protocol';
 import { SERVER_AI_DEFAULTS, type ServerAIConfig } from '../ai/config';
 import { dispatch, createPlayers, initializeSession } from './fixtures';
 import { projectAIContext } from '../ai/contextProjector';
 import { loadExperienceLibrary } from '../ai/experienceLibrary';
 import { HttpAIProvider } from '../ai/httpProvider';
 import { AIOrchestrator } from '../ai/orchestrator';
-import type { AIRequestContext } from '../ai/types';
+import { buildPromptPipeline } from '../ai/promptPipeline';
+import type { AILogEntry, AIRequestContext } from '../ai/types';
+import { AICircuitBreaker } from '../ai/providerQueue';
 import { InMemoryEventStore } from '../events/store';
 import { GameSession } from '../session/gameSession';
 
@@ -126,6 +129,7 @@ test('429 honors Retry-After before succeeding', async () => {
 });
 
 test('HTTP provider accepts the action JSON contract used by the prompt', async () => {
+  const logs: AILogEntry[] = [];
   const provider = new HttpAIProvider(providerConfig(), {
     fetch: async () => new Response(
       JSON.stringify({
@@ -141,6 +145,7 @@ test('HTTP provider accepts the action JSON contract used by the prompt', async 
       { status: 200, headers: { 'content-type': 'application/json' } },
     ),
     maxRetries: 0,
+    logger: (entry) => logs.push(entry),
   });
 
   const result = await provider.suggest({
@@ -156,6 +161,144 @@ test('HTTP provider accepts the action JSON contract used by the prompt', async 
     type: 'game.speak',
     payload: { content: '我会先核对新的票型证据。' },
   });
+  assert.deepEqual(logs.map((entry) => entry.status), ['started', 'success']);
+});
+
+test('a parsed model speech is dispatched as a public day.speech event', async () => {
+  const players = createPlayers();
+  const seed = new GameSession('room-1', players, new InMemoryEventStore());
+  const snapshot = seed.serialize();
+  const speaker = players[0];
+  snapshot.state.gameState.phase = 'day';
+  snapshot.state.gameState.nightStage = 'resolve';
+  snapshot.state.gameState.dayStage = 'speech';
+  snapshot.state.gameState.stageRevision = 10;
+  snapshot.state.gameState.currentSpeaker = speaker.id;
+  snapshot.state.gameState.deadlineTs = Date.now() + 30_000;
+  snapshot.state.dayFlow = {
+    stage: 'speech',
+    voteRound: 1,
+    voteCandidates: [],
+    votes: {},
+    voteReasons: {},
+    speechQueue: players.map((player) => player.id),
+    speechDirection: 'clockwise',
+    speechStartPlayerId: speaker.id,
+    lastWordsPlayerId: null,
+    lastWordsRemaining: 0,
+    pendingHunterId: null,
+    pendingExile: null,
+  };
+  const session = new GameSession(
+    'room-1',
+    players,
+    new InMemoryEventStore(),
+    snapshot,
+  );
+  await session.initialize();
+  const provider = new HttpAIProvider(providerConfig(), {
+    fetch: async () => new Response(
+      JSON.stringify({
+        choices: [{
+          message: {
+            content: JSON.stringify({ action: 'speak', content: '我先核对昨夜的新信息。' }),
+          },
+        }],
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ),
+    maxRetries: 0,
+    circuitBreaker: new AICircuitBreaker(),
+  });
+  const suggestion = await provider.suggest({
+    roomId: 'room-1',
+    gameId: session.gameId,
+    playerId: speaker.id,
+    role: speaker.role!,
+    phase: 'day',
+    stage: 'speech',
+    // The provider only needs a stable experience-selection revision here;
+    // dispatch still uses the authoritative session revision below.
+    stageRevision: 1,
+    players,
+    allowedActions: ['speak'],
+    allowedCommandTypes: ['game.speak'],
+  });
+  const result = await session.dispatch({
+    commandId: 'ai:speech-contract',
+    actorId: speaker.id,
+    sentAt: Date.now(),
+    roomId: 'room-1',
+    gameId: session.gameId,
+    expectedStageRevision: session.stageRevision,
+  } satisfies GameCommandMeta, suggestion.command);
+
+  assert.equal(result.ok, true);
+  const events = await session.eventsFor({
+    kind: 'spectator',
+    spectatorId: 'public',
+    omniscient: false,
+  });
+  assert.ok(events.some((event) =>
+    event.eventType === 'day.speech' && event.payload.content === '我先核对昨夜的新信息。'));
+});
+
+test('day speech prompts render for every role without placeholders', () => {
+  const players = createPlayers();
+  for (const role of ['guardian', 'seer', 'witch', 'hunter', 'wolf', 'villager'] as const) {
+    const prompt = buildPromptPipeline({
+      roomId: 'room-1',
+      gameId: 'game-1',
+      playerId: players[0].id,
+      role,
+      phase: 'day',
+      stage: 'speech',
+      stageRevision: 1,
+      callId: `prompt-${role}`,
+      players,
+      allowedActions: ['speak'],
+      allowedCommandTypes: ['game.speak'],
+    }).prompt;
+    assert.equal(prompt.system.includes('{{'), false, role);
+    assert.equal(prompt.user.includes('{{'), false, role);
+  }
+});
+
+test('HTTP provider logs validation failures and timeouts without completion data', async () => {
+  const invalidLogs: AILogEntry[] = [];
+  const invalidProvider = new HttpAIProvider(providerConfig(), {
+    fetch: async () => new Response(
+      JSON.stringify({ choices: [{ message: { content: '{"action":"speak"}' } }] }),
+      { status: 200 },
+    ),
+    maxRetries: 0,
+    circuitBreaker: new AICircuitBreaker(),
+    logger: (entry) => invalidLogs.push(entry),
+  });
+  await assert.rejects(() => invalidProvider.suggest({
+    ...guardianContext(),
+    role: 'villager',
+    phase: 'day',
+    stage: 'speech',
+    allowedActions: ['speak'],
+    allowedCommandTypes: ['game.speak'],
+  }));
+  const invalidFailure = invalidLogs.at(-1)!;
+  assert.equal(invalidFailure.status, 'failed');
+  assert.equal(invalidFailure.errorClass, 'invalid_output');
+  assert.equal(invalidFailure.detail, 'EMPTY_OUTPUT');
+  assert.equal('completion' in invalidFailure, false);
+
+  const timeoutLogs: AILogEntry[] = [];
+  const timeoutProvider = new HttpAIProvider(providerConfig(), {
+    fetch: async () => new Promise<Response>(() => {}),
+    timeoutMs: 5,
+    maxRetries: 0,
+    circuitBreaker: new AICircuitBreaker(),
+    logger: (entry) => timeoutLogs.push(entry),
+  });
+  await assert.rejects(() => timeoutProvider.suggest(guardianContext()));
+  assert.equal(timeoutLogs.at(-1)?.errorClass, 'timeout');
 });
 
 test('429 exhaustion uses one deterministic fallback and keeps the stage moving', async () => {

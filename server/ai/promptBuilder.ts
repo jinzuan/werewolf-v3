@@ -463,6 +463,12 @@ const placeholderValues = (
     (roleTask.includes('{{last_words_round_task}}')
       ? '根据服务端注入的可见历史，交代真实信息、最新票型和最终行动建议。'
       : roleTaskText);
+  // roleTask is rendered again as part of the user prompt, but values are not
+  // recursively rendered after insertion.  Keep phase_task useful without
+  // leaking a role-template placeholder into the final prompt.
+  const phaseTask =
+    promptContext.phaseTask ||
+    roleTaskText.replace(/\{\{[^}]+\}\}/g, '').trim();
 
   return {
     player_name: playerName(context.players, context.playerId),
@@ -504,7 +510,7 @@ const placeholderValues = (
     other_players_current_claims: listText(publicSpeeches, '无'),
     required_novelty: promptContext.requiredNovelty || '无；不要复述旧主张和旧证据',
     is_daily_summarizer: promptContext.isDailySummarizer ? '是' : '否',
-    phase_task: promptContext.phaseTask || lastWordsTask,
+    phase_task: phaseTask || lastWordsTask,
     role_reveal_context: promptContext.roleRevealContext || '服务端未要求亮身份',
     public_role_claims: listText(promptContext.publicRoleClaims),
     public_seer_claims: listText(promptContext.publicSeerClaims),
@@ -554,9 +560,10 @@ const render = (template: string, values: Record<string, string>): string => {
     }
     return values[key] ?? '';
   });
-  if (/\{\{|\}\}/.test(rendered)) {
+  const unresolved = /\{\{[^}]*\}\}|\{\{|\}\}/.exec(rendered);
+  if (unresolved) {
     throw new PromptBuildError(
-      'Prompt contains an unrendered placeholder.',
+      `Prompt contains an unrendered placeholder: ${unresolved[0].slice(0, 120)}`,
       'PROMPT_UNRENDERED_PLACEHOLDER',
     );
   }

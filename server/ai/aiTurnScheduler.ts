@@ -1,3 +1,5 @@
+import { defaultAILogger, type AILogger } from './types';
+
 export interface AITurnTask {
   roomCode: string;
   gameId: string;
@@ -32,6 +34,7 @@ export class AITurnScheduler {
   constructor(
     private readonly execute: AITurnExecutor,
     private readonly onIdle?: AITurnIdleHandler,
+    private readonly logger: AILogger = defaultAILogger,
   ) {}
 
   schedule(task: AITurnTask): Promise<void> {
@@ -45,10 +48,29 @@ export class AITurnScheduler {
       return roomExisting;
     }
     if (this.closed) return Promise.resolve();
+    this.logger({
+      layer: 'scheduler',
+      status: 'started',
+      roomId: task.roomCode,
+      gameId: task.gameId,
+      playerId: task.actorId,
+      stage: String(task.stageRevision),
+      actionClass: task.actionClass,
+    });
     const controller = new AbortController();
     const run = this.execute({ ...task, signal: controller.signal })
       .catch((error) => {
         this.lastFailure = error instanceof Error ? `${error.name}:${error.message}` : String(error);
+        this.logger({
+          layer: 'scheduler',
+          status: 'failed',
+          roomId: task.roomCode,
+          gameId: task.gameId,
+          playerId: task.actorId,
+          stage: String(task.stageRevision),
+          actionClass: task.actionClass,
+          errorClass: error instanceof Error ? error.name : 'unknown',
+        });
       })
       .finally(() => {
         this.active.delete(key);

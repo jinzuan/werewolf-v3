@@ -71,3 +71,22 @@ test('close aborts active work and clears queued tasks', async () => {
   assert.equal(observedAbort, true);
   assert.deepEqual(scheduler.pending(), []);
 });
+
+test('scheduler exposes execution failures instead of leaving a silent turn', async () => {
+  const logs: Array<{ layer: string; status: string; errorClass?: string }> = [];
+  const scheduler = new AITurnScheduler(
+    async () => {
+      throw new Error('provider unavailable');
+    },
+    undefined,
+    (entry) => logs.push(entry),
+  );
+
+  await scheduler.schedule(task('actor-1'));
+
+  assert.deepEqual(logs.map((entry) => entry.status), ['started', 'failed']);
+  assert.equal(logs.at(-1)?.layer, 'scheduler');
+  assert.equal(logs.at(-1)?.errorClass, 'Error');
+  assert.match(scheduler.failure() ?? '', /provider unavailable/);
+  await scheduler.close();
+});

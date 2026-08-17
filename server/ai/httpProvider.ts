@@ -20,6 +20,7 @@ import type {
 } from './types';
 import {
   AIProviderError as ProviderError,
+  defaultAILogger,
   type AILogger,
 } from './types';
 import { buildPromptPipeline } from './promptPipeline';
@@ -90,6 +91,15 @@ const settingsFor = (config: ServerAIConfig, endpointOverride?: string): Provide
   };
 };
 
+const endpointLabel = (endpoint: string): string => {
+  try {
+    const url = new URL(endpoint);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return '<invalid-endpoint>';
+  }
+};
+
 const defaultSleep = (delayMs: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, delayMs));
 
@@ -135,54 +145,6 @@ const actionForCommand = (
       return command.payload.targetId === null
         ? 'skip_hunter_shot'
         : 'hunter_shoot';
-  }
-};
-
-const validTarget = (value: unknown): value is string | null =>
-  value === null || typeof value === 'string';
-
-const validCommandPayload = (
-  command: GameCommand,
-  context: AIRequestContext,
-): boolean => {
-  if (!isRecord(command.payload)) return false;
-  switch (command.type) {
-    case 'game.confirm_role':
-      return true;
-    case 'game.speak':
-    case 'game.wolf_speak':
-      return typeof command.payload.content === 'string';
-    case 'game.skip_speech':
-      if (context.phase === 'lastWords' || context.stage === 'last_words') {
-        return typeof command.payload.reason === 'string' && command.payload.reason.trim().length > 0;
-      }
-      return (
-        command.payload.reason === undefined ||
-        (typeof command.payload.reason === 'string' && command.payload.reason.trim().length > 0)
-      );
-    case 'game.vote':
-      return (
-        validTarget(command.payload.targetId) &&
-        (command.payload.reason === undefined || typeof command.payload.reason === 'string')
-      );
-    case 'game.wolf_vote':
-    case 'game.hunter_shoot':
-      return validTarget(command.payload.targetId);
-    case 'game.night_action':
-      return (
-        command.payload.playerId === context.playerId &&
-        ['kill', 'check', 'heal', 'poison', 'guard'].includes(
-          command.payload.action,
-        ) &&
-        validTarget(command.payload.targetId)
-      );
-    case 'game.skip_night':
-      return (
-        typeof command.payload.action === 'string' &&
-        ['guard', 'check', 'heal', 'poison'].includes(
-          command.payload.action,
-        )
-      );
   }
 };
 
@@ -249,6 +211,15 @@ const normalizeError = (
   if (error instanceof Error && error.name === 'AbortError') {
     return new ProviderError('timeout', retryCount);
   }
+  if (error instanceof Error && error.name === 'PromptBuildError') {
+    const code = (error as Error & { code?: unknown }).code;
+    return new ProviderError(
+      'prompt_error',
+      retryCount,
+      undefined,
+      `${typeof code === 'string' ? code : 'PROMPT_BUILD_FAILED'}:${error.message.slice(0, 160)}`,
+    );
+  }
   return new ProviderError('network', retryCount);
 };
 
@@ -268,6 +239,7 @@ export class HttpAIProvider implements AIProvider {
   private readonly baseDelayMs: number;
   private readonly endpointPolicy: EndpointPolicy;
   private readonly promptBudget: { maxChars?: number; maxEvents?: number };
+  private readonly logger: AILogger;
 
   constructor(
     config: ServerAIConfig = loadAIConfig(),
@@ -290,6 +262,7 @@ export class HttpAIProvider implements AIProvider {
       maxChars: options.promptMaxChars,
       maxEvents: options.promptMaxEvents,
     };
+    this.logger = options.logger ?? defaultAILogger;
     const testTransport: SafeHttpTransport | undefined = options.fetch
       ? async ({ url, options: requestOptions }) => options.fetch!(url, requestOptions)
       : undefined;
@@ -299,21 +272,48 @@ export class HttpAIProvider implements AIProvider {
   }
 
   async suggest(context: AIRequestContext): Promise<AISuggestion> {
-    const prompt = buildPromptPipeline(context, this.promptBudget).prompt;
-    if (!this.circuitBreaker.allow(this.settings.key)) {
-      throw new ProviderError('circuit_open', 0);
-    }
+    const startedAt = this.now();
+    const baseLog = {
+      roomId: context.roomId,
+      gameId: context.gameId,
+      playerId: context.playerId,
+      callId: context.callId,
+      stage: context.stage,
+      provider: this.settings.provider,
+      model: this.settings.model,
+      endpoint: endpointLabel(this.settings.endpoint),
+    } as const;
+    this.logger({ layer: 'provider', status: 'started', ...baseLog });
     try {
+      const prompt = buildPromptPipeline(context, this.promptBudget).prompt;
+      if (!this.circuitBreaker.allow(this.settings.key)) {
+        throw new ProviderError('circuit_open', 0);
+      }
       const suggestion = await this.queue.run(this.settings.key, (signal) =>
         this.requestWithRetries(prompt, context, signal), {
           signal: context.signal,
           enqueueTimeoutMs: this.enqueueTimeoutMs,
         });
       this.circuitBreaker.recordSuccess(this.settings.key);
+      this.logger({
+        layer: 'provider',
+        status: 'success',
+        ...baseLog,
+        commandType: suggestion.command.type,
+        retryCount: suggestion.providerMeta?.retryCount ?? 0,
+        durationMs: Math.max(0, this.now() - startedAt),
+      });
       return suggestion;
     } catch (error) {
       if (error instanceof AIQueueError) {
         this.circuitBreaker.release(this.settings.key);
+        this.logger({
+          layer: 'provider',
+          status: 'failed',
+          ...baseLog,
+          errorClass: error.code,
+          durationMs: Math.max(0, this.now() - startedAt),
+        });
         throw error;
       }
       const normalized = normalizeError(error, 0);
@@ -322,6 +322,16 @@ export class HttpAIProvider implements AIProvider {
       }
       if (normalized.errorClass === 'cancelled') this.telemetry.recordCancelled();
       if (normalized.errorClass === 'timeout') this.telemetry.recordTimeout();
+      this.logger({
+        layer: 'provider',
+        status: 'failed',
+        ...baseLog,
+        errorClass: normalized.errorClass,
+        ...(normalized.detail ? { detail: normalized.detail } : {}),
+        ...(normalized.status !== undefined ? { httpStatus: normalized.status } : {}),
+        retryCount: normalized.retryCount,
+        durationMs: Math.max(0, this.now() - startedAt),
+      });
       throw normalized;
     }
   }

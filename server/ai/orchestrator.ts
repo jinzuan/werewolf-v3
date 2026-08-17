@@ -17,12 +17,14 @@ import {
   defaultAITelemetry,
   type AITelemetry,
 } from './aiTelemetry';
+import { defaultAILogger, type AILogger } from './types';
 
 export interface AIOrchestratorOptions {
   timeoutMs?: number;
   telemetry?: AITelemetry;
   fallbackRegistry?: AIFallbackRegistry;
   contextCache?: PromptContextCache;
+  logger?: AILogger;
 }
 
 const commandTypeForAction = (action: GameAction): GameCommand['type'] => {
@@ -62,6 +64,9 @@ const errorClassOf = (error: unknown): string => {
   return 'unknown';
 };
 
+const errorDetailOf = (error: unknown): string | undefined =>
+  error instanceof ProviderError ? error.detail : undefined;
+
 const retryCountOf = (error: unknown): number =>
   error instanceof ProviderError ? error.retryCount : 0;
 
@@ -71,6 +76,7 @@ export class AIOrchestrator {
   private readonly aggregateTelemetry: AITelemetry;
   private readonly fallbackRegistry: AIFallbackRegistry;
   private readonly contextCache?: PromptContextCache;
+  private readonly logger: AILogger;
 
   constructor(
     private readonly provider: AIProvider,
@@ -81,6 +87,7 @@ export class AIOrchestrator {
     this.aggregateTelemetry = options.telemetry ?? defaultAITelemetry;
     this.fallbackRegistry = options.fallbackRegistry ?? defaultAIFallbackRegistry;
     this.contextCache = options.contextCache;
+    this.logger = options.logger ?? defaultAILogger;
   }
 
   async act(
@@ -127,6 +134,7 @@ export class AIOrchestrator {
     let usedFallback = false;
     let retryCount = 0;
     let errorClass: string | undefined;
+    let errorDetail: string | undefined;
     let timeoutOrCancellation = false;
     const controller = new AbortController();
     const parentSignal = context.signal;
@@ -154,6 +162,7 @@ export class AIOrchestrator {
     } catch (error) {
       retryCount = Math.max(retryCount, retryCountOf(error));
       errorClass = errorClassOf(error);
+      errorDetail = errorDetailOf(error);
       timeoutOrCancellation = errorClass === 'timeout' || errorClass === 'cancelled';
       if (errorClass === 'timeout') this.aggregateTelemetry.recordTimeout();
       if (errorClass === 'cancelled') this.aggregateTelemetry.recordCancelled();
@@ -181,6 +190,20 @@ export class AIOrchestrator {
         errorClass ?? 'no_allowed_action',
       );
       this.aggregateTelemetry.finish('failed', this.now() - startedAt);
+      this.logger({
+        layer: 'orchestrator',
+        status: 'failed',
+        roomId: context.roomId,
+        gameId: context.gameId,
+        playerId: context.playerId,
+        callId,
+        stage: context.stage,
+        commandType: context.allowedCommandTypes[0],
+        errorClass: errorClass ?? 'no_allowed_action',
+        ...(errorDetail ? { detail: errorDetail } : {}),
+        retryCount,
+        durationMs: Math.max(0, this.now() - startedAt),
+      });
       return { suggestion: unavailable, accepted: false };
     }
 
@@ -221,6 +244,20 @@ export class AIOrchestrator {
       result.ok ? (usedFallback ? 'fallback' : 'completed') : 'failed',
       this.now() - startedAt,
     );
+    this.logger({
+      layer: 'orchestrator',
+      status: result.ok ? (usedFallback ? 'fallback' : 'success') : 'failed',
+      roomId: context.roomId,
+      gameId: context.gameId,
+      playerId: context.playerId,
+      callId,
+      stage: context.stage,
+      commandType: suggestion.command.type,
+      ...(errorClass ? { errorClass } : {}),
+      ...(errorDetail ? { detail: errorDetail } : {}),
+      retryCount,
+      durationMs: Math.max(0, this.now() - startedAt),
+    });
     return { suggestion, accepted: result.ok };
   }
 

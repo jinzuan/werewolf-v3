@@ -35,6 +35,7 @@ import {
 } from '../../shared/aiProviderCapabilities';
 import type { Player } from '../../shared/types';
 import { defaultAITelemetry, type AITelemetry } from '../ai/aiTelemetry';
+import { defaultAILogger, type AILogger } from '../ai/types';
 import { DeterministicAIProvider } from '../ai/deterministicProvider';
 import { HttpAIProvider } from '../ai/httpProvider';
 import type { AIProvider } from '../ai/types';
@@ -238,6 +239,7 @@ export interface RoomServiceOptions {
   reviewPipeline?: ReviewPipeline;
   insightStore?: InsightStore;
   aiTelemetry?: AITelemetry;
+  aiLogger?: AILogger;
   connectionRegistry?: ConnectionRegistry;
   lifecycleService?: RoomLifecycleService;
   lifecycleOutbox?: LifecycleOutbox;
@@ -257,6 +259,7 @@ export class RoomService {
   private readonly connectionLeases = new Map<string, Set<string>>();
   private readonly aiProvider?: AIProvider;
   private readonly aiTelemetry: AITelemetry;
+  private readonly aiLogger: AILogger;
   private readonly coordinator: SessionCoordinator;
   private readonly catalog: RoomCatalogService;
   private readonly policy: RoomPolicy;
@@ -309,6 +312,7 @@ export class RoomService {
           })
     );
     this.aiTelemetry = options.aiTelemetry ?? defaultAITelemetry;
+    this.aiLogger = options.aiLogger ?? defaultAILogger;
     this.deploymentNamespace =
       options.deploymentNamespace ?? repositoryScope.deploymentNamespace ?? 'default';
     this.waitingRoomTtlMs = options.waitingRoomTtlMs ?? 30 * 60 * 1000;
@@ -327,6 +331,7 @@ export class RoomService {
       timeoutMs: options.aiTimeoutMs,
       now: options.session?.now,
       telemetry: this.aiTelemetry,
+      logger: this.aiLogger,
     });
     this.connectionRegistry = options.connectionRegistry ?? new ConnectionRegistry();
     for (const fact of repository.takeLegacyConnectionFacts?.() ?? []) {
@@ -2156,6 +2161,7 @@ export class RoomService {
       timeoutMs: this.options.aiTimeoutMs,
       endpointPolicy: this.endpointPolicy,
       endpoint: roomConfig.endpoint,
+      logger: this.aiLogger,
     });
     const endpoint = new URL(roomConfig.endpoint);
     console.info(`[server:ai] provider=${roomConfig.provider} endpoint=${endpoint.origin}${endpoint.pathname} model=${roomConfig.model}`);

@@ -7,6 +7,7 @@ import { PromptContextCache } from '../ai/promptContextCache';
 import { experienceLibrary } from '../ai/experienceLibrary';
 import type { AIProvider } from '../ai/types';
 import type { AITelemetry } from '../ai/aiTelemetry';
+import type { AILogger } from '../ai/types';
 import type { InsightStore } from '../review/insightStore';
 import type { GameSession } from '../session/gameSession';
 import type { RoomRecord } from './types';
@@ -19,6 +20,7 @@ export interface SessionCoordinatorOptions {
   timeoutMs?: number;
   now?: () => number;
   telemetry?: AITelemetry;
+  logger?: AILogger;
 }
 
 export interface ScheduleEligibleAIInput {
@@ -70,6 +72,8 @@ export class SessionCoordinator {
   constructor(private readonly options: SessionCoordinatorOptions) {
     this.scheduler = new AITurnScheduler(
       (task) => this.execute(task),
+      undefined,
+      this.options.logger,
     );
   }
 
@@ -188,6 +192,7 @@ export class SessionCoordinator {
       timeoutMs: this.options.timeoutMs,
       contextCache: this.contextCache,
       telemetry: this.options.telemetry,
+      logger: this.options.logger,
     });
     await orchestrator.act(session, {
       roomId: room.id,
