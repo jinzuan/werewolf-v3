@@ -1871,6 +1871,38 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
   }
 }
 
+/* Tablet lobby: keep the welcome art present without letting it squeeze the
+   room list and its actions into a second, ambiguous row. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .v3-lobby-hero {
+    min-height: 198px;
+    gap: var(--ww-space-6);
+    padding: var(--ww-space-6) var(--ww-space-8);
+  }
+
+  .v3-lobby-hero__copy {
+    width: calc(100% - 144px);
+    max-width: none;
+  }
+
+  .v3-lobby-hero h1 {
+    font-size: 30px;
+    line-height: 40px;
+  }
+
+  .v3-lobby-hero__moon {
+    width: 120px;
+    height: 120px;
+    flex-basis: 120px;
+    box-shadow: 7px 8px 0 color-mix(in srgb, var(--ww-wood-brown) 65%, transparent);
+  }
+
+  .v3-room-row {
+    grid-template-columns: 48px minmax(0, 1fr) auto auto minmax(108px, auto);
+    gap: var(--ww-space-2);
+  }
+}
+
 @media (max-width: 767px) {
   .v3-lobby-hero {
     min-height: 0;
