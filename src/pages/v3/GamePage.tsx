@@ -17,6 +17,7 @@ import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { ChatBubble } from '../../ui/ChatBubble';
 import { Input } from '../../ui/Input';
+import { RoleCard } from '../../ui/RoleCard';
 import {
   ACTION_DEFINITIONS,
   buildGameCommand,
@@ -39,6 +40,16 @@ import {
   type ServerClockSample,
 } from '../../v3/serverClock';
 import { formatCountdown } from '../../v3/countdown';
+import { filterVisibleEvents } from '../../v3/visibility';
+
+const ROLE_DESCRIPTIONS = {
+  wolf: '夜间与狼人队友讨论并决定袭击目标。',
+  seer: '每晚查验一名玩家的阵营。',
+  witch: '掌握解药与毒药，在夜间作出选择。',
+  hunter: '被放逐或击杀后，可选择开枪带走一人。',
+  guardian: '每晚守护一名玩家，阻止当晚袭击。',
+  villager: '没有夜间技能，通过发言与投票找出狼人。',
+} as const;
 
 const ACTION_HELP: Record<GameAction, string> = {
   confirm_role: '确认已查看自己的身份牌。',
@@ -80,6 +91,7 @@ export function GamePage() {
   const players = snapshot?.players ?? [];
   const myId = session?.actorId ?? '';
   const myPlayer = players.find((player) => player.id === myId);
+  const isEliminated = myPlayer?.isAlive === false;
   // `orderedAllowedActions` returns a new array. Memoize it so the draft reset
   // effect below only runs when the authoritative action set changes; without
   // this, the pre-snapshot empty array caused an update loop and a white page.
@@ -119,21 +131,21 @@ export function GamePage() {
     actionKey,
     voteRound?.key ?? 'no-vote',
   ].join(':');
-  const activeAction =
-    actionDraft.activeAction &&
-    allowedActions.includes(actionDraft.activeAction)
+  const activeAction = isEliminated
+    ? null
+    : actionDraft.activeAction && allowedActions.includes(actionDraft.activeAction)
       ? actionDraft.activeAction
       : allowedActions[0] ?? null;
   const visibleEvents = useMemo(
     () =>
-      events
+      filterVisibleEvents(events, snapshot?.viewer ?? null)
         .filter((event) => event.eventType !== 'game.state_updated')
         .slice(-30),
-    [events],
+    [events, snapshot?.viewer],
   );
   const playerName = (id: string | null) =>
     players.find((player) => player.id === id)?.name ?? '未知目标';
-  const firstAllowedAction = allowedActions[0] ?? null;
+  const firstAllowedAction = isEliminated ? null : allowedActions[0] ?? null;
 
   useLayoutEffect(() => {
     setActionDraft({
@@ -258,7 +270,35 @@ export function GamePage() {
           <span>页面不会在恢复完成前显示旧房间或旧身份状态。</span>
         </Card>
       ) : (
-        <MatchShell
+        <>
+          {myPlayer?.role ? (
+            <Card className="v3-identity-panel">
+              <div className="v3-panel-heading">
+                <div>
+                  <span>仅你可见</span>
+                  <h2>我的身份</h2>
+                </div>
+                <Badge tone={myPlayer.role === 'wolf' ? 'danger' : 'success'}>
+                  {myPlayer.role === 'wolf' ? '狼人阵营' : '好人阵营'}
+                </Badge>
+              </div>
+              <RoleCard
+                role={myPlayer.role}
+                name={ROLE_LABELS[myPlayer.role]}
+                faction={myPlayer.role === 'wolf' ? '狼人阵营' : '好人阵营'}
+                factionTone={myPlayer.role === 'wolf' ? 'wolf' : 'village'}
+                description={ROLE_DESCRIPTIONS[myPlayer.role]}
+              />
+              {state?.phase === 'role_confirm' ? (
+                <p className="v3-panel-copy">
+                  {allowedActions.includes('confirm_role')
+                    ? '请确认你已查看身份牌；确认后首夜将开始。'
+                    : '身份牌已确认，等待其他玩家。'}
+                </p>
+              ) : null}
+            </Card>
+          ) : null}
+          <MatchShell
           left={
             <Card className="v3-player-panel">
               <div className="v3-panel-heading">
@@ -309,6 +349,9 @@ export function GamePage() {
                             : player.isAI
                               ? '电脑玩家在线'
                               : '存活'}
+                        {player.role && player.id !== myId && myPlayer?.role === 'wolf'
+                          ? ` · ${ROLE_LABELS[player.role]}`
+                          : ''}
                       </span>
                     </button>
                   );
@@ -316,7 +359,21 @@ export function GamePage() {
               </div>
             </Card>
           }
-          center={
+          center={isEliminated ? (
+            <Card className="v3-action-panel v3-spectator-panel">
+              <div className="v3-panel-heading">
+                <div>
+                  <span>你已离开行动席</span>
+                  <h2>观战模式</h2>
+                </div>
+                <Badge tone="info">只读</Badge>
+              </div>
+              <p className="v3-panel-copy">
+                你已出局，当前页面已切换为观战视角。可以继续查看剩余玩家的公开发言、投票和出局结果，但不能提交任何行动。
+              </p>
+              <div className="v3-inline-note">服务端已关闭你的私密行动与夜间信息权限。</div>
+            </Card>
+          ) : (
             <Card className="v3-action-panel">
               <div className="v3-panel-heading">
                 <div>
@@ -456,7 +513,7 @@ export function GamePage() {
                 </div>
               )}
             </Card>
-          }
+          )}
           right={
             <Card className="v3-chat-panel">
               <div className="v3-panel-heading">
@@ -486,7 +543,7 @@ export function GamePage() {
                       }
                       visibility={event.visibility}
                     >
-                      {describeEvent(event, playerName)}
+                      {describeEvent(event, playerName, { viewer: snapshot.viewer })}
                     </ChatBubble>
                   ))
                 )}
@@ -524,7 +581,8 @@ export function GamePage() {
               </div>
             </Card>
           }
-        />
+          />
+        </>
       )}
     </AppShell>
   );

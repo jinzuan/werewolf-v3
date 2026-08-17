@@ -1557,7 +1557,12 @@ export class RoomService {
     }
     const player = room.players.find((item) => item.id === identity.actorId);
     if (!player?.role) throw this.error('ROLE_NOT_ASSIGNED', 'room.error.role_not_assigned');
-    return { kind: 'player', playerId: identity.actorId, role: player.role };
+    return {
+      kind: 'player',
+      playerId: identity.actorId,
+      role: player.role,
+      isAlive: player.isAlive,
+    };
   }
 
   async snapshot(identity: SocketIdentity) {

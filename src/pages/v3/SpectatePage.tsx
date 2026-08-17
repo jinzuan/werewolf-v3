@@ -132,7 +132,7 @@ export function SpectatePage() {
                   <time>{formatEventTime(event.occurredAt).slice(0, 5)}</time>
                   <span className="v3-timeline__dot v3-timeline__dot--gold" />
                   <div>
-                    <strong>{describeEvent(event, playerName)}</strong>
+                    <strong>{describeEvent(event, playerName, { viewer: snapshot.viewer })}</strong>
                     <span>{VISIBILITY_LABELS[event.visibility]}</span>
                   </div>
                 </div>

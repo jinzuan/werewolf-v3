@@ -15,6 +15,11 @@ interface StateEventPayload extends Record<string, unknown> {
 const isOmniscient = (viewer: ViewerContext): boolean =>
   viewer.kind === 'spectator' && viewer.omniscient;
 
+const isLivePlayer = (
+  viewer: ViewerContext,
+): viewer is Extract<ViewerContext, { kind: 'player' }> =>
+  viewer.kind === 'player' && viewer.isAlive !== false;
+
 const canSeeEvent = (event: DomainEvent, viewer: ViewerContext): boolean => {
   switch (event.visibility) {
     case 'public_timeline':
@@ -22,13 +27,13 @@ const canSeeEvent = (event: DomainEvent, viewer: ViewerContext): boolean => {
     case 'role_private':
       return (
         isOmniscient(viewer) ||
-        (viewer.kind === 'player' &&
+        (isLivePlayer(viewer) &&
           (event.audienceIds ?? []).includes(viewer.playerId))
       );
     case 'wolf_private':
       return (
         isOmniscient(viewer) ||
-        (viewer.kind === 'player' &&
+        (isLivePlayer(viewer) &&
           viewer.role === 'wolf' &&
           (event.audienceIds ?? []).includes(viewer.playerId))
       );
@@ -46,7 +51,7 @@ const projectPlayers = (
     const canSeeRole =
       viewer.kind === 'player' &&
       (player.id === viewer.playerId ||
-        (viewer.role === 'wolf' && player.role === 'wolf'));
+        (viewer.isAlive !== false && viewer.role === 'wolf' && player.role === 'wolf'));
     const projected = {
       ...player,
       role: canSeeRole ? player.role : null,
@@ -69,8 +74,11 @@ const projectGameState = (
     };
   }
 
-  const playerId = viewer.kind === 'player' ? viewer.playerId : null;
-  const role = viewer.kind === 'player' ? viewer.role : null;
+  // An eliminated player stays authenticated as a player so the browser can
+  // recover its room session, but receives the same private-state boundary as
+  // a public spectator.  Own identity remains available through projectPlayers.
+  const playerId = isLivePlayer(viewer) ? viewer.playerId : null;
+  const role = isLivePlayer(viewer) ? viewer.role : null;
   const ownActor =
     playerId === null
       ? undefined

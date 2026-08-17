@@ -17,12 +17,15 @@ export const canViewerSeeVisibility = (
   if (visibility === 'role_private') {
     return (
       omniscient ||
-      (viewer.kind === 'player' && audienceIds.includes(viewer.playerId))
+      (viewer.kind === 'player' &&
+        viewer.isAlive !== false &&
+        audienceIds.includes(viewer.playerId))
     );
   }
   return (
     omniscient ||
     (viewer.kind === 'player' &&
+      viewer.isAlive !== false &&
       viewer.role === 'wolf' &&
       audienceIds.includes(viewer.playerId))
   );

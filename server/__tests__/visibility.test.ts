@@ -162,3 +162,44 @@ test('dead wolves do not receive new wolf-private events', async () => {
   );
   assert.doesNotMatch(payload, /LIVING_WOLVES_ONLY/);
 });
+
+test('eliminated players are reduced to the public spectator boundary', async () => {
+  const players = createPlayers();
+  const session = new GameSession(
+    'room-1',
+    players,
+    new InMemoryEventStore(),
+  );
+  await initializeSession(session, players);
+  const guardian = players.find((player) => player.role === 'guardian')!;
+  const seer = players.find((player) => player.role === 'seer')!;
+  const wolf = players.find((player) => player.role === 'wolf')!;
+
+  await dispatch(session, guardian.id, {
+    type: 'game.skip_night',
+    payload: { action: 'guard' },
+  });
+  await dispatch(session, seer.id, {
+    type: 'game.night_action',
+    payload: {
+      playerId: seer.id,
+      action: 'check',
+      targetId: wolf.id,
+    },
+  });
+
+  const viewer = {
+    kind: 'player' as const,
+    playerId: seer.id,
+    role: 'seer' as const,
+    isAlive: false,
+  };
+  const payload = serialized({
+    events: await session.eventsFor(viewer),
+    snapshot: await session.snapshotFor(viewer),
+  });
+
+  assert.doesNotMatch(payload, /seer\.result/);
+  assert.doesNotMatch(payload, /"nightActions":\[\{/);
+  assert.match(payload, /"role":"seer"/);
+});

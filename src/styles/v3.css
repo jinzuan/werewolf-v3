@@ -1223,6 +1223,9 @@ select {
 .v3-card-heading > svg { flex: none; margin-top: 2px; color: var(--ww-wood-brown); }
 .v3-panel-heading__identity { min-width: 0; display: flex; align-items: center; gap: var(--ww-space-3); }
 .v3-spectator-avatar { width: 40px; height: 40px; flex: 0 0 40px; display: block; border-radius: 50%; }
+.v3-identity-panel { margin-bottom: var(--ww-space-4); }
+.v3-identity-panel .ww-role-card { max-width: 720px; }
+.v3-spectator-panel { min-height: 220px; }
 
 .v3-match-layout {
   min-width: 0;
