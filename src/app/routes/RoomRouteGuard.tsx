@@ -40,14 +40,26 @@ export function RoomRouteGuard() {
     );
   }
 
-  const waitingForAuthority =
+  const currentRoomIsBound = Boolean(
+    session &&
+    room &&
+    room.code === code &&
+    roomViewMatchesSession(room, session),
+  );
+  const keepCurrentViewDuringRecovery = currentRoomIsBound && (
+    recovering ||
+    authorityStatus === 'resolving' ||
+    authorityStatus === 'error'
+  );
+  const waitingForAuthority = !keepCurrentViewDuringRecovery && (
     authorityStatus === 'resolving' ||
     recovering ||
     (Boolean(session) && !room) ||
     // A transient transport failure must not turn a still-valid durable
     // identity into the join form. `clearAuthority` is the only path that
     // removes the session for a definitive auth/room failure.
-    (Boolean(session) && authorityStatus === 'error');
+    (Boolean(session) && authorityStatus === 'error')
+  );
 
   if (waitingForAuthority) {
     return (
@@ -66,7 +78,7 @@ export function RoomRouteGuard() {
   }
 
   if (
-    authorityStatus !== 'authorized' ||
+    (!keepCurrentViewDuringRecovery && authorityStatus !== 'authorized') ||
     !session ||
     !room ||
     room.code !== code ||

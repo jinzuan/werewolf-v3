@@ -592,6 +592,8 @@ export const useV3Store = create<V3Store>()((set, get) => {
           return false;
         }
         const current = get();
+        const sameGame =
+          before.gameId !== undefined && before.gameId === response.room.gameId;
         const credentials = {
           ...before.credentials,
           ...response.credentials,
@@ -613,11 +615,12 @@ export const useV3Store = create<V3Store>()((set, get) => {
         set({
           room: response.room,
           session: nextSession,
-          snapshot: null,
+          // Keep the last authoritative projection on screen while the new
+          // one is fetched. Automatic AI turns must not turn a transient
+          // reconnect into a full-page loading interruption.
+          snapshot: sameGame ? current.snapshot : null,
           events:
-            before.gameId && before.gameId === response.room.gameId
-              ? current.events
-              : [],
+            sameGame ? current.events : [],
         });
 
         const projected = await recoverGameProjection();
