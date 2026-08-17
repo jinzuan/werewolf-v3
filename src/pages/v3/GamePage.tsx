@@ -28,6 +28,7 @@ import {
 } from '../../v3/actions';
 import {
   ACTION_LABELS,
+  createPlayerNameResolver,
   describeEvent,
   formatEventTime,
   phaseLabel,
@@ -40,6 +41,7 @@ import {
   type ServerClockSample,
 } from '../../v3/serverClock';
 import { formatCountdown } from '../../v3/countdown';
+import { MAX_EVENT_WINDOW } from '../../v3/eventStream';
 import { filterVisibleEvents } from '../../v3/visibility';
 
 const ROLE_DESCRIPTIONS = {
@@ -88,7 +90,7 @@ export function GamePage() {
   });
 
   const state = snapshot?.gameState ?? null;
-  const players = snapshot?.players ?? [];
+  const players = useMemo(() => snapshot?.players ?? [], [snapshot?.players]);
   const myId = session?.actorId ?? '';
   const myPlayer = players.find((player) => player.id === myId);
   const isEliminated = myPlayer?.isAlive === false;
@@ -140,11 +142,34 @@ export function GamePage() {
     () =>
       filterVisibleEvents(events, snapshot?.viewer ?? null)
         .filter((event) => event.eventType !== 'game.state_updated')
-        .slice(-30),
+        .slice(-MAX_EVENT_WINDOW),
     [events, snapshot?.viewer],
   );
-  const playerName = (id: string | null) =>
-    players.find((player) => player.id === id)?.name ?? '未知目标';
+  const playerName = useMemo(
+    () => createPlayerNameResolver(players, room?.members ?? []),
+    [players, room?.members],
+  );
+  const dayStage = (state as (GameState & { dayStage?: string | null }) | null)?.dayStage;
+  const hasActiveSpeaker =
+    (state?.phase === 'day' &&
+      (dayStage === 'speech' || dayStage === 'discussion' || dayStage === 'last_words')) ||
+    (state?.phase === 'night' && state.nightStage === 'wolf_discussion');
+  const currentSpeakerId: string | null = state?.phase === 'night' && state.nightStage === 'wolf_discussion'
+    ? state.wolfCurrentSpeaker ?? null
+    : state?.currentSpeaker ?? null;
+  const currentSpeakerName = hasActiveSpeaker && currentSpeakerId
+    ? playerName(currentSpeakerId)
+    : null;
+  const speakerToneFor = (id: string | null): number => {
+    const player = players.find((candidate) => candidate.id === id);
+    return player ? Math.max(0, (player.order - 1) % 6) : 0;
+  };
+  const eventActorId = (event: (typeof visibleEvents)[number]): string | null => {
+    const actorId = event.payload?.actorId;
+    return typeof actorId === 'string' ? actorId : event.actorId ?? null;
+  };
+  const isSpeechEvent = (event: (typeof visibleEvents)[number]): boolean =>
+    event.eventType === 'day.speech' || event.eventType === 'wolf.message';
   const firstAllowedAction = isEliminated ? null : allowedActions[0] ?? null;
 
   useLayoutEffect(() => {
@@ -318,7 +343,8 @@ export function GamePage() {
                   return (
                     <button
                       key={player.id}
-                      className={`v3-player-seat ${!player.isAlive ? 'is-dead' : ''} ${selectedTarget === player.id ? 'is-selected' : ''}`}
+                      className={`v3-player-seat ${!player.isAlive ? 'is-dead' : ''} ${selectedTarget === player.id ? 'is-selected' : ''} ${hasActiveSpeaker && currentSpeakerId === player.id ? `is-speaking v3-player-seat--speaker-${speakerToneFor(player.id)}` : ''}`}
+                      aria-current={hasActiveSpeaker && currentSpeakerId === player.id ? 'true' : undefined}
                       disabled={!targetable}
                       onClick={() =>
                         setActionDraft((current) => ({
@@ -334,7 +360,7 @@ export function GamePage() {
                         <UserRound size={22} />
                       </span>
                       <span className="v3-player-seat__name">
-                        <strong>{player.name}</strong>
+                        <strong>{playerName(player.id)}</strong>
                         {player.isAI ? <span className="v3-ai-label">AI</span> : null}
                       </span>
                       <span className="v3-player-seat__status">
@@ -371,6 +397,15 @@ export function GamePage() {
                 </div>
                 <Badge tone="info">只读</Badge>
               </div>
+              {currentSpeakerName ? (
+                <div
+                  className={`v3-current-speaker v3-current-speaker--${speakerToneFor(currentSpeakerId)}`}
+                  aria-live="polite"
+                >
+                  <span className="v3-current-speaker__dot" />
+                  正在发言：<strong>{currentSpeakerName}</strong>
+                </div>
+              ) : null}
               <p className="v3-panel-copy">
                 你已出局，当前页面已切换为观战视角。可以继续查看剩余玩家的公开发言、投票和出局结果，但不能提交任何行动。
               </p>
@@ -387,6 +422,15 @@ export function GamePage() {
                   {allowedActions.length ? '轮到你' : '等待队友'}
                 </Badge>
               </div>
+              {currentSpeakerName ? (
+                <div
+                  className={`v3-current-speaker v3-current-speaker--${speakerToneFor(currentSpeakerId)}`}
+                  aria-live="polite"
+                >
+                  <span className="v3-current-speaker__dot" />
+                  正在发言：<strong>{currentSpeakerName}</strong>
+                </div>
+              ) : null}
 
               {allowedActions.length ? (
                 <>
@@ -476,7 +520,7 @@ export function GamePage() {
                           <span>
                             {player.order.toString().padStart(2, '0')}
                           </span>
-                          <strong>{player.name}</strong>
+                          <strong>{playerName(player.id)}</strong>
                           {selectedTarget === player.id ? (
                             <Check size={16} />
                           ) : null}
@@ -522,33 +566,53 @@ export function GamePage() {
               <div className="v3-panel-heading">
                 <div>
                   <span>按当前玩家视角过滤</span>
-                  <h2>事件流</h2>
+                  <h2>聊天流</h2>
                 </div>
                 <MessageSquare size={18} />
               </div>
+              {currentSpeakerName ? (
+                <div
+                  className={`v3-current-speaker v3-current-speaker--${speakerToneFor(currentSpeakerId)}`}
+                  aria-live="polite"
+                >
+                  <span className="v3-current-speaker__dot" />
+                  正在发言：<strong>{currentSpeakerName}</strong>
+                </div>
+              ) : null}
               <div className="v3-chat-list">
                 {visibleEvents.length === 0 ? (
                   <div className="v3-inline-note">尚未收到可见事件。</div>
                 ) : (
-                  visibleEvents.map((event) => (
-                    <ChatBubble
-                      key={event.eventId}
-                      author={
-                        event.visibility === 'wolf_private'
-                          ? '狼人频道'
-                          : '系统'
-                      }
-                      time={formatEventTime(event.occurredAt)}
-                      variant={
-                        event.visibility === 'wolf_private'
-                          ? 'wolf'
-                          : 'system'
-                      }
-                      visibility={event.visibility}
-                    >
-                      {describeEvent(event, playerName, { viewer: snapshot.viewer })}
-                    </ChatBubble>
-                  ))
+                  visibleEvents.map((event) => {
+                    const actorId = eventActorId(event);
+                    const speech = isSpeechEvent(event);
+                    return (
+                      <ChatBubble
+                        key={event.eventId}
+                        author={
+                          speech
+                            ? playerName(actorId)
+                            : event.visibility === 'wolf_private'
+                              ? '狼人频道'
+                              : '系统'
+                        }
+                        time={formatEventTime(event.occurredAt)}
+                        variant={
+                          event.eventType === 'wolf.message'
+                            ? 'wolf'
+                            : speech && actorId === myId
+                              ? 'self'
+                              : speech
+                                ? 'other'
+                                : 'system'
+                        }
+                        speakerTone={speech ? speakerToneFor(actorId) : undefined}
+                        visibility={event.visibility}
+                      >
+                        {describeEvent(event, playerName, { viewer: snapshot.viewer })}
+                      </ChatBubble>
+                    );
+                  })
                 )}
               </div>
             </Card>

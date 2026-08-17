@@ -9,6 +9,7 @@ interface ChatBubbleProps {
   children: React.ReactNode;
   variant?: 'self' | 'other' | 'system' | 'wolf';
   visibility?: EventVisibility;
+  speakerTone?: number;
 }
 
 export function ChatBubble({
@@ -17,6 +18,7 @@ export function ChatBubble({
   children,
   variant = 'other',
   visibility = 'public_timeline',
+  speakerTone,
 }: ChatBubbleProps) {
   if (variant === 'system') {
     return (
@@ -28,7 +30,11 @@ export function ChatBubble({
   }
 
   return (
-    <article className={cn('v3-chat-bubble', `v3-chat-bubble--${variant}`)}>
+    <article className={cn(
+      'v3-chat-bubble',
+      `v3-chat-bubble--${variant}`,
+      speakerTone === undefined ? undefined : `v3-chat-bubble--speaker-${speakerTone}`,
+    )}>
       <header>
         <strong>{author}</strong>
         {variant === 'wolf' ? (

@@ -128,6 +128,52 @@ test('start CAS fills exactly the configured AI seats and deals persisted setup'
   assert.equal(retry.gameId, result.gameId);
 });
 
+test('start repairs legacy computer placeholders before publishing the game roster', async () => {
+  const room = roomRecord();
+  room.members.push(
+    {
+      id: 'ai:room-start:1',
+      name: '电脑 01',
+      kind: 'player',
+      connected: true,
+      omniscient: false,
+      resumeToken: '',
+      seatIndex: 1,
+      isAI: true,
+      ready: null,
+      avatarId: 'avatar-ai',
+    },
+    {
+      id: 'ai:room-start:2',
+      name: '电脑2',
+      kind: 'player',
+      connected: true,
+      omniscient: false,
+      resumeToken: '',
+      seatIndex: 2,
+      isAI: true,
+      ready: null,
+      avatarId: 'avatar-ai',
+    },
+  );
+  const repository = new InMemoryRoomRepository([room]);
+  const result = await coordinatorFor(repository).start('START1', {
+    commandId: 'start-legacy-names',
+    actorId: 'host',
+    expectedRoomRevision: 1,
+  });
+
+  const names = result.room.members
+    .filter((member) => member.isAI)
+    .map((member) => member.name);
+  assert.equal(new Set(names).size, names.length);
+  assert.ok(names.every((name) => AI_NAME_POOL.includes(name as (typeof AI_NAME_POOL)[number])));
+  assert.deepEqual(
+    result.players.filter((player) => player.isAI).map((player) => player.name),
+    names,
+  );
+});
+
 test('different concurrent start commands produce one game and one loser', async () => {
   const repository = new InMemoryRoomRepository([roomRecord()]);
   const coordinator = coordinatorFor(repository);

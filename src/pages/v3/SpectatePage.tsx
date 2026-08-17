@@ -7,6 +7,7 @@ import { Badge } from '../../ui/Badge';
 import { Card } from '../../ui/Card';
 import { avatarAssetMap } from '../../ui/assetRegistry';
 import {
+  createPlayerNameResolver,
   describeEvent,
   formatEventTime,
   phaseLabel,
@@ -42,9 +43,11 @@ export function SpectatePage() {
     () => publicSpectatorEvents(events).slice(-MAX_EVENT_WINDOW),
     [events],
   );
-  const players = snapshot?.players ?? [];
-  const playerName = (id: string | null) =>
-    players.find((player) => player.id === id)?.name ?? '未知目标';
+  const players = useMemo(() => snapshot?.players ?? [], [snapshot?.players]);
+  const playerName = useMemo(
+    () => createPlayerNameResolver(players, room?.members ?? []),
+    [players, room?.members],
+  );
 
   const isPublicSpectator =
     session?.mode === 'spectator' &&
@@ -110,7 +113,7 @@ export function SpectatePage() {
                 <div key={player.id}>
                   <ShieldQuestion size={16} />
                   <span>
-                    {player.order.toString().padStart(2, '0')} {player.name}{player.isAI ? <> <span className="v3-ai-label">AI</span></> : null} · {player.isAlive ? '存活' : '已出局'}
+                    {player.order.toString().padStart(2, '0')} {playerName(player.id)}{player.isAI ? <> <span className="v3-ai-label">AI</span></> : null} · {player.isAlive ? '存活' : '已出局'}
                   </span>
                 </div>
               ))}

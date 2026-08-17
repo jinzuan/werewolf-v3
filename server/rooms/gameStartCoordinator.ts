@@ -1,5 +1,9 @@
 import { randomInt as cryptoRandomInt } from 'node:crypto';
 import type { EventStore } from '../../shared/events';
+import {
+  AI_NAME_POOL,
+  isLegacyAIName,
+} from '../../shared/aiNames';
 import type { RoomSnapshotReason, StartCheck } from '../../shared/roomContract';
 import type { Player, Role } from '../../shared/types';
 import { GameSession } from '../session/gameSession';
@@ -354,16 +358,31 @@ const createAIId = (room: RoomRecord, seatIndex: number): string =>
   `ai:${room.id}:${seatIndex}`;
 
 /** Names are assigned once when the start claim adds the AI roster. */
-export const AI_NAME_POOL = [
-  '小雨', '阿杰', '小雅', '阿诚', '小安', '小北', '子轩', '梓涵',
-  '浩然', '思远', '清风', '星河', '王大锤', '李大嘴', '张三', '赵六',
-  '不吃香菜', '摸鱼王', '稳住别浪', '全村希望', '隔壁老王', '今天吃啥',
-  '锅盖侠', '躺赢选手', '平平无奇', '先苟一波', '好运来', '村口老张',
-] as const;
+export { AI_NAME_POOL };
 
 const createAINames = (
   count: number,
 ): string[] => secureShuffle(AI_NAME_POOL, cryptoRandomInt).slice(0, count);
+
+/** Repair AI placeholders from rooms created before the Chinese-name fix. */
+const normalizeComputerNames = (room: RoomRecord): void => {
+  const computers = room.members.filter(isComputer);
+  if (computers.length === 0) return;
+  const shuffled = createAINames(AI_NAME_POOL.length);
+  const used = new Set<string>();
+  let nextName = 0;
+  for (const member of computers) {
+    const current = member.name.trim();
+    if (current && !isLegacyAIName(current) && !used.has(current)) {
+      used.add(current);
+      continue;
+    }
+    while (nextName < shuffled.length && used.has(shuffled[nextName])) nextName += 1;
+    const replacement = shuffled[nextName++] ?? `AI玩家${member.seatIndex ?? 1}`;
+    member.name = replacement;
+    used.add(replacement);
+  }
+};
 
 const nextSeatIndex = (members: readonly RoomMember[]): number => {
   const used = new Set(
@@ -446,6 +465,7 @@ const addComputerMembers = (
     });
     addedIds.push(id);
   }
+  normalizeComputerNames(room);
   return addedIds;
 };
 

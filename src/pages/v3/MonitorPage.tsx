@@ -1,5 +1,5 @@
 import { Bot, EyeOff, Radio } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '../../components/shell/AppShell';
 import { MatchShell } from '../../components/shell/MatchShell';
 import { useV3Store } from '../../stores/v3Store';
@@ -7,6 +7,7 @@ import { Badge } from '../../ui/Badge';
 import { Card } from '../../ui/Card';
 import { Input } from '../../ui/Input';
 import {
+  createPlayerNameResolver,
   describeEvent,
   formatEventTime,
   phaseLabel,
@@ -48,8 +49,10 @@ export function MonitorPage() {
     snapshot?.viewer.kind === 'spectator' &&
     snapshot.viewer.omniscient === true;
   const players = useMemo(() => snapshot?.players ?? [], [snapshot?.players]);
-  const playerName = useCallback((id: string | null) =>
-    players.find((player) => player.id === id)?.name ?? '未知目标', [players]);
+  const playerName = useMemo(
+    () => createPlayerNameResolver(players, room?.members ?? []),
+    [players, room?.members],
+  );
   const filteredEvents = useMemo(() => events
     .filter((event) => event.eventType !== 'game.state_updated')
     .filter((event) => visibility === 'all' || event.visibility === visibility)
@@ -57,7 +60,7 @@ export function MonitorPage() {
       !query.trim() ||
       describeEvent(event, playerName).toLowerCase().includes(query.trim().toLowerCase()),
     )
-    .slice(-MAX_EVENT_WINDOW), [events, visibility, query, players]);
+    .slice(-MAX_EVENT_WINDOW), [events, visibility, query, playerName]);
 
   if (!omniscient) {
     return (
@@ -119,7 +122,10 @@ export function MonitorPage() {
               {players.map((player) => (
                 <div key={player.id} className={!player.isAlive ? 'is-dead' : undefined}>
                   <span className="v3-numeric">{player.order.toString().padStart(2, '0')}</span>
-                  <strong>{player.role ? ROLE_LABELS[player.role] : '未分配'}</strong>
+                  <strong>
+                    {playerName(player.id)}{player.isAI ? <span className="v3-ai-label">AI</span> : null}
+                    {' · '}{player.role ? ROLE_LABELS[player.role] : '未分配'}
+                  </strong>
                   <Badge tone={!player.isAlive ? 'danger' : 'success'}>{player.isAlive ? '存活' : '已出局'}</Badge>
                 </div>
               ))}

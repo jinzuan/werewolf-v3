@@ -24,6 +24,7 @@ import {
 } from '../errorMessages';
 import { formatEventTime, phaseLabel } from '../messageFormatter';
 import { scanI18nText } from '../i18nScan';
+import { createPlayerNameResolver, displayPlayerName } from '../playerNames';
 import { DOMAIN_EVENT_TYPES } from '../../../../shared/events';
 import { PROTOCOL_ERROR_CODES } from '../../../../shared/protocol';
 import { GAME_ACTIONS, NIGHT_STAGES } from '../../../../shared/types';
@@ -132,4 +133,20 @@ test('汉化扫描能拦截原始枚举和技术词', () => {
     { value: 'ViewerContext', index: 24 },
   ]);
   assert.deepEqual(scanI18nText('当前页面显示：已准备、对局中。'), []);
+});
+
+test('AI 展示名优先使用开局快照，并修复遗留电脑占位名', () => {
+  const playerName = createPlayerNameResolver([
+    { id: 'ai-1', name: '电脑 01', isAI: true, order: 1 },
+    { id: 'ai-2', name: '小雅', isAI: true, order: 2 },
+    { id: 'human', name: '云朵', isAI: false, order: 3 },
+  ], [{ id: 'ai-1', name: '电脑 01' }]);
+
+  assert.equal(playerName('ai-1'), '小雨');
+  assert.equal(playerName('ai-2'), '小雅');
+  assert.equal(playerName('human'), '云朵');
+  assert.equal(displayPlayerName(
+    { id: 'ai-3', name: '电脑1', isAI: true, order: 3 },
+    'AI 03',
+  ), '小雅');
 });
