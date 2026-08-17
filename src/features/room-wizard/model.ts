@@ -113,17 +113,21 @@ export const createInitialDraft = (
 ): WizardDraft => {
   const preset = firstEnabledPreset(catalog);
   const maxPlayers = preset?.playerCount ?? catalog.playerCounts[0] ?? 0;
+  // A new room should be playable with the creator plus computer players
+  // without making them hand-tune a seat split. The server still owns the
+  // final validation; this only supplies a useful first draft.
+  const mixedByDefault = maxPlayers > 1;
   return {
     version: ROOM_WIZARD_DRAFT_VERSION,
     catalogVersion: catalog.catalogVersion,
     roomName: '月影村·新手局',
     creator: { name: creatorName, avatarId: 'avatar-player' },
-    mode: 'human',
+    mode: mixedByDefault ? 'mixed' : 'human',
     visibility: 'invite_only',
     maxPlayers,
-    minHumanPlayers: maxPlayers,
+    minHumanPlayers: mixedByDefault ? 1 : maxPlayers,
     computerSeats: 0,
-    aiFillPolicy: 'none',
+    aiFillPolicy: mixedByDefault ? 'fill_to_max' : 'none',
     roleSetup: preset ? { ...preset.roleSetup } : emptyRoleSetup(),
     ...(preset ? { rolePresetId: preset.id } : {}),
     rulesetId: preset?.rulesetId ?? '',

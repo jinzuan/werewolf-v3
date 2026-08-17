@@ -1,6 +1,7 @@
 import {
   ArrowLeft,
   ArrowRight,
+  Bot,
   Check,
   Minus,
   Plus,
@@ -92,9 +93,9 @@ const presetFor = (catalog: RoomCreationCatalog, count: number) =>
   catalog.rolePresets.find((preset) => preset.playerCount === count && preset.enabled);
 
 const modeDescription: Record<WizardDraft['mode'], string> = {
-  human: '真人加入后一起准备，默认不补电脑。',
-  mixed: '预留电脑席，也可以邀请真人入座。',
-  quick_computer: '创建后立即开局，你将进入全知监控。',
+  human: '邀请朋友入座，一起准备后开局。',
+  mixed: '保留 1 名真人，其余空席自动由电脑补上。',
+  quick_computer: '不用等人，确认后立即开局并进入监控。',
 };
 
 const modeLabel: Record<WizardDraft['mode'], string> = {
@@ -321,8 +322,9 @@ function PlayersStep({
     if (mode === 'human') update({ mode, aiFillPolicy: 'none', computerSeats: 0, minHumanPlayers: draft.maxPlayers });
     else if (mode === 'quick_computer') update({ mode, aiFillPolicy: 'fill_to_max', computerSeats: 0, minHumanPlayers: 0 });
     else {
-      const seats = Math.max(1, Math.min(Math.max(1, draft.maxPlayers - 1), draft.computerSeats || Math.floor(draft.maxPlayers / 3)));
-      update({ mode, aiFillPolicy: 'fixed', computerSeats: seats, minHumanPlayers: draft.maxPlayers - seats });
+      // Keep the common mixed-room path to one decision: one human is enough
+      // and every remaining seat is filled at start time.
+      update({ mode, aiFillPolicy: 'fill_to_max', computerSeats: 0, minHumanPlayers: 1 });
     }
   };
   const updateCount = (maxPlayers: number) => {
@@ -392,10 +394,24 @@ function PlayersStep({
 
       <Card data-wizard-block="players" tabIndex={-1}>
         <div className="v3-card-heading"><Sparkles size={20} /><div><h2>选择房间模式</h2><p>先选今晚的节奏，之后再安排角色与规则。</p></div></div>
-        <div style={row}>
+        <div className="v3-wizard-mode-grid">
           {(Object.keys(modeLabel) as WizardDraft['mode'][]).map((mode) => (
-            <button key={mode} type="button" onClick={() => updateMode(mode)} aria-pressed={draft.mode === mode} style={choiceStyle(draft.mode === mode)}>
-              <strong>{modeLabel[mode]}</strong><span style={{ color: 'var(--ww-text-muted)', fontSize: 'var(--ww-text-caption-size)' }}>{modeDescription[mode]}</span>
+            <button
+              key={mode}
+              type="button"
+              className={`v3-wizard-mode-card${draft.mode === mode ? ' is-selected' : ''}`}
+              onClick={() => updateMode(mode)}
+              aria-pressed={draft.mode === mode}
+            >
+              <span className="v3-wizard-mode-card__topline">
+                <span className="v3-wizard-mode-card__icon" aria-hidden="true">
+                  {mode === 'human' ? <Users size={20} /> : mode === 'mixed' ? <Sparkles size={20} /> : <Bot size={20} />}
+                </span>
+                <strong>{modeLabel[mode]}</strong>
+                {mode === 'mixed' ? <Badge tone="success">推荐</Badge> : null}
+                {draft.mode === mode ? <Check className="v3-wizard-mode-card__check" size={17} aria-label="已选择" /> : null}
+              </span>
+              <span className="v3-wizard-mode-card__description">{modeDescription[mode]}</span>
             </button>
           ))}
         </div>
@@ -572,22 +588,27 @@ function RulesStep({
       </Modal>
 
       <Card data-wizard-block="rules" tabIndex={-1}>
-        <div className="v3-card-heading"><Users size={20} /><div><h2>房间规则</h2><p>这里只展示当前可用的选项。</p></div></div>
-        <div style={css('gap')}>
-          <fieldset style={{ border: 0, margin: 0, padding: 0 }}>
-            <legend className="v3-field__label">房间可见性</legend>
-            <div style={row}>
-              <button type="button" aria-pressed={draft.visibility === 'invite_only'} onClick={() => update({ visibility: 'invite_only' })} style={choiceStyle(draft.visibility === 'invite_only')}><strong>仅凭邀请</strong><span>需要房间码与邀请口令。</span></button>
-              <button type="button" aria-pressed={draft.visibility === 'listed'} onClick={() => update({ visibility: 'listed' })} style={choiceStyle(draft.visibility === 'listed')}><strong>大厅可见</strong><span>可以在大厅看到房间摘要。</span></button>
-            </div>
-            <FieldError issue={issueFor('visibility')} />
-          </fieldset>
-          <div style={{ ...row, justifyContent: 'space-between' }}><span>电脑补位</span><strong>{strategyLabel[draft.aiFillPolicy]}</strong></div>
-          {draft.mode !== 'human' ? <p style={{ margin: 0, color: 'var(--ww-text-muted)' }}>创建后可在等待房的“电脑玩家设置”中配置模型与安全凭据。</p> : null}
-          <div style={{ ...row, justifyContent: 'space-between' }}><span>准备规则</span><strong>所有在线真人玩家准备后，由房主开局</strong></div>
-          <label style={row}><input type="checkbox" checked={draft.allowPublicSpectators} onChange={(event) => update({ allowPublicSpectators: event.target.checked })} />允许公开观战<FieldError issue={issueFor('allowPublicSpectators')} /></label>
-          <label style={row}><input type="checkbox" checked={draft.reviewEnabled} onChange={(event) => update({ reviewEnabled: event.target.checked })} />对局结束后开启复盘<FieldError issue={issueFor('reviewEnabled')} /></label>
+        <div className="v3-card-heading"><Users size={20} /><div><h2>房间规则</h2><p>默认设置已适合直接开局，需要时再展开调整。</p></div></div>
+        <div className="v3-wizard-settings-summary">
+          <span><strong>{draft.visibility === 'listed' ? '大厅可见' : '仅凭邀请'}</strong> · {strategyLabel[draft.aiFillPolicy]}</span>
+          <span>在线真人准备后由房主开局 · {draft.reviewEnabled ? '开启复盘' : '关闭复盘'}</span>
         </div>
+        <details className="v3-wizard-advanced">
+          <summary>调整可见性、观战与复盘</summary>
+          <div style={css('gap')}>
+            <fieldset style={{ border: 0, margin: 0, padding: 0 }}>
+              <legend className="v3-field__label">房间可见性</legend>
+              <div style={row}>
+                <button type="button" aria-pressed={draft.visibility === 'invite_only'} onClick={() => update({ visibility: 'invite_only' })} style={choiceStyle(draft.visibility === 'invite_only')}><strong>仅凭邀请</strong><span>需要房间码与邀请口令。</span></button>
+                <button type="button" aria-pressed={draft.visibility === 'listed'} onClick={() => update({ visibility: 'listed' })} style={choiceStyle(draft.visibility === 'listed')}><strong>大厅可见</strong><span>可以在大厅看到房间摘要。</span></button>
+              </div>
+              <FieldError issue={issueFor('visibility')} />
+            </fieldset>
+            {draft.mode !== 'human' ? <p style={{ margin: 0, color: 'var(--ww-text-muted)' }}>创建后可在等待房的“电脑玩家设置”中配置模型与安全凭据。</p> : null}
+            <label style={row}><input type="checkbox" checked={draft.allowPublicSpectators} onChange={(event) => update({ allowPublicSpectators: event.target.checked })} />允许公开观战<FieldError issue={issueFor('allowPublicSpectators')} /></label>
+            <label style={row}><input type="checkbox" checked={draft.reviewEnabled} onChange={(event) => update({ reviewEnabled: event.target.checked })} />对局结束后开启复盘<FieldError issue={issueFor('reviewEnabled')} /></label>
+          </div>
+        </details>
       </Card>
       {showActions ? <WizardActions onBack={onBack} onNext={onNext} nextLabel="查看确认" /> : null}
     </div>

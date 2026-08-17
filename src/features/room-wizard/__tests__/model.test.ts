@@ -62,6 +62,9 @@ test('initial draft copies the enabled server preset and exposes disabled counts
   assert.equal(draft.creator.name, '林间玩家');
   assert.deepEqual(draft.roleSetup, catalog.rolePresets[1].roleSetup);
   assert.equal(roleSetupTotal(draft.roleSetup), 12);
+  assert.equal(draft.mode, 'mixed');
+  assert.equal(draft.minHumanPlayers, 1);
+  assert.equal(draft.aiFillPolicy, 'fill_to_max');
   assert.equal(catalog.rolePresets[0].enabled, false);
 });
 

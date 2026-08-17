@@ -80,8 +80,12 @@ export function GamePage() {
   const players = snapshot?.players ?? [];
   const myId = session?.actorId ?? '';
   const myPlayer = players.find((player) => player.id === myId);
-  const allowedActions = orderedAllowedActions(
-    state?.allowedActions ?? [],
+  // `orderedAllowedActions` returns a new array. Memoize it so the draft reset
+  // effect below only runs when the authoritative action set changes; without
+  // this, the pre-snapshot empty array caused an update loop and a white page.
+  const allowedActions = useMemo(
+    () => orderedAllowedActions(state?.allowedActions ?? []),
+    [state?.allowedActions],
   );
   const clockRef = useRef<ServerClockSample | null>(null);
   const [now, setNow] = useState(Date.now);
@@ -137,7 +141,7 @@ export function GamePage() {
       selectedTarget: null,
       message: '',
     });
-  }, [allowedActions, draftScopeKey]);
+  }, [draftScopeKey, firstAllowedAction]);
 
   const definition = activeAction
     ? ACTION_DEFINITIONS[activeAction]
@@ -193,7 +197,17 @@ export function GamePage() {
     }
   };
 
-  if (!room || !session) return null;
+  if (!room || !session) {
+    return (
+      <AppShell title="玩家对局" connected={connected}>
+        <Card className="v3-empty-state" aria-live="polite">
+          <Shield size={24} />
+          <strong>正在恢复对局入口</strong>
+          <span>房间身份正在同步，游戏界面会在权限确认后显示。</span>
+        </Card>
+      </AppShell>
+    );
+  }
 
   // A URL is only a view intent. Never render player controls for a
   // spectator identity, even if a stale deep link reaches this component.
