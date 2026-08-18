@@ -33,6 +33,8 @@ const ROLE_NAMES: Record<Role, string> = {
   villager: '平民',
 };
 
+const ROLE_CATALOG = Object.values(ROLE_NAMES).join('、');
+
 const ACTION_LABELS: Record<GameAction, string> = {
   confirm_role: '确认身份',
   guard: '守护',
@@ -473,6 +475,7 @@ const placeholderValues = (
   return {
     player_name: playerName(context.players, context.playerId),
     role_name: ROLE_NAMES[context.role],
+    role_catalog: ROLE_CATALOG,
     alignment: roleAlignment(context.role),
     day_number: String(promptContext.dayNumber ?? 1),
     phase_name: stageName(context),
