@@ -154,6 +154,9 @@ export function GamePage() {
     remainingServerMs(state?.deadlineTs, clockRef.current, now),
   );
   const actionKey = allowedActions.join('|');
+  const speechActionAvailable = allowedActions.some((action) =>
+    action === 'speak' || action === 'wolf_speak' || action === 'skip_speech',
+  );
   const actionTransitionKey = [
     snapshot?.gameId ?? 'no-game',
     state?.day ?? 0,
@@ -163,8 +166,8 @@ export function GamePage() {
   useEffect(() => {
     if (actionTransitionKey === mobileActionKeyRef.current) return;
     mobileActionKeyRef.current = actionTransitionKey;
-    setMobileSection(actionKey ? 'action' : 'chat');
-  }, [actionKey, actionTransitionKey]);
+    setMobileSection(speechActionAvailable ? 'chat' : actionKey ? 'action' : 'chat');
+  }, [actionKey, actionTransitionKey, speechActionAvailable]);
   const mobileUnreadCounts = useMobileMatchUnread(
     events,
     snapshot?.gameId,
