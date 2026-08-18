@@ -2180,6 +2180,30 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
     white-space: nowrap;
   }
 
+  .v3-mobile-match-nav__icon {
+    position: relative;
+    width: 20px;
+    height: 20px;
+    display: grid;
+    place-items: center;
+  }
+
+  .v3-mobile-match-nav__badge {
+    position: absolute;
+    top: -9px;
+    right: -13px;
+    min-width: 16px;
+    height: 16px;
+    display: grid;
+    place-items: center;
+    padding: 0 4px;
+    border: 1.5px solid var(--ww-bg-surface);
+    border-radius: var(--ww-radius-pill);
+    background: var(--ww-state-danger);
+    color: #fff;
+    font: 700 10px/13px var(--ww-font-family-number);
+  }
+
   .v3-mobile-only { display: none; }
 
   .v3-match-layout[data-mobile-section] {

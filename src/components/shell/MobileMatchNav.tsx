@@ -12,6 +12,7 @@ interface MobileMatchNavProps {
   active: string;
   onChange: (id: string) => void;
   ariaLabel?: string;
+  unreadCounts?: Readonly<Record<string, number>>;
 }
 
 /** Compact room navigation shown only when the viewport is phone-sized. */
@@ -20,21 +21,32 @@ export function MobileMatchNav({
   active,
   onChange,
   ariaLabel = '手机端对局分区',
+  unreadCounts = {},
 }: MobileMatchNavProps) {
   const navigation = (
     <nav className="v3-mobile-match-nav" aria-label={ariaLabel}>
-      {items.map(({ id, label, icon: Icon }) => (
-        <button
-          key={id}
-          type="button"
-          className={active === id ? 'is-active' : undefined}
-          aria-current={active === id ? 'page' : undefined}
-          onClick={() => onChange(id)}
-        >
-          <Icon size={18} aria-hidden="true" />
-          <span>{label}</span>
-        </button>
-      ))}
+      {items.map(({ id, label, icon: Icon }) => {
+        const unread = Math.max(0, Math.floor(unreadCounts[id] ?? 0));
+        const unreadLabel = unread > 99 ? '99+' : unread.toString();
+        return (
+          <button
+            key={id}
+            type="button"
+            className={active === id ? 'is-active' : undefined}
+            aria-current={active === id ? 'page' : undefined}
+            aria-label={unread > 0 ? `${label}，${unread}条未读` : undefined}
+            onClick={() => onChange(id)}
+          >
+            <span className="v3-mobile-match-nav__icon">
+              <Icon size={18} aria-hidden="true" />
+              {unread > 0 ? (
+                <span className="v3-mobile-match-nav__badge" aria-hidden="true">{unreadLabel}</span>
+              ) : null}
+            </span>
+            <span>{label}</span>
+          </button>
+        );
+      })}
     </nav>
   );
 

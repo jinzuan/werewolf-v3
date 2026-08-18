@@ -3,6 +3,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '../../components/shell/AppShell';
 import { MatchShell } from '../../components/shell/MatchShell';
 import { MobileMatchNav, type MobileMatchNavItem } from '../../components/shell/MobileMatchNav';
+import { useMobileMatchUnread } from '../../components/shell/useMobileMatchUnread';
 import { useV3Store } from '../../stores/v3Store';
 import { Badge } from '../../ui/Badge';
 import { Card } from '../../ui/Card';
@@ -66,6 +67,11 @@ export function MonitorPage() {
   const [visibility, setVisibility] = useState('all');
   const [query, setQuery] = useState('');
   const [flippedPlayers, setFlippedPlayers] = useState<Set<string>>(() => new Set());
+  const mobileUnreadCounts = useMobileMatchUnread(
+    events,
+    snapshot?.gameId,
+    mobileSection,
+  );
   const omniscient =
     session?.mode === 'spectator' &&
     room?.viewer.kind === 'spectator' &&
@@ -189,6 +195,7 @@ export function MonitorPage() {
       <MobileMatchNav
         items={MONITOR_MOBILE_NAV_ITEMS}
         active={mobileSection}
+        unreadCounts={mobileUnreadCounts}
         onChange={(section) => setMobileSection(section as MonitorMobileSection)}
       />
       <MatchShell

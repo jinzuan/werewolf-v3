@@ -13,6 +13,7 @@ import { AppShell } from '../../components/shell/AppShell';
 import { PlayerSeatCard } from '../../components/match/PlayerSeatCard';
 import { MatchShell } from '../../components/shell/MatchShell';
 import { MobileMatchNav, type MobileMatchNavItem } from '../../components/shell/MobileMatchNav';
+import { useMobileMatchUnread } from '../../components/shell/useMobileMatchUnread';
 import { useV3Store } from '../../stores/v3Store';
 import { Badge } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
@@ -164,6 +165,11 @@ export function GamePage() {
     mobileActionKeyRef.current = actionTransitionKey;
     setMobileSection(actionKey ? 'action' : 'chat');
   }, [actionKey, actionTransitionKey]);
+  const mobileUnreadCounts = useMobileMatchUnread(
+    events,
+    snapshot?.gameId,
+    mobileSection,
+  );
   const voteRound = snapshot
     ? currentVoteRoundProjection(snapshot, events, allowedActions)
     : null;
@@ -440,6 +446,7 @@ export function GamePage() {
           <MobileMatchNav
             items={GAME_MOBILE_NAV_ITEMS}
             active={mobileSection}
+            unreadCounts={mobileUnreadCounts}
             onChange={(section) => setMobileSection(section as GameMobileSection)}
           />
           {myPlayer?.role ? (

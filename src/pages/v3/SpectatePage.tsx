@@ -4,6 +4,7 @@ import { AppShell } from '../../components/shell/AppShell';
 import { PlayerSeatCard } from '../../components/match/PlayerSeatCard';
 import { MatchShell } from '../../components/shell/MatchShell';
 import { MobileMatchNav, type MobileMatchNavItem } from '../../components/shell/MobileMatchNav';
+import { useMobileMatchUnread } from '../../components/shell/useMobileMatchUnread';
 import { useV3Store } from '../../stores/v3Store';
 import { Badge } from '../../ui/Badge';
 import { Card } from '../../ui/Card';
@@ -55,6 +56,12 @@ export function SpectatePage() {
   const publicEvents = useMemo(
     () => publicSpectatorEvents(events).slice(-MAX_EVENT_WINDOW),
     [events],
+  );
+  const mobileUnreadCounts = useMobileMatchUnread(
+    publicEvents,
+    snapshot?.gameId,
+    mobileSection,
+    { chatTab: null },
   );
   const players = useMemo(() => snapshot?.players ?? [], [snapshot?.players]);
   const playerName = useMemo(
@@ -134,6 +141,7 @@ export function SpectatePage() {
       <MobileMatchNav
         items={SPECTATE_MOBILE_NAV_ITEMS}
         active={mobileSection}
+        unreadCounts={mobileUnreadCounts}
         onChange={(section) => setMobileSection(section as SpectateMobileSection)}
       />
       <MatchShell

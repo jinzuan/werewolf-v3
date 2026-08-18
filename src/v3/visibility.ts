@@ -48,6 +48,10 @@ export const filterVisibleEvents = (
   );
 };
 
+export const isSpeechEvent = (
+  event: Pick<DomainEvent, 'eventType'>,
+): boolean => event.eventType === 'day.speech' || event.eventType === 'wolf.message';
+
 /**
  * Build the chat projection from the same viewer-scoped event stream used by
  * recovery/live pushes.  Sequence ordering is explicit here because a socket
