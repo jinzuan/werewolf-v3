@@ -45,6 +45,7 @@ const vite = await createViteServer({
     host: '127.0.0.1',
     port: 0,
     strictPort: false,
+    watch: null,
   },
 });
 await vite.listen();
@@ -144,7 +145,7 @@ try {
   await page.addInitScript((url) => {
     localStorage.setItem('wolf-server-url', url);
   }, serverUrl);
-  await page.goto(appUrl, { waitUntil: 'networkidle' });
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
 
   await page.getByRole('button', { name: '创建房间' }).click();
   await page.waitForURL(/\/rooms\/new\/players$/);
@@ -152,13 +153,13 @@ try {
   await page.getByLabel('房间名称').fill('W2 Responsive Room');
   await page.getByRole('button', { name: '继续选择角色' }).click();
   await page.getByRole('button', { name: '创建并进入等待房' }).click();
-  await page.waitForURL(/\/room\/[A-Z2-9]{6}$/, {
+  await page.waitForURL(/\/rooms\/[A-Z2-9]{6}\/waiting$/, {
     timeout: 10_000,
   });
-  assert.match(page.url(), /\/room\/[A-Z2-9]{6}$/);
-  await page.getByRole('heading', { name: '等待房间' }).waitFor();
-  const roomCode = page.url().split('/').at(-1)!;
-  await page.getByRole('button', { name: '开始对局' }).click();
+  assert.match(page.url(), /\/rooms\/[A-Z2-9]{6}\/waiting$/);
+  await page.getByRole('heading', { name: 'W2 Responsive Room' }).waitFor();
+  const roomCode = page.url().split('/').at(-2)!;
+  await page.getByRole('button', { name: '开始游戏' }).click();
   await page.getByRole('heading', { name: '行动面板' }).waitFor({
     timeout: 10_000,
   });
@@ -222,7 +223,7 @@ try {
       );
     }
   }
-  await page.reload({ waitUntil: 'networkidle' });
+  await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByRole('tab', { name: '狼人投票' }).waitFor({
     timeout: 10_000,
   });

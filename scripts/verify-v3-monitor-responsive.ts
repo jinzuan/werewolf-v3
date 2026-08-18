@@ -53,6 +53,7 @@ const vite = await createViteServer({
     host: '127.0.0.1',
     port: 0,
     strictPort: false,
+    watch: null,
   },
 });
 await vite.listen();
@@ -215,9 +216,9 @@ try {
   await page.addInitScript((url) => {
     localStorage.setItem('wolf-server-url', url);
   }, serverUrl);
-  await page.goto(appUrl, { waitUntil: 'networkidle' });
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: '创建快速 AI 房' }).click();
-  await page.waitForURL(/\/room\/[A-Z2-9]{6}$/, {
+  await page.waitForURL(/\/rooms\/[A-Z2-9]{6}\/(?:play|watch|monitor)$/, {
     timeout: 15_000,
   });
   await page.getByRole('heading', { name: '身份摘要' }).waitFor({
