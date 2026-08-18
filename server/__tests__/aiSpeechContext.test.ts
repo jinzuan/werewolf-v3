@@ -121,6 +121,33 @@ test('dead hunter action is a distinct server-authorized turn', () => {
   assert.doesNotMatch(prompt.user, /普通白天回合/);
 });
 
+test('regular speech prompt requires a concise response followed by new content', () => {
+  const prompt = buildAIPrompt({
+    ...context(
+      { isAlive: true, deathStatus: 'alive', turnKind: 'regular_speech' },
+      ['speak'],
+      ['game.speak'],
+    ),
+    phase: 'day',
+    stage: 'speech',
+  });
+
+  assert.match(prompt.system, /回应上一位发言者或当前争议焦点/);
+  assert.match(prompt.system, /形成“回应 \+ 新增”/);
+  assert.match(prompt.system, /不要逐字复述.*换词重说/);
+});
+
+test('last-words prompt keeps its dedicated response and supplement guidance', () => {
+  const prompt = buildAIPrompt(context(
+    { isAlive: false, deathStatus: 'dead_last_words', turnKind: 'last_words' },
+    ['speak'],
+    ['game.speak'],
+  ));
+
+  assert.doesNotMatch(prompt.system, /形成“回应 \+ 新增”/);
+  assert.match(prompt.user, /只补遗漏、回应新增信息或给最终行动建议/);
+});
+
 test('current round speeches are bounded by day, stage, and discussion round', () => {
   const visibleEvents = [
     speechEvent(1, 1, 'speech', 'alive-villager', '前一天旧发言'),

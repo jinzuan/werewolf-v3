@@ -342,6 +342,12 @@ const systemTaskTitle = (context: AIRequestContext): string | null => {
   return null;
 };
 
+const usesSpeechContinuityGuidance = (context: AIRequestContext): boolean =>
+  context.phase !== 'lastWords' &&
+  context.stage !== 'last_words' &&
+  (context.allowedCommandTypes.includes('game.speak') ||
+    context.allowedCommandTypes.includes('game.wolf_speak'));
+
 const roleTaskTitle = (context: AIRequestContext): string[] => {
   if (context.phase === 'lastWords' || context.stage === 'last_words') {
     return ['遗言任务'];
@@ -714,10 +720,17 @@ export const buildAIPrompt = (
   const systemTask = systemTaskTitleValue
     ? fencedText(sectionByTitle(readPromptFile('system-prompts.md'), systemTaskTitleValue.replace(/^##\s+\d+\.\s+/, '')))
     : '';
+  const speechContinuityGuidance = usesSpeechContinuityGuidance(context)
+    ? loadFragment('system-prompts.md', '发言衔接规则')
+    : '';
   const outputContract = buildOutputContract(context, promptContext);
   const values = placeholderValues(context, promptContext, roleTask, outputContract);
   const actorStatusBlock = formatActorStatusBlock(context, promptContext);
-  const system = [actorStatusBlock, render([global, roleLayer].join('\n\n'), values)].join('\n\n');
+  const system = [
+    actorStatusBlock,
+    speechContinuityGuidance,
+    render([global, roleLayer].join('\n\n'), values),
+  ].filter(Boolean).join('\n\n');
   const user = render(
     [
       systemTask,
