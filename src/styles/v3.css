@@ -538,73 +538,6 @@ select {
   margin: 0 auto;
 }
 
-.v3-side-nav {
-  display: none;
-  position: fixed;
-  inset: 0 auto 0 0;
-  z-index: 90;
-  width: min(300px, 86vw);
-  height: 100dvh;
-  flex-direction: column;
-  gap: var(--ww-space-5);
-  padding: var(--ww-space-5);
-  border: 1.5px solid var(--ww-border-default);
-  border-radius: 0 var(--ww-radius-dialog) var(--ww-radius-dialog) 0;
-  background: var(--ww-bg-surface);
-  box-shadow: var(--ww-shadow-dialog);
-  transform: translateX(-105%);
-  transition: transform var(--ww-motion-standard) var(--ww-motion-easing);
-}
-
-.v3-side-nav a {
-  min-height: var(--ww-height-control);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  border: 1.5px solid transparent;
-  border-radius: var(--ww-radius-control);
-  color: var(--ww-text-muted);
-  font-size: var(--ww-text-caption-size);
-  transition: color var(--ww-motion-fast) var(--ww-motion-easing),
-    border-color var(--ww-motion-fast) var(--ww-motion-easing),
-    background var(--ww-motion-fast) var(--ww-motion-easing);
-}
-
-.v3-side-nav a:hover {
-  color: var(--ww-text-strong);
-  background: var(--ww-bg-subtle);
-}
-
-.v3-side-nav a.is-active {
-  border-color: var(--ww-wood-brown);
-  background: var(--ww-bg-raised);
-  color: var(--ww-text-strong);
-  box-shadow: var(--ww-shadow-card);
-}
-
-.v3-side-nav__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--ww-space-3);
-  color: var(--ww-text-strong);
-}
-
-.v3-side-nav__items {
-  display: grid;
-  gap: var(--ww-space-2);
-}
-
-.v3-side-nav__backdrop {
-  display: none;
-}
-
-.v3-topbar__menu {
-  display: none;
-}
-
 .v3-wizard-grid {
   grid-template-columns: repeat(12, minmax(0, 1fr));
 }
@@ -1827,16 +1760,11 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
   }
 }
 
-/* Desktop is a single focused workspace. Navigation becomes an on-demand
-   drawer on tablet/mobile, keeping the room and wizard content wide enough to
-   breathe at 1440px. */
+/* Desktop is a single focused workspace, keeping the room and wizard content
+   wide enough to breathe at 1440px. */
 @media (min-width: 1024px) {
   .v3-app-shell__body {
     display: block;
-  }
-
-  .v3-side-nav {
-    display: none;
   }
 
   .v3-wizard-preview > summary { display: none; }
@@ -1844,53 +1772,6 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
 }
 
 @media (max-width: 1023px) {
-  .v3-topbar__menu {
-    display: inline-flex;
-  }
-
-  .v3-topbar__settings-link {
-    display: none;
-  }
-
-  .v3-side-nav__backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 80;
-    display: block;
-    width: 100%;
-    height: 100%;
-    border: 0;
-    background: var(--ww-overlay);
-    visibility: hidden;
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  .v3-side-nav__backdrop.is-visible {
-    visibility: visible;
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .v3-side-nav {
-    display: flex;
-    visibility: hidden;
-  }
-
-  .v3-side-nav.is-open {
-    visibility: visible;
-    transform: translateX(0);
-  }
-
-  .v3-side-nav a {
-    min-height: var(--ww-height-control);
-    flex-direction: row;
-    justify-content: flex-start;
-    gap: var(--ww-space-3);
-    padding: 0 var(--ww-space-3);
-    font-size: var(--ww-text-body-size);
-  }
-
   .v3-wizard-grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -2100,10 +1981,6 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
     flex-basis: 76px;
     font-size: 30px;
     box-shadow: 5px 6px 0 color-mix(in srgb, var(--ww-wood-brown) 65%, transparent);
-  }
-
-  .v3-side-nav {
-    width: min(320px, 90vw);
   }
 
   .v3-wizard-grid {

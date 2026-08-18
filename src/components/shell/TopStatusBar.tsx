@@ -1,4 +1,4 @@
-import { CircleHelp, Menu, Settings, Wifi } from 'lucide-react';
+import { CircleHelp, Settings, Wifi } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import { phaseAssetMap, roleAssetMap } from '../../ui/assetRegistry';
@@ -17,8 +17,6 @@ export interface TopStatusBarProps {
   progress?: number;
   connected?: boolean;
   scene?: RoomScene;
-  onMenu?: () => void;
-  menuOpen?: boolean;
 }
 
 export function TopStatusBar({
@@ -30,8 +28,6 @@ export function TopStatusBar({
   progress,
   connected = false,
   scene = 'lobby',
-  onMenu,
-  menuOpen = false,
 }: TopStatusBarProps) {
   const [rulesOpen, setRulesOpen] = useState(false);
   const phaseAsset = phaseAssetMap[scene];
@@ -63,17 +59,6 @@ export function TopStatusBar({
       ) : null}
 
       <div className="v3-topbar__actions">
-        <Button
-          className="v3-topbar__menu"
-          variant="icon"
-          aria-label="打开导航菜单"
-          aria-controls="v3-side-nav"
-          aria-expanded={menuOpen}
-          title="导航菜单"
-          onClick={onMenu}
-        >
-          <Menu size={18} />
-        </Button>
         <Badge tone={connected ? 'success' : 'warning'}>
           <Wifi size={13} />{connected ? '已连接' : '连接中'}
         </Badge>
