@@ -387,7 +387,10 @@ select {
 .v3-app-shell {
   position: relative;
   isolation: isolate;
+  height: 100dvh;
   min-height: 100dvh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   background-color: var(--ww-bg-scene);
   background-image: url('../assets/v31/sky-day.svg');
@@ -433,6 +436,36 @@ select {
   border-bottom: 1.5px solid var(--ww-border-default);
   background: var(--ww-bg-surface);
   box-shadow: 0 2px 0 color-mix(in srgb, var(--ww-wood-brown) 10%, transparent);
+}
+
+/* Room metadata belongs to the same non-scrolling header row as the top bar.
+   The content body owns scrolling, so this remains in normal document flow
+   instead of becoming a floating overlay above the match workspace. */
+.v3-room-header {
+  min-width: 0;
+  z-index: 40;
+  background: var(--ww-bg-surface);
+}
+
+.v3-room-header__meta {
+  min-width: 0;
+  min-height: 42px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ww-space-2) var(--ww-space-3);
+  padding: var(--ww-space-2) max(var(--page-gutter), calc((100vw - var(--ww-content-max)) / 2 + var(--page-gutter)));
+  border-bottom: 1.5px solid var(--ww-border-default);
+  background: var(--ww-bg-surface);
+}
+
+.v3-room-header__meta > span {
+  color: var(--ww-text-muted);
+  font-size: var(--ww-text-caption-size);
+}
+
+.v3-room-header__meta > strong {
+  letter-spacing: .08em;
 }
 
 .v3-topbar__identity,
@@ -533,9 +566,14 @@ select {
 
 .v3-app-shell__body {
   width: min(100%, var(--ww-content-max));
-  min-height: calc(100dvh - 76px);
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
   display: block;
   margin: 0 auto;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
 }
 
 .v3-wizard-grid {
