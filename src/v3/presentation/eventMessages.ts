@@ -133,6 +133,12 @@ const isAdvancedView = (event: DomainEvent, options: EventMessageOptions): boole
   (options.viewer?.kind === 'spectator' && options.viewer.omniscient) ||
   event.visibility === 'spectator_omniscient';
 
+const scopedActor = (
+  event: DomainEvent,
+  options: EventMessageOptions,
+  actor: string,
+): string => isAdvancedView(event, options) ? actor : '你';
+
 const formattedDeaths = (
   payload: Record<string, unknown>,
   playerName: (id: string | null) => string,
@@ -210,7 +216,7 @@ export const describeEvent = (
         ? '对局开始，请确认身份。'
         : `对局开始，进入第 ${dayFrom(payload)} 夜。`;
     case 'role.confirmed':
-      return '你已确认身份。';
+      return `${scopedActor(event, options, actor)}已确认身份。`;
     case 'role.confirmation_completed':
       return '所有玩家已确认身份，首夜开始。';
     case 'game.state_updated':
@@ -220,7 +226,7 @@ export const describeEvent = (
     case 'stage.timed_out':
       return `${stageFrom(payload)}行动时间已结束。`;
     case 'guardian.completed':
-      return `你已守护${target}。`;
+      return `${scopedActor(event, options, actor)}已守护${target}。`;
     case 'seer.result': {
       const alignment = payload.alignment === 'wolf'
         ? ALIGNMENT_LABELS.wolf
@@ -232,9 +238,9 @@ export const describeEvent = (
     case 'witch.kill_notice':
       return `今晚受到袭击的是${safePlayerName(playerName, idFrom(payload, 'killTargetId'))}。`;
     case 'witch.completed':
-      return '你已完成本夜用药。';
+      return `${scopedActor(event, options, actor)}已完成本夜用药。`;
     case 'night.skipped':
-      return '你已跳过本次夜间行动。';
+      return `${scopedActor(event, options, actor)}已跳过本次夜间行动。`;
     case 'night.roles_defaulted':
       return '夜间行动时间已结束，未完成的行动已按规则处理。';
     case 'night.resolved':

@@ -101,6 +101,31 @@ test('事件模板只显示安全中文，未知事件不回显原始值', () =>
   );
 });
 
+test('全知观战将玩家视角的第一人称事件还原为真实席位名', () => {
+  const playerName = (id: string | null) => id === 'p1' ? '一号玩家' : '未知目标';
+  const monitor = {
+    kind: 'spectator' as const,
+    spectatorId: 'monitor-1',
+    omniscient: true,
+  };
+  assert.equal(
+    describeEvent({
+      ...event('role.confirmed', { confirmed: true }),
+      actorId: 'p1',
+      visibility: 'role_private',
+    }, playerName, { viewer: monitor }),
+    '一号玩家已确认身份。',
+  );
+  assert.equal(
+    describeEvent({
+      ...event('role.confirmed', { confirmed: true }),
+      actorId: 'p1',
+      visibility: 'role_private',
+    }, playerName),
+    '你已确认身份。',
+  );
+});
+
 test('狼人时间线展示逐狼投票目标，普通视角只看到安全提示', () => {
   const playerName = (id: string | null) => id === 'p1' ? '一号玩家' : id === 'p2' ? '二号玩家' : '未知目标';
   const vote = event('wolf.vote_cast', { actorId: 'p1', targetId: 'p2' });
