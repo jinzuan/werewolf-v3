@@ -202,7 +202,14 @@ const createModernApplication = async (
     capacity: runtime.joinRateLimitCapacity,
     refillPerSecond: runtime.joinRateLimitRefillPerSecond,
   });
-  const safeHttpClient = new SafeHttpClient(endpointPolicy);
+  // AI 传输：可选 native-fetch（WW_AI_NATIVE_FETCH=1）走正常 DNS，避免
+  // SafeHttpClient 的 IP 直连触发 lingll CDN 的 self-302。self-hosted + 固定端点可接受。
+  const nativeFetch = process.env.WW_AI_NATIVE_FETCH === '1';
+  const safeHttpClient = new SafeHttpClient(endpointPolicy, {
+    transport: nativeFetch
+      ? async ({ url, options: ro }) => fetch(url, ro)
+      : undefined,
+  });
   const reviewPipeline = new ReviewPipeline(eventStore, reviewRepository, {
     insightStore,
     rulesGenerator: new RulesReviewGenerator(),
