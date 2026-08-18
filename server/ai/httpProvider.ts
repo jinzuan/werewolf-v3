@@ -268,8 +268,16 @@ export class HttpAIProvider implements AIProvider {
     const testTransport: SafeHttpTransport | undefined = options.fetch
       ? async ({ url, options: requestOptions }) => options.fetch!(url, requestOptions)
       : undefined;
+    // 生产环境走原生 fetch（正常 DNS）可绕过 SafeHttpClient 的 IP 直连——
+    // IP 直连会触发 lingll CDN 的 self-302（Location=自身）导致 AI 全降级模板。
+    // 端点仍过 endpointPolicy 校验（协议/端口/私有地址拦截），self-hosted + 固定端点场景
+    // 可接受；用 WW_AI_NATIVE_FETCH=1 显式启用，默认保持 DNS-pinning 安全。
+    const nativeFetch = process.env.WW_AI_NATIVE_FETCH === '1';
+    const nativeTransport: SafeHttpTransport | undefined = options.fetch || !nativeFetch
+      ? undefined
+      : async ({ url, options: requestOptions }) => fetch(url, requestOptions);
     this.safeHttpClient = options.safeHttpClient ?? new SafeHttpClient(this.endpointPolicy, {
-      transport: testTransport,
+      transport: testTransport ?? nativeTransport,
     });
   }
 
