@@ -14,7 +14,6 @@ import { RoomActions } from './components/RoomActions';
 import { RoomConfigEditor } from './components/RoomConfigEditor';
 import { RoomConfigSummary } from './components/RoomConfigSummary';
 import { RoomAIConfigEditor } from './components/RoomAIConfigEditor';
-import { SelfReadyCard } from './components/SelfReadyCard';
 import { PlayerSeatGrid } from './components/PlayerSeatGrid';
 import { SpectatorList } from './components/SpectatorList';
 import { StartCheckPanel } from './components/StartCheckPanel';
@@ -216,47 +215,46 @@ export function WaitingRoomPage() {
           </div>
         ) : null}
 
-        <RoomActions
-          room={room}
-          currentMember={currentMember}
-          pendingAction={pendingAction}
-          onSetReady={ready}
-          onCancelReadyCheck={cancel}
-          onStartGame={start}
-          onInvite={() => void onCopyInvite()}
-          onUpdateConfig={() => setConfigEditorOpen(true)}
-          onTransferHost={transferHost}
-          onDissolve={dissolve}
-          onLeave={leave}
-        />
-
-        <SelfReadyCard
-          room={room}
-          member={currentMember}
-          pending={pendingAction === 'set_ready' || pendingRoomCommand === 'room.ready'}
-          locked={locked || loading}
-          showAction={false}
-          onSetReady={ready}
-        />
-
-        <div className="waiting-room__workspace">
+        <div className="waiting-room__board">
           <PlayerSeatGrid room={room} />
-          <StartCheckPanel
-            items={room.startCheck.items}
-            members={room.members}
-            allowedActions={room.viewer.allowedRoomActions}
-            onAction={resolveCheckAction}
-            onLocate={scrollToCheckTarget}
-          />
+          <aside className="waiting-room__side" aria-label="等待房辅助信息">
+            <RoomActions
+              room={room}
+              currentMember={currentMember}
+              pendingAction={pendingAction}
+              onSetReady={ready}
+              onCancelReadyCheck={cancel}
+              onStartGame={start}
+              onInvite={() => void onCopyInvite()}
+              onUpdateConfig={() => setConfigEditorOpen(true)}
+              onTransferHost={transferHost}
+              onDissolve={dissolve}
+              onLeave={leave}
+            />
+            <StartCheckPanel
+              items={room.startCheck.items}
+              members={room.members}
+              allowedActions={room.viewer.allowedRoomActions}
+              onAction={resolveCheckAction}
+              onLocate={scrollToCheckTarget}
+            />
+          </aside>
         </div>
 
-        <SpectatorList room={room} />
         <RoomConfigSummary
           room={room}
           onUpdateConfig={() => setConfigEditorOpen(true)}
           aiSummary={aiSummary}
           onUpdateAIConfig={openAIConfigEditor}
         />
+
+        <details className="waiting-room__secondary-details">
+          <summary>
+            <span>观战席与房间动态</span>
+            <span className="waiting-room__secondary-hint">不占用玩家席 · 可展开查看</span>
+          </summary>
+          <SpectatorList room={room} />
+        </details>
 
         <RoomConfigEditor
           room={room}
