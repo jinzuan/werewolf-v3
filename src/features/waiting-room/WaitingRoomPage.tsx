@@ -21,6 +21,7 @@ import { WaitingRoomHeader } from './components/WaitingRoomHeader';
 import {
   isActionAllowed,
   isWaitingRoomStatus,
+  selectViewerPlayerMember,
   WAITING_STATUS_LABELS,
 } from './selectors';
 import './waiting-room.css';
@@ -143,9 +144,7 @@ export function WaitingRoomPage() {
 
   if (!room || !session || !isWaitingRoomStatus(room.status)) return null;
 
-  const currentMember = room.members.find(
-    (member) => member.id === room.viewer.actorId,
-  );
+  const currentMember = selectViewerPlayerMember(room);
   const isHost = currentMember?.isHost === true;
   const locked = room.status === 'starting';
   const canCopyInvite = !locked && isHost && Boolean(session.credentials.joinToken) && isActionAllowed(room, 'invite');

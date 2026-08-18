@@ -10,6 +10,7 @@ import { Button } from '../../../ui/Button';
 import { Card } from '../../../ui/Card';
 import { Modal } from '../../../ui/Modal';
 import { isActionAllowed, startCheckReason } from '../selectors';
+import { viewerPlayerId } from '../../../v3/session';
 
 interface RoomActionsProps {
   room: RoomViewV31;
@@ -44,6 +45,7 @@ export function RoomActions({
   const isPlayer = room.viewer.kind === 'player' && currentMember?.kind === 'player';
   const ready = currentMember?.ready === true;
   const can = (action: AllowedRoomAction) => isActionAllowed(room, action);
+  const viewerId = viewerPlayerId(room.viewer);
   const failedChecks = room.startCheck.items
     .filter((item) => !item.passed)
   const blockedReasonFor = (): string => {
@@ -55,7 +57,7 @@ export function RoomActions({
     (member) =>
       member.kind === 'player' &&
       !member.isAI &&
-      member.id !== room.viewer.actorId &&
+      member.id !== viewerId &&
       member.connected,
   );
   const busy = (action: AllowedRoomAction): boolean => pendingAction === action;

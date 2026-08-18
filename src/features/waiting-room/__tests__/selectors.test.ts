@@ -6,6 +6,7 @@ import {
   selectPlayerSeats,
   selectSpectators,
   selectUnassignedPlayers,
+  selectViewerPlayerMember,
   startCheckCopy,
   startCheckReason,
 } from '../selectors';
@@ -134,4 +135,42 @@ test('等待房动作和开局检查都消费服务端事实', () => {
     messageKey: 'room.start.all_humans_ready',
     params: { total: 8, actual: 7 },
   }), '真人玩家全部准备：还有 1 名真人玩家未准备。');
+});
+
+test('观战者没有当前玩家成员，不能把玩家席标成自己', () => {
+  const projection = room([
+    {
+      id: 'p1',
+      name: '玩家一号',
+      kind: 'player',
+      seatIndex: 0,
+      isAI: false,
+      isHost: true,
+      connected: true,
+      ready: true,
+      avatarId: 'avatar-player',
+    },
+    {
+      id: 's1',
+      name: '观战者',
+      kind: 'spectator',
+      seatIndex: null,
+      isAI: false,
+      isHost: false,
+      connected: true,
+      ready: null,
+      avatarId: 'avatar-spectator',
+    },
+  ]);
+  const spectatorProjection = {
+    ...projection,
+    viewer: {
+      ...projection.viewer,
+      actorId: 's1',
+      kind: 'spectator' as const,
+    },
+  };
+
+  assert.equal(selectViewerPlayerMember(spectatorProjection), undefined);
+  assert.equal(selectViewerPlayerMember(projection)?.id, 'p1');
 });

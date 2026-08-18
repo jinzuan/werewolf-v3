@@ -45,6 +45,7 @@ import {
 import { formatCountdown } from '../../v3/countdown';
 import { MAX_EVENT_WINDOW } from '../../v3/eventStream';
 import { chatEventsForViewer } from '../../v3/visibility';
+import { viewerPlayerId } from '../../v3/session';
 
 const ROLE_DESCRIPTIONS = {
   wolf: '夜间与狼人队友讨论并决定袭击目标。',
@@ -95,7 +96,7 @@ export function GamePage() {
 
   const state = snapshot?.gameState ?? null;
   const players = useMemo(() => snapshot?.players ?? [], [snapshot?.players]);
-  const myId = session?.actorId ?? '';
+  const myId = viewerPlayerId(snapshot?.viewer) ?? '';
   const myPlayer = players.find((player) => player.id === myId);
   const isEliminated = myPlayer?.isAlive === false;
   const dayStage = (state as (GameState & { dayStage?: string | null }) | null)?.dayStage;

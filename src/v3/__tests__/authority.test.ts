@@ -36,6 +36,7 @@ import {
   isPublicRoomViewSafe,
   isSnapshotSafeForViewer,
   readV3Session,
+  viewerPlayerId,
   writeV3Session,
 } from '../session';
 import {
@@ -214,6 +215,26 @@ const publicSpectatorSnapshot = (
     },
   );
 };
+
+test('spectator identity never resolves to a player identity', () => {
+  assert.equal(viewerPlayerId({
+    actorId: 'spectator-1',
+    kind: 'spectator',
+    omniscient: false,
+    allowedRoomActions: [],
+  }), null);
+  assert.equal(viewerPlayerId({
+    actorId: 'player-1',
+    kind: 'player',
+    omniscient: false,
+    allowedRoomActions: [],
+  }), 'player-1');
+  assert.equal(viewerPlayerId({
+    kind: 'spectator',
+    spectatorId: 'player-1',
+    omniscient: false,
+  }), null);
+});
 
 const domainEvent = (
   sequence: number,

@@ -4,6 +4,7 @@ import type {
   RoomViewV31,
   StartCheckItem,
 } from '../../../shared/roomContract';
+import { viewerPlayerId } from '../../v3/session';
 
 export const WAITING_ROOM_STATUSES = [
   'waiting',
@@ -81,6 +82,18 @@ export const selectSpectators = (
   room: RoomViewV31,
 ): RoomMemberViewV31[] =>
   room.members.filter((member) => member.kind === 'spectator');
+
+/** A spectator has no player member, even if an ID happens to collide. */
+export const selectViewerPlayerMember = (
+  room: RoomViewV31,
+): RoomMemberViewV31 | undefined => {
+  const playerId = viewerPlayerId(room.viewer);
+  return playerId === null
+    ? undefined
+    : room.members.find(
+        (member) => member.kind === 'player' && member.id === playerId,
+      );
+};
 
 export const isActionAllowed = (
   room: RoomViewV31,

@@ -7,6 +7,7 @@ import { Badge } from '../../../ui/Badge';
 import { Button } from '../../../ui/Button';
 import { Card } from '../../../ui/Card';
 import { isActionAllowed } from '../selectors';
+import { viewerPlayerId } from '../../../v3/session';
 
 const ROLE_LABELS: Record<Role, string> = {
   wolf: '狼人',
@@ -38,8 +39,9 @@ export function RoomConfigSummary({ room, onUpdateConfig, aiSummary, onUpdateAIC
   const roleEntries = (Object.keys(ROLE_LABELS) as Role[])
     .map((role) => ({ role, count: config.roleSetup[role] ?? 0 }))
     .filter(({ count }) => count > 0);
-  const isHost = room.members.some(
-    (member) => member.id === room.viewer.actorId && member.isHost,
+  const viewerId = viewerPlayerId(room.viewer);
+  const isHost = viewerId !== null && room.members.some(
+    (member) => member.kind === 'player' && member.id === viewerId && member.isHost,
   );
   const aiCheck = room.startCheck.items.find((item) => item.key === 'ai_provider_config');
   const aiReady = aiCheck?.passed ?? room.computerPlayerStatus !== 'invalid';

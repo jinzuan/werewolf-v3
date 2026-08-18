@@ -49,6 +49,18 @@ export interface V3AuthorityState {
   events: import('../../shared/events').DomainEvent[];
 }
 
+/**
+ * Resolve a viewer to a player identity only when the authority projection
+ * explicitly says that viewer is a player. Spectator actor IDs are separate
+ * identities and must never be used for player-seat or self-message styling.
+ */
+export const viewerPlayerId = (
+  viewer: RoomView['viewer'] | ProjectedSnapshot['viewer'] | null | undefined,
+): string | null => {
+  if (!viewer || viewer.kind !== 'player') return null;
+  return 'playerId' in viewer ? viewer.playerId : viewer.actorId;
+};
+
 export const createEmptyAuthorityState = (): V3AuthorityState => ({
   room: null,
   session: null,
