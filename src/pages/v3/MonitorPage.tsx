@@ -157,7 +157,7 @@ export function MonitorPage() {
                   <button
                     type="button"
                     className={`v3-monitor-identity-flip${flippedPlayers.has(player.id) ? ' is-flipped' : ''}`}
-                    aria-label={`${player.name}，${flippedPlayers.has(player.id) ? '收起身份牌' : '翻开身份牌'}`}
+                    aria-label={`${playerName(player.id)}，${flippedPlayers.has(player.id) ? '收起身份牌' : '翻开身份牌'}`}
                     aria-pressed={flippedPlayers.has(player.id)}
                     onClick={() => togglePlayerIdentity(player.id)}
                   >
@@ -175,7 +175,7 @@ export function MonitorPage() {
                   </button>
                   <strong>
                     <span className="v3-numeric">{player.order.toString().padStart(2, '0')}</span>{' '}
-                    {playerName(player.id)}{player.isAI ? <span className="v3-ai-label">AI</span> : null}
+                    <span className="v3-monitor-identity-name">{playerName(player.id)}</span>{player.isAI ? <span className="v3-ai-label">AI</span> : null}
                   </strong>
                   <Badge tone={!player.isAlive ? 'danger' : 'success'}>{player.isAlive ? '存活' : '已出局'}</Badge>
                   {flippedPlayers.has(player.id) ? (
