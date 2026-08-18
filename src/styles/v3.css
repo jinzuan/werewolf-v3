@@ -2218,10 +2218,12 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
   }
 
   .v3-match-layout[data-mobile-section='chat'] > .v3-match-layout__center,
-  .v3-match-layout[data-mobile-section='events'] > .v3-match-layout__center,
+  .v3-game-layout[data-mobile-section='events'] > .v3-match-layout__right,
   .v3-match-layout[data-mobile-section='action'] > .v3-match-layout__right,
   .v3-match-layout[data-mobile-section='identity'] > .v3-match-layout__left,
-  .v3-match-layout[data-mobile-section='view'] > .v3-match-layout__right {
+  .v3-match-layout[data-mobile-section='view'] > .v3-match-layout__right,
+  .v3-monitor-layout[data-mobile-section='events'] > .v3-match-layout__center,
+  .v3-spectate-layout[data-mobile-section='events'] > .v3-match-layout__center {
     display: block;
   }
 

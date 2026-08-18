@@ -48,7 +48,7 @@ import {
 } from '../../v3/serverClock';
 import { formatCountdown } from '../../v3/countdown';
 import { MAX_EVENT_WINDOW } from '../../v3/eventStream';
-import { chatEventsForViewer } from '../../v3/visibility';
+import { chatEventsForViewer, isSpeechEvent } from '../../v3/visibility';
 import { viewerPlayerId } from '../../v3/session';
 import { seatColorIndex } from '../../v3/seatColors';
 
@@ -81,7 +81,7 @@ const ACTION_HELP: Record<GameAction, string> = {
   heal: '解药只能用于当前夜晚显示的刀口。',
   poison: '选择一名其他存活玩家使用毒药。',
   skip_night: '放弃当前角色的夜间行动。',
-  speak: '向公开时间线提交本轮发言。',
+  speak: '向公开聊天流提交本轮发言。',
   skip_speech: '白天可直接跳过；遗言阶段若放弃，必须填写理由（例如“懒得说”）。',
   vote: '仅显示本轮规则允许的候选人。',
   abstain: '本轮允许弃票。',
@@ -223,8 +223,6 @@ export function GamePage() {
     const actorId = event.payload?.actorId;
     return typeof actorId === 'string' ? actorId : event.actorId ?? null;
   };
-  const isSpeechEvent = (event: (typeof visibleEvents)[number]): boolean =>
-    event.eventType === 'day.speech' || event.eventType === 'wolf.message';
   const chatMessages = useMemo(
     () => visibleEvents.filter(isSpeechEvent),
     [visibleEvents],
@@ -664,7 +662,7 @@ export function GamePage() {
                   ) : null}
 
                   {showsTextInput ? (
-                    <div className="v3-inline-note">发言输入框在中间聊天区，发送后会进入公开时间线。</div>
+                    <div className="v3-inline-note">发言输入框在中间聊天区，发送后会进入聊天流。</div>
                   ) : (
                     <div className="v3-action-panel__footer">
                       <span>
@@ -720,7 +718,10 @@ export function GamePage() {
             </div>
             <p className="v3-inline-note">身份牌和私密行动只属于你；其他玩家的身份不会在玩家视角展开。</p>
           </Card>
-          <details className="v3-event-details v3-mobile-pane-events">
+          <details
+            className="v3-event-details v3-mobile-pane-events"
+            open={mobileSection === 'events'}
+          >
             <summary>
               <span>事件与系统通知</span>
               <Badge tone="info">{systemEvents.length}</Badge>

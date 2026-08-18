@@ -26,6 +26,7 @@ import {
 } from '../../v3/serverClock';
 import { MAX_EVENT_WINDOW } from '../../v3/eventStream';
 import { formatCountdown } from '../../v3/countdown';
+import { isSpeechEvent } from '../../v3/visibility';
 
 type SpectateMobileSection = 'events' | 'identity' | 'view';
 type SpectateSeatStatus = 'alive' | 'exiled' | 'night-death';
@@ -54,11 +55,17 @@ export function SpectatePage() {
     return () => window.clearInterval(timer);
   }, [snapshot?.gameState.deadlineTs]);
   const publicEvents = useMemo(
+    () => publicSpectatorEvents(events)
+      .filter((event) => !isSpeechEvent(event))
+      .slice(-MAX_EVENT_WINDOW),
+    [events],
+  );
+  const publicStreamEvents = useMemo(
     () => publicSpectatorEvents(events).slice(-MAX_EVENT_WINDOW),
     [events],
   );
   const mobileUnreadCounts = useMobileMatchUnread(
-    publicEvents,
+    publicStreamEvents,
     snapshot?.gameId,
     mobileSection,
     { chatTab: null },

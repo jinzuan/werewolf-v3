@@ -28,7 +28,7 @@ import {
 } from '../../v3/serverClock';
 import { MAX_EVENT_WINDOW } from '../../v3/eventStream';
 import { formatCountdown } from '../../v3/countdown';
-import { chatEventsForViewer } from '../../v3/visibility';
+import { chatEventsForViewer, isSpeechEvent } from '../../v3/visibility';
 import { seatColorClass, seatColorIndex } from '../../v3/seatColors';
 
 type MonitorSeatStatus = 'alive' | 'dead' | 'exiled';
@@ -85,6 +85,7 @@ export function MonitorPage() {
   );
   const filteredEvents = useMemo(() => events
     .filter((event) => event.eventType !== 'game.state_updated')
+    .filter((event) => !isSpeechEvent(event))
     .filter((event) => visibility === 'all' || event.visibility === visibility)
     .filter((event) =>
       !query.trim() ||
@@ -93,7 +94,7 @@ export function MonitorPage() {
     .slice(-MAX_EVENT_WINDOW), [events, visibility, query, playerName]);
   const chatMessages = useMemo(
     () => chatEventsForViewer(events, snapshot?.viewer ?? null)
-      .filter((event) => event.eventType === 'day.speech' || event.eventType === 'wolf.message')
+      .filter(isSpeechEvent)
       .slice(-MAX_EVENT_WINDOW),
     [events, snapshot?.viewer],
   );
