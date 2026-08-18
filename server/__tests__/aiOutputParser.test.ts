@@ -45,6 +45,24 @@ test('INVALID_CONTEXT is rejected before it can become speech text', () => {
   }
 });
 
+test('unresolved prompt placeholders are rejected before they can become speech text', () => {
+  const parseContext = {
+    allowedCommandTypes: ['game.speak'] as const,
+    players,
+    playerId: players[0].id,
+    role: 'villager' as const,
+    phase: 'lastWords',
+    stage: 'last_words',
+    promptContext: { legalActions: ['speak' as const] },
+  };
+  const result = parseAIOutput(
+    '{"action":"speak","content":"{{last_words_round_task}}"}',
+    parseContext,
+  );
+  assert.equal(result.ok, false);
+  if (result.ok === false) assert.equal(result.code, 'INVALID_CONTEXT');
+});
+
 test('prompt provider retries an invalid-context response and returns the valid retry', async () => {
   const outputs = [
     'INVALID_CONTEXT',

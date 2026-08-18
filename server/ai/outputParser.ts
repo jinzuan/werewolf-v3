@@ -58,6 +58,9 @@ const cleanText = (value: unknown): string =>
 const containsInvalidContextSentinel = (value: string): boolean =>
   value.includes('INVALID_CONTEXT');
 
+const containsPromptPlaceholder = (value: string): boolean =>
+  /\{\{[^}]*\}\}/u.test(value);
+
 const stripTargetDecorators = (value: string): string =>
   value
     .trim()
@@ -469,10 +472,10 @@ export const parseAIOutput = (
 ): ParsedAIOutput => {
   const raw = cleanText(rawOutput);
   if (!raw) return fail('EMPTY_OUTPUT', 'AI output is empty.');
-  if (containsInvalidContextSentinel(raw)) {
+  if (containsInvalidContextSentinel(raw) || containsPromptPlaceholder(raw)) {
     return fail(
       'INVALID_CONTEXT',
-      'The AI returned the invalid-context sentinel instead of a player action.',
+      'The AI returned a control sentinel or unresolved prompt placeholder instead of a player action.',
     );
   }
   const object = parseJson(raw);

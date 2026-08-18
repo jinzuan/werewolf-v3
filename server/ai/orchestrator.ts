@@ -71,6 +71,31 @@ const errorDetailOf = (error: unknown): string | undefined =>
 const retryCountOf = (error: unknown): number =>
   error instanceof ProviderError ? error.retryCount : 0;
 
+const isLastWordsContext = (context: AIRequestContext): boolean =>
+  context.phase === 'lastWords' ||
+  context.stage === 'last_words' ||
+  context.promptContext?.lastWordsRoundsRemaining !== undefined;
+
+const safeLastWordsFact = (value: string | undefined): string => {
+  if (!value) return '';
+  const cleaned = value
+    .replace(/INVALID_CONTEXT/gu, '')
+    .replace(/\{\{[^}]*\}\}/gu, '')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  return cleaned ? Array.from(cleaned).slice(0, 34).join('') : '';
+};
+
+const lastWordsFallbackContent = (context: AIRequestContext): string => {
+  const prompt = context.promptContext;
+  const previous = safeLastWordsFact(prompt?.firstLastWords);
+  const round = prompt?.lastWordsRound ?? 1;
+  const content = round > 1 && previous
+    ? `补充遗言：${previous}。请结合公开票型和发言复盘。`
+    : '我被投票出局。请结合公开票型和发言复盘，重点看投票理由与立场变化。';
+  return Array.from(content).slice(0, 80).join('');
+};
+
 export class AIOrchestrator {
   private readonly telemetryEntries: AITelemetryEntry[] = [];
   private readonly timeoutMs: number;
@@ -471,10 +496,14 @@ export class AIOrchestrator {
         command: {
           type: 'game.speak',
           payload: {
-            content: `第${context.promptContext?.dayNumber ?? '?'}天当前有${alive.length}名玩家存活，我会结合已公开的信息继续观察并说明判断。`,
+            content: isLastWordsContext(context)
+              ? lastWordsFallbackContent(context)
+              : `第${context.promptContext?.dayNumber ?? '?'}天当前有${alive.length}名玩家存活，我会结合已公开的信息继续观察并说明判断。`,
           },
         },
-        reason: 'deterministic speech fallback',
+        reason: isLastWordsContext(context)
+          ? 'contextual last-words fallback'
+          : 'deterministic speech fallback',
       };
     }
     if (allowed.has('skip_speech')) {
@@ -568,6 +597,21 @@ export class AIOrchestrator {
       return {
         command: { type: 'game.confirm_role', payload: {} },
         reason: 'role confirmation is the only allowed action',
+      };
+    }
+    if (allowed.has('speak')) {
+      return {
+        command: {
+          type: 'game.speak',
+          payload: {
+            content: isLastWordsContext(context)
+              ? lastWordsFallbackContent(context)
+              : `第${context.promptContext?.dayNumber ?? '?'}天我会结合已公开的信息继续观察并说明判断。`,
+          },
+        },
+        reason: isLastWordsContext(context)
+          ? 'last-words content is required'
+          : 'speech content is required',
       };
     }
     if (allowed.has('skip_speech')) {
