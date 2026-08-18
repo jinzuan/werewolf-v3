@@ -1502,7 +1502,7 @@ select {
 .v3-segmented--compact { grid-auto-columns: 44px; }
 .v3-segmented--compact button { padding: 0 var(--ww-space-2); }
 
-.v3-chat-panel { height: 620px; max-height: calc(100dvh - 180px); min-height: 420px; display: flex; flex-direction: column; overflow: hidden; }
+.v3-chat-panel { height: 700px; max-height: calc(100dvh - 180px); min-height: 420px; display: flex; flex-direction: column; overflow: hidden; }
 .v3-chat-list { min-height: 0; flex: 1 1 auto; display: grid; align-content: start; gap: var(--ww-space-3); margin-top: var(--ww-space-4); padding: 0 var(--ww-space-1) 0 2px; overflow-y: auto; scrollbar-gutter: stable; }
 .v3-chat-row { min-width: 0; display: flex; align-items: flex-start; gap: var(--ww-space-2); }
 .v3-chat-row--self { flex-direction: row-reverse; }
@@ -1647,6 +1647,84 @@ select {
 .v3-call-list span { overflow: hidden; color: var(--ww-text-muted); text-overflow: ellipsis; white-space: nowrap; }
 .v3-monitor-filters { display: grid; grid-template-columns: 150px 150px 150px minmax(220px, 1fr); gap: var(--ww-space-3); padding: var(--ww-space-4); border: 1.5px solid var(--ww-border-default); border-radius: var(--ww-radius-card); background: var(--ww-bg-surface); }
 .v3-monitor-filters label { display: grid; gap: 5px; }
+
+@media (min-width: 900px) {
+  .v3-match-layout,
+  .v3-spectate-layout,
+  .v3-monitor-layout {
+    --v3-workspace-height: clamp(560px, calc(100dvh - 188px), 760px);
+    align-items: stretch;
+  }
+
+  .v3-match-layout__left > .v3-card,
+  .v3-match-layout__center > .v3-card,
+  .v3-spectate-layout .v3-match-layout__left > .v3-card,
+  .v3-spectate-layout .v3-match-layout__center > .v3-card,
+  .v3-spectate-layout .v3-match-layout__right > .v3-card,
+  .v3-monitor-layout .v3-match-layout__left > .v3-card,
+  .v3-monitor-layout .v3-match-layout__right > .v3-card {
+    height: var(--v3-workspace-height);
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .v3-player-panel,
+  .v3-spectate-layout .v3-match-layout__center > .v3-card,
+  .v3-monitor-layout .v3-match-layout__left > .v3-card,
+  .v3-monitor-layout .v3-match-layout__right > .v3-card {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .v3-player-grid,
+  .v3-identity-list,
+  .v3-spectate-layout .v3-timeline {
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    flex: 1 1 auto;
+    align-content: start;
+  }
+
+  .v3-match-layout__right > .v3-match-side {
+    height: var(--v3-workspace-height);
+    max-height: var(--v3-workspace-height);
+    overflow-y: auto;
+    padding-right: var(--ww-space-1);
+    scrollbar-gutter: stable;
+  }
+
+  .v3-chat-panel {
+    height: var(--v3-workspace-height);
+    max-height: none;
+    min-height: 0;
+  }
+
+  .v3-monitor-stream {
+    height: var(--v3-workspace-height);
+    min-height: 0;
+    grid-template-rows: minmax(0, 1fr) minmax(300px, 1fr);
+  }
+
+  .v3-monitor-stream > .v3-card {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .v3-monitor-stream .v3-console-events,
+  .v3-monitor-stream .v3-chat-list {
+    max-height: none;
+    min-height: 0;
+    flex: 1 1 auto;
+  }
+
+  .v3-monitor-chat {
+    height: auto;
+    min-height: 0;
+  }
+}
 
 /* New primitives use the same semantic contract as the legacy-compatible v3 classes. */
 .ww-status { min-width: 0; display: inline-flex; align-items: center; gap: 6px; color: var(--ww-text-muted); font-size: var(--ww-text-caption-size); line-height: 20px; }
