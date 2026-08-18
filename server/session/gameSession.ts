@@ -733,7 +733,11 @@ export class GameSession {
       ];
     }
 
-    if (action.action === 'check' && action.targetId !== null) {
+    if (
+      action.action === 'check' &&
+      action.targetId !== null &&
+      !this.state.night.seerComplete
+    ) {
       if (
         !validateSeerAction(
           corePlayers,
@@ -830,7 +834,8 @@ export class GameSession {
     } else if (
       this.state.night.stage === 'guard_seer' &&
       actor.role === 'seer' &&
-      action === 'check'
+      action === 'check' &&
+      !this.state.night.seerComplete
     ) {
       this.state.night = completeSeer(this.state.night, null);
     } else if (

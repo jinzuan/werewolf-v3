@@ -165,6 +165,95 @@ test('night order is guard_seer then wolf discussion/vote then witch then resolv
   );
 });
 
+test('seer can check once again after the first day starts the next night', async () => {
+  const players = createPlayers('room-seer-every-night');
+  const clock = new FakeClock();
+  const session = new GameSession(
+    'room-seer-every-night',
+    players,
+    new InMemoryEventStore(),
+    undefined,
+    { now: clock.now, scheduler: clock, stageDurationMs: 100 },
+  );
+  await initializeSession(session, players);
+
+  const guardian = players.find((player) => player.role === 'guardian')!;
+  const seer = players.find((player) => player.role === 'seer')!;
+  const wolves = players.filter((player) => player.role === 'wolf');
+  const witch = players.find((player) => player.role === 'witch')!;
+  const firstTarget = players.find((player) => player.role === 'villager')!;
+  const secondTarget = players.find(
+    (player) => player.role === 'villager' && player.id !== firstTarget.id,
+  )!;
+
+  await dispatch(session, guardian.id, {
+    type: 'game.skip_night',
+    payload: { action: 'guard' },
+  });
+  const firstCheck = await dispatch(session, seer.id, {
+    type: 'game.night_action',
+    payload: { playerId: seer.id, action: 'check', targetId: firstTarget.id },
+  });
+  assert.equal(firstCheck.ok, true);
+  const duplicateCheck = await dispatch(session, seer.id, {
+    type: 'game.night_action',
+    payload: { playerId: seer.id, action: 'check', targetId: secondTarget.id },
+  });
+  assert.equal(duplicateCheck.code, 'ACTION_NOT_ALLOWED');
+
+  await discussTwice(session, wolves);
+  for (const wolf of wolves) {
+    await dispatch(session, wolf.id, {
+      type: 'game.wolf_vote',
+      payload: { targetId: null },
+    });
+  }
+  await dispatch(session, witch.id, {
+    type: 'game.skip_night',
+    payload: { action: 'heal' },
+  });
+  await clock.advance(100);
+
+  while (
+    session.serialize().state.dayFlow.stage === 'speech' ||
+    session.serialize().state.dayFlow.stage === 'discussion'
+  ) {
+    const speaker = session.serialize().state.gameState.currentSpeaker!;
+    await dispatch(session, speaker, {
+      type: 'game.skip_speech',
+      payload: {},
+    });
+  }
+  assert.equal(session.serialize().state.dayFlow.stage, 'voting');
+  for (const voter of players) {
+    await dispatch(session, voter.id, {
+      type: 'game.vote',
+      payload: { targetId: null },
+    });
+  }
+  await clock.advance(100);
+  assert.equal(session.serialize().state.dayFlow.stage, 'day_end');
+  await clock.advance(100);
+  assert.equal(session.serialize().state.gameState.phase, 'night');
+  assert.equal(session.serialize().state.night.stage, 'guard_seer');
+  assert.equal(
+    session.serialize().state.gameState.allowedActors?.some(
+      (entry) => entry.playerId === seer.id && entry.actions.includes('check'),
+    ),
+    true,
+  );
+
+  const secondCheck = await dispatch(session, seer.id, {
+    type: 'game.night_action',
+    payload: { playerId: seer.id, action: 'check', targetId: secondTarget.id },
+  });
+  assert.equal(secondCheck.ok, true);
+  assert.equal(
+    secondCheck.events.filter((event) => event.eventType === 'seer.result').length,
+    1,
+  );
+});
+
 test('real session event projection feeds death, action, and vote history into final words', async () => {
   const players = createPlayers('room-final-words');
   const clock = new FakeClock();
