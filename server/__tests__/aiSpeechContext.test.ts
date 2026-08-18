@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { DomainEvent } from '../../shared/events';
+import type { DomainEvent, EventVisibility } from '../../shared/events';
 import type { Player } from '../../shared/types';
 import { buildAIPrompt } from '../ai/promptBuilder';
+import { projectAIContext } from '../ai/contextProjector';
 import { buildAIRuntimeContext } from '../ai/runtimeContext';
 import type { AIActorStatus, AIRequestContext } from '../ai/types';
+import { VisibilityProjector } from '../events/projector';
+import { InMemoryEventStore } from '../events/store';
+import { GameSession } from '../session/gameSession';
 
 const speechEvent = (
   sequence: number,
@@ -144,4 +148,75 @@ test('current round speeches are bounded by day, stage, and discussion round', (
   assert.deepEqual(runtime.ownPreviousSpeeches, [
     '【第2天·speech·第1轮】 赵六：今天首轮发言',
   ]);
+});
+
+const privateEvent = (
+  sequence: number,
+  eventType: 'seer.result' | 'wolf.message',
+  visibility: EventVisibility,
+): DomainEvent => ({
+  eventId: `private-${sequence}`,
+  roomId: 'room-speech-status',
+  gameId: 'game-speech-status',
+  sequence,
+  occurredAt: sequence,
+  phase: 'night',
+  stage: 'guard_seer',
+  actorId: 'dead-villager',
+  eventType,
+  payload: eventType === 'seer.result'
+    ? { targetId: 'alive-villager', alignment: 'good' }
+    : { actorId: 'dead-villager', content: '死前狼聊' },
+  visibility,
+  audienceIds: ['dead-villager'],
+  correlationId: `private-${sequence}`,
+  schemaVersion: 1,
+});
+
+test('dead AI projection keeps pre-death knowledge and cuts off later private events', () => {
+  const projector = new VisibilityProjector();
+  const viewer = {
+    kind: 'player' as const,
+    playerId: 'dead-villager',
+    role: 'seer' as const,
+    isAlive: false,
+    deathCutoffSequence: 3,
+  };
+  const death: DomainEvent = {
+    eventId: 'death-3',
+    roomId: 'room-speech-status',
+    gameId: 'game-speech-status',
+    sequence: 3,
+    occurredAt: 3,
+    phase: 'day',
+    stage: 'last_words',
+    eventType: 'day.exiled',
+    payload: { day: 2, playerId: 'dead-villager' },
+    visibility: 'public_timeline',
+    correlationId: 'death-3',
+    schemaVersion: 1,
+  };
+
+  assert.ok(projector.projectEvent(privateEvent(1, 'seer.result', 'role_private'), viewer));
+  assert.ok(projector.projectEvent(death, viewer));
+  assert.equal(projector.projectEvent(privateEvent(4, 'seer.result', 'role_private'), viewer), undefined);
+  assert.equal(projector.projectEvent(privateEvent(5, 'wolf.message', 'wolf_private'), viewer), undefined);
+});
+
+test('AI context projection carries the authoritative alive flag into its viewer', async () => {
+  const session = new GameSession(
+    'room-speech-status',
+    players,
+    new InMemoryEventStore(),
+  );
+  await session.initialize();
+  const projection = await projectAIContext(session, {
+    playerId: 'dead-villager',
+    role: 'villager',
+    stageRevision: session.stageRevision,
+    allowedActions: [],
+  });
+
+  assert.equal(projection.viewer.isAlive, false);
+  assert.equal(projection.actorStatus?.isAlive, false);
 });

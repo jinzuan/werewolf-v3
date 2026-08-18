@@ -7,8 +7,7 @@ import {
   AITurnScheduler,
   type AITurnTask,
 } from '../ai/aiTurnScheduler';
-import { buildAIRuntimeContext } from '../ai/runtimeContext';
-import { deriveAIActorStatus } from '../ai/runtimeContext';
+import { buildAIRuntimeContext, deriveAIActorStatus } from '../ai/runtimeContext';
 import { PromptContextCache } from '../ai/promptContextCache';
 import { experienceLibrary } from '../ai/experienceLibrary';
 import type { AIProvider } from '../ai/types';
@@ -182,12 +181,8 @@ export class SessionCoordinator {
       ) return;
     }
     const provider = await this.options.providerForRoom(room);
-    const events = await this.contextCache.eventsFor(session, {
-      kind: 'player',
-      playerId: actor.id,
-      role: actor.role,
-      isAlive: actor.isAlive,
-    });
+    const viewer = await session.aiViewerFor(actor.id, actor.role);
+    const events = await this.contextCache.eventsFor(session, viewer);
     const players = projectPlayers(state.players, actor.id, actor.role);
     const stage = state.gameState.phase === 'night' ? state.night.stage : state.dayFlow.stage;
     const actorStatus = deriveAIActorStatus({
@@ -197,6 +192,7 @@ export class SessionCoordinator {
       players,
       allowedActions: [task.actionClass as GameAction],
     });
+    actorStatus.deathCutoffSequence = viewer.deathCutoffSequence;
     const promptContext = buildAIRuntimeContext({
       actorId: actor.id,
       role: actor.role,

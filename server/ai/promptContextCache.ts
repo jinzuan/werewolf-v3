@@ -12,7 +12,7 @@ export interface PromptContextCacheEntry {
 
 const viewerKey = (viewer: ViewerContext): string =>
   viewer.kind === 'player'
-    ? `player:${viewer.playerId}:${viewer.role}`
+    ? `player:${viewer.playerId}:${viewer.role}:${viewer.isAlive === undefined ? 'unknown' : viewer.isAlive ? 'alive' : 'dead'}:${viewer.deathCutoffSequence ?? 'none'}`
     : `spectator:${viewer.spectatorId}:${viewer.omniscient ? 'omniscient' : 'public'}`;
 
 const clone = <T>(value: T): T => structuredClone(value);

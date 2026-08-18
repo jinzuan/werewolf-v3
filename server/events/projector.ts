@@ -20,6 +20,15 @@ const isLivePlayer = (
 ): viewer is Extract<ViewerContext, { kind: 'player' }> =>
   viewer.kind === 'player' && viewer.isAlive !== false;
 
+const isPreDeathPlayerEvent = (
+  event: DomainEvent,
+  viewer: ViewerContext,
+): viewer is Extract<ViewerContext, { kind: 'player' }> =>
+  viewer.kind === 'player' &&
+  viewer.isAlive === false &&
+  typeof viewer.deathCutoffSequence === 'number' &&
+  event.sequence < viewer.deathCutoffSequence;
+
 /**
  * Exile is the one death that keeps a player in the action projection: the
  * eliminated seat owns the public last-words turn until it is completed.
@@ -35,6 +44,19 @@ const isExiledLastWordsPlayer = (
   state.lastWordsPlayer === viewer.playerId &&
   state.currentSpeaker === viewer.playerId;
 
+const isDeadHunterActionPlayer = (
+  state: GameState,
+  viewer: ViewerContext,
+): viewer is Extract<ViewerContext, { kind: 'player' }> =>
+  viewer.kind === 'player' &&
+  viewer.isAlive === false &&
+  (state as GameState & { dayStage?: string | null }).dayStage === 'hunter' &&
+  state.allowedActors?.some(
+    (actor) =>
+      actor.playerId === viewer.playerId &&
+      (actor.actions.includes('hunter_shoot') || actor.actions.includes('skip_hunter_shot')),
+  ) === true;
+
 const canSeeEvent = (event: DomainEvent, viewer: ViewerContext): boolean => {
   switch (event.visibility) {
     case 'public_timeline':
@@ -42,7 +64,7 @@ const canSeeEvent = (event: DomainEvent, viewer: ViewerContext): boolean => {
     case 'role_private':
       return (
         isOmniscient(viewer) ||
-        (isLivePlayer(viewer) &&
+        ((isLivePlayer(viewer) || isPreDeathPlayerEvent(event, viewer)) &&
           // A seer result is private to the seer even if a malformed or
           // migrated event carries a broader audience list.
           (event.eventType !== 'seer.result' || viewer.role === 'seer') &&
@@ -51,7 +73,7 @@ const canSeeEvent = (event: DomainEvent, viewer: ViewerContext): boolean => {
     case 'wolf_private':
       return (
         isOmniscient(viewer) ||
-        (isLivePlayer(viewer) &&
+        ((isLivePlayer(viewer) || isPreDeathPlayerEvent(event, viewer)) &&
           viewer.role === 'wolf' &&
           (event.audienceIds ?? []).includes(viewer.playerId))
       );
@@ -95,7 +117,10 @@ const projectGameState = (
   // An eliminated player stays authenticated as a player so the browser can
   // recover its room session, but receives the same private-state boundary as
   // a public spectator.  Own identity remains available through projectPlayers.
-  const canActAsPlayer = isLivePlayer(viewer) || isExiledLastWordsPlayer(state, viewer);
+  const canActAsPlayer =
+    isLivePlayer(viewer) ||
+    isExiledLastWordsPlayer(state, viewer) ||
+    isDeadHunterActionPlayer(state, viewer);
   const playerId = canActAsPlayer ? viewer.playerId : null;
   const role = isLivePlayer(viewer) ? viewer.role : null;
   const ownActor =

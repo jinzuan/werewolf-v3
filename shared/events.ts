@@ -110,6 +110,8 @@ export type ViewerContext =
       role: Role;
       /** Set by the authoritative room projection once a player is eliminated. */
       isAlive?: boolean;
+      /** First authoritative death event sequence for a dead AI/player view. */
+      deathCutoffSequence?: number;
     }
   | {
       kind: 'spectator';

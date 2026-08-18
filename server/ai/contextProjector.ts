@@ -2,6 +2,7 @@ import { RULESET } from '../../src/core/rules';
 import type { GameAction, Role } from '../../shared/types';
 import type { GameSession } from '../session/gameSession';
 import { experienceLibrary } from './experienceLibrary';
+import { deriveAIActorStatus } from './runtimeContext';
 import type { AIContextProjection, AIRequestContext } from './types';
 import type { PromptContextCache } from './promptContextCache';
 
@@ -94,23 +95,15 @@ const toRuleValues = (role: Role): Record<string, unknown> => {
   );
 };
 
-const playerViewer = (
-  context: Pick<AIRequestContext, 'playerId' | 'role'>,
-): AIContextProjection['viewer'] => ({
-  kind: 'player',
-  playerId: context.playerId,
-  role: context.role,
-});
-
 export async function projectAIContext(
   session: GameSession,
   context: Pick<
     AIRequestContext,
     'playerId' | 'role' | 'stageRevision' | 'allowedActions'
-  >,
+  > & Partial<Pick<AIRequestContext, 'phase' | 'stage'>>,
   options: ProjectAIContextOptions = {},
 ): Promise<AIContextProjection> {
-  const viewer = playerViewer(context);
+  const viewer = await session.aiViewerFor(context.playerId, context.role);
   const snapshot = await session.snapshotFor(viewer);
   const events = options.cache
     ? await options.cache.eventsFor(session, viewer)
@@ -120,6 +113,22 @@ export async function projectAIContext(
       ? context.allowedActions
       : snapshot.gameState.allowedActions ?? []),
   ];
+  const phase = context.phase ?? snapshot.gameState.phase;
+  const authorityState = snapshot.gameState as typeof snapshot.gameState & {
+    dayStage?: string | null;
+  };
+  const stage =
+    context.stage ??
+    (snapshot.gameState.phase === 'night' ? snapshot.gameState.nightStage : authorityState.dayStage) ??
+    null;
+  const actorStatus = deriveAIActorStatus({
+    actorId: context.playerId,
+    phase,
+    stage,
+    players: snapshot.players,
+    allowedActions,
+  });
+  actorStatus.deathCutoffSequence = viewer.deathCutoffSequence;
 
   return {
     viewer,
@@ -141,6 +150,7 @@ export async function projectAIContext(
       context.role,
       context.stageRevision,
     ),
+    actorStatus,
     allowedActions,
   };
 }

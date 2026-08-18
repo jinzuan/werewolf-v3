@@ -150,6 +150,7 @@ export class AIOrchestrator {
       callId,
       players: projection.snapshot.players,
       allowedActions,
+      actorStatus: context.actorStatus ?? projection.actorStatus,
       allowedCommandTypes,
       projectedContext: {
         ...projection,

@@ -221,6 +221,30 @@ export class GameSession {
     return structuredClone(this.state.players);
   }
 
+  /**
+   * Build the AI-only viewer from authoritative session state. Dead actors
+   * receive a death cutoff so their projection can retain pre-death knowledge
+   * without receiving private events appended after elimination.
+   */
+  async aiViewerFor(
+    playerId: string,
+    role: Role,
+  ): Promise<Extract<ViewerContext, { kind: 'player' }>> {
+    const player = this.state.players.find((candidate) => candidate.id === playerId);
+    const isAlive = player?.isAlive === true;
+    const viewer: Extract<ViewerContext, { kind: 'player' }> = {
+      kind: 'player',
+      playerId,
+      role,
+      isAlive,
+    };
+    if (!isAlive) {
+      const cutoff = await this.deathCutoffSequenceFor(playerId);
+      if (cutoff !== null) viewer.deathCutoffSequence = cutoff;
+    }
+    return viewer;
+  }
+
   serialize(): SessionSnapshot {
     return { state: structuredClone(this.state) };
   }
@@ -376,6 +400,23 @@ export class GameSession {
   async snapshotFor(viewer: ViewerContext) {
     const events = await this.storedEvents();
     return this.projector.projectSnapshot(events, viewer);
+  }
+
+  private async deathCutoffSequenceFor(playerId: string): Promise<number | null> {
+    const events = await this.storedEvents();
+    for (const { event } of events) {
+      const item = event.payload as Record<string, unknown>;
+      if (
+        (event.eventType === 'day.exiled' && item.playerId === playerId) ||
+        (event.eventType === 'hunter.shot' && item.targetId === playerId) ||
+        (event.eventType === 'night.resolved' &&
+          Array.isArray(item.deaths) &&
+          item.deaths.includes(playerId))
+      ) {
+        return event.sequence;
+      }
+    }
+    return null;
   }
 
   private async storedEvents(): Promise<StoredEvent[]> {

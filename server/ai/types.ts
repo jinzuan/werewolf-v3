@@ -1,4 +1,4 @@
-import type { DomainEvent, ProjectedSnapshot } from '../../shared/events';
+import type { DomainEvent, ProjectedSnapshot, ViewerContext } from '../../shared/events';
 import type { GameCommand } from '../../shared/protocol';
 import type { GameAction, Player, Role } from '../../shared/types';
 
@@ -103,11 +103,7 @@ export interface AIPromptContext {
 }
 
 export interface AIContextProjection {
-  viewer: {
-    kind: 'player';
-    playerId: string;
-    role: Role;
-  };
+  viewer: Extract<ViewerContext, { kind: 'player' }>;
   snapshot: ProjectedSnapshot;
   publicEvents: DomainEvent[];
   privateEvents: DomainEvent[];
