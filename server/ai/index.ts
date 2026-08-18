@@ -8,6 +8,7 @@ export * from './outputParser';
 export * from './promptBuilder';
 export * from './promptProvider';
 export * from './repeatPolicy';
+export * from './memory';
 export * from './runtimeContext';
 export * from './types';
 export * from './orchestrator';

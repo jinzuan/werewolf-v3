@@ -50,6 +50,13 @@ import {
   type PlayerId,
   type VoteBallot,
 } from '../../src/core';
+import {
+  ensureAIMemoryBoards,
+  initializeAIMemoryBoards,
+  updateAIMemoryBoards,
+  type AIMemoryBoard,
+  type AIMemoryBoards,
+} from '../ai/memory';
 import { VisibilityProjector } from '../events/projector';
 import type {
   AuthorityGameState,
@@ -161,6 +168,7 @@ export class GameSession {
   private timerRevision = -1;
   private storedEventCache: StoredEvent[] = [];
   private eventCacheLoaded = false;
+  private memoryMigrationPending = false;
   private state: SessionState;
 
   constructor(
@@ -193,9 +201,11 @@ export class GameSession {
         ),
         witchInventory: { antidote: 1, poison: 1 },
         processedCommands: {},
+        aiMemories: initializeAIMemoryBoards(players),
         sequence: 0,
         streamVersion: 0,
       };
+    this.memoryMigrationPending = false;
     this.migrateSnapshot();
     this.normalizeMissingNightActors();
     this.syncAuthorityFields(false);
@@ -219,6 +229,12 @@ export class GameSession {
 
   get players(): Player[] {
     return structuredClone(this.state.players);
+  }
+
+  /** Return only the requesting AI's private, server-maintained memory board. */
+  aiMemoryFor(playerId: string): AIMemoryBoard | undefined {
+    const board = this.state.aiMemories[playerId];
+    return board ? structuredClone(board) : undefined;
   }
 
   /**
@@ -294,7 +310,7 @@ export class GameSession {
         this.scheduleDeadline();
         throw error;
       }
-    } else if (computerRolesConfirmed || roleConfirmationCompleted) {
+    } else if (computerRolesConfirmed || roleConfirmationCompleted || this.memoryMigrationPending) {
       // AI seats do not need a client-side identity confirmation. Persist the
       // normalization after recovery as well, so a room cannot regress to a
       // role-confirmation gate after a process restart.
@@ -315,6 +331,7 @@ export class GameSession {
         events.push(this.stateEvent('system:ai-role-confirmation'));
         await this.append(events);
         await this.changed();
+        this.memoryMigrationPending = false;
       } catch (error) {
         this.state = before;
         throw error;
@@ -430,7 +447,11 @@ export class GameSession {
       );
       if (delta.length > 0) this.storedEventCache = [...this.storedEventCache, ...delta];
     }
-    return structuredClone(this.storedEventCache);
+    // Callers only read this cache and the visibility projector clones every
+    // event that it returns. Cloning the complete cache here duplicated every
+    // full `game.state_updated` session snapshot for every AI turn; the
+    // per-seat memory boards make that quadratic cost especially visible.
+    return this.storedEventCache;
   }
 
   private async handle(
@@ -474,6 +495,14 @@ export class GameSession {
       this.advanceRevision();
     }
     this.syncAuthorityFields(false);
+    // Memory is part of the same serialized transaction as the authoritative
+    // state. The session queue therefore makes concurrent speech/action updates
+    // deterministic and the state_updated commit persists the whole board.
+    this.state.aiMemories = updateAIMemoryBoards(
+      this.state.aiMemories,
+      events,
+      this.state.players,
+    );
     const revisionChanged = beforeRevision !== this.stageRevision;
     if (revisionChanged) this.setDeadline();
     const committed = [
@@ -1608,6 +1637,11 @@ export class GameSession {
         return;
       }
       this.syncAuthorityFields(false);
+      this.state.aiMemories = updateAIMemoryBoards(
+        this.state.aiMemories,
+        events,
+        this.state.players,
+      );
       this.setDeadline();
       const committed = [
         this.event(
@@ -2075,6 +2109,13 @@ export class GameSession {
     legacy.roleConfirmations ??= Object.fromEntries(
       this.state.players.map((player) => [player.id, true]),
     );
+    const memory = ensureAIMemoryBoards(
+      (legacy as SessionState & { aiMemories?: AIMemoryBoards }).aiMemories,
+      this.state.players,
+      this.state.sequence,
+    );
+    (legacy as SessionState).aiMemories = memory.boards;
+    this.memoryMigrationPending ||= memory.changed;
     // Older snapshots used top-level phases for day sub-stages. The runtime
     // keeps one authoritative day stage and exposes the old phase only to
     // readers that still understand the compatibility shape.

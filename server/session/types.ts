@@ -1,5 +1,6 @@
 import type { DomainEvent } from '../../shared/events';
 import type { GameState, Player } from '../../shared/types';
+import type { AIMemoryBoards } from '../ai/memory';
 import type {
   DayStage,
   NightState,
@@ -45,6 +46,8 @@ export interface SessionState {
   roleConfirmations: Record<PlayerId, boolean>;
   witchInventory: WitchInventory;
   processedCommands: Record<string, CommandResult>;
+  /** Per-seat memory boards; private board data never enters a viewer snapshot. */
+  aiMemories: AIMemoryBoards;
   sequence: number;
   streamVersion: number;
 }

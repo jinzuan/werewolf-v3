@@ -150,6 +150,7 @@ export async function projectAIContext(
       context.role,
       context.stageRevision,
     ),
+    memoryBoard: session.aiMemoryFor(context.playerId),
     actorStatus,
     allowedActions,
   };

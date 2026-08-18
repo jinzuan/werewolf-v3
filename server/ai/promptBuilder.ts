@@ -6,6 +6,7 @@ import type { GameAction, Player, Role } from '../../shared/types';
 import { RULE_VALUES } from '../../src/core/rules';
 import type { AIActorStatus, AIRequestContext, AILegalTarget, AIPromptContext } from './types';
 import { deriveAIActorStatus } from './runtimeContext';
+import { formatAIMemoryBoard } from './memory';
 
 export interface AIPrompt {
   system: string;
@@ -525,6 +526,8 @@ const formatRuntimeFacts = (
     `【你自己的近期发言】\n${listText(promptContext.ownPreviousSpeeches)}`,
     `【你上次发言后出现的新信息】\n${listText(promptContext.newInformationSinceLastTurn, '无新增信息')}`,
     `【当前视角局势摘要】\n${promptContext.situationSummary || '无'}`,
+    formatAIMemoryBoard(promptContext.memoryBoard, context.players),
+    '【记忆板使用要求】\n发言或决策必须在当前事实允许时引用一条自己的历史记录；好人优先说清对象、原因和证据等级，狼人优先沿用或修正昼/夜计划。不要虚构记忆板没有的事实。',
     `【服务端 RuleSet】\n${promptContext.ruleset
       ? `${promptContext.ruleset.id} ${promptContext.ruleset.version}: ${JSON.stringify(promptContext.ruleset.values)}`
       : '未提供独立 RuleSet 投影；仍以本请求中的服务端规则为准。'}`,
@@ -598,6 +601,7 @@ const placeholderValues = (
     wolf_private_chat: listText(promptContext.wolfPrivateChat, '无'),
     new_information_since_last_turn: listText(promptContext.newInformationSinceLastTurn, '无新增信息'),
     situation_summary: promptContext.situationSummary || '无',
+    memory_board: formatAIMemoryBoard(promptContext.memoryBoard, context.players),
     already_stated_claims: listText(
       promptContext.alreadyStatedClaims ?? promptContext.ownPreviousSpeeches,
       '无',

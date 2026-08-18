@@ -19,6 +19,7 @@ import {
 } from './aiTelemetry';
 import { defaultAILogger, type AILogger } from './types';
 import { randomElement } from './randomSelection';
+import { recommendedWolfTarget } from './memory';
 
 export interface AIOrchestratorOptions {
   timeoutMs?: number;
@@ -385,7 +386,11 @@ export class AIOrchestrator {
     const legalWolfCandidates = promptTargets.length > 0
       ? wolfCandidates.filter((player) => promptTargets.some((target) => target.id === player.id))
       : wolfCandidates;
-    const wolfTarget = randomElement(legalWolfCandidates) ?? firstOther;
+    const board = context.projectedContext?.memoryBoard ?? context.promptContext?.memoryBoard;
+    const wolfTarget = board
+      ? recommendedWolfTarget(board, legalWolfCandidates.map((player) => player.id)) ??
+        randomElement(legalWolfCandidates)?.id ?? firstOther?.id ?? null
+      : randomElement(legalWolfCandidates)?.id ?? firstOther?.id ?? null;
 
     if (allowed.has('confirm_role')) {
       return {
@@ -476,7 +481,7 @@ export class AIOrchestrator {
       return {
         command: {
           type: 'game.wolf_vote',
-          payload: { targetId: wolfTarget?.id ?? null },
+          payload: { targetId: wolfTarget },
         },
         reason: 'randomized legal wolf target fallback',
       };

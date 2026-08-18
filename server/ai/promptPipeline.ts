@@ -73,6 +73,8 @@ const basePromptContext = (context: AIRequestContext): AIPromptContext => {
     ...runtime,
     ...(context.promptContext ?? {}),
     ...(ruleset ? { ruleset } : {}),
+    memoryBoard:
+      context.projectedContext?.memoryBoard ?? context.promptContext?.memoryBoard,
     // RepeatPolicy is a mandatory part of every provider request.  The
     // concrete history is supplied by the runtime context; this line keeps
     // the contract explicit even when the history is empty.

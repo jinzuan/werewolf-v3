@@ -1,5 +1,6 @@
 import type { AIProvider, AISuggestion } from './types';
 import { randomElement } from './randomSelection';
+import { recommendedWolfTarget } from './memory';
 
 export interface DeterministicAIProviderOptions {
   mode?: 'rules-degraded' | 'test-deterministic';
@@ -58,7 +59,13 @@ export class DeterministicAIProvider implements AIProvider {
       };
     }
     if (allowed.has('game.wolf_vote')) {
-      const wolfTarget = randomElement(alive.filter((player) => player.role !== 'wolf'))
+      const legalTargets = context.promptContext?.legalTargets ?? alive.map(({ id, name }) => ({ id, name }));
+      const memoryTarget = recommendedWolfTarget(
+        context.projectedContext?.memoryBoard ?? context.promptContext?.memoryBoard,
+        legalTargets.map((item) => item.id),
+      );
+      const wolfTarget = alive.find((player) => player.id === memoryTarget)
+        ?? randomElement(alive.filter((player) => player.role !== 'wolf'))
         ?? target
         ?? actor;
       return {
