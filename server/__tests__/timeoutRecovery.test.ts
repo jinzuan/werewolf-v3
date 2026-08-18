@@ -163,6 +163,53 @@ test('deadline fires once and stale expired commands cannot mutate state', async
   assert.equal(result.code, 'STALE_STAGE_REVISION');
 });
 
+test('single-human games wait indefinitely while multi-human games retain deadlines', async () => {
+  const singleHumanClock = new FakeClock();
+  const singleHumanPlayers = createPlayers('single-human-room');
+  for (const player of singleHumanPlayers) {
+    player.isAI = player.role !== 'guardian';
+  }
+  const singleHuman = new GameSession(
+    'single-human-room',
+    singleHumanPlayers,
+    new InMemoryEventStore(),
+    undefined,
+    {
+      now: singleHumanClock.now,
+      scheduler: singleHumanClock,
+      stageDurationMs: 100,
+    },
+  );
+  await singleHuman.initialize();
+  assert.equal(singleHuman.deadlineTs, null);
+  assert.equal(singleHumanClock.activeCount(), 0);
+  await singleHumanClock.advance(1_000);
+  assert.equal(singleHuman.serialize().state.gameState.phase, 'role_confirm');
+  assert.equal(singleHuman.serialize().state.roleConfirmations['guardian-1'], false);
+
+  const multiHumanClock = new FakeClock();
+  const multiHumanPlayers = createPlayers('multi-human-room');
+  for (const player of multiHumanPlayers) {
+    player.isAI = player.role !== 'guardian' && player.role !== 'seer';
+  }
+  const multiHuman = new GameSession(
+    'multi-human-room',
+    multiHumanPlayers,
+    new InMemoryEventStore(),
+    undefined,
+    {
+      now: multiHumanClock.now,
+      scheduler: multiHumanClock,
+      stageDurationMs: 100,
+    },
+  );
+  await multiHuman.initialize();
+  assert.equal(multiHuman.deadlineTs, 1_100);
+  assert.equal(multiHumanClock.activeCount(), 1);
+  singleHuman.dispose();
+  multiHuman.dispose();
+});
+
 test('recovery schedules only the persisted unfinished revision', async () => {
   const firstClock = new FakeClock();
   const store = new InMemoryEventStore();

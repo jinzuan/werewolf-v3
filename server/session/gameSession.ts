@@ -1608,11 +1608,16 @@ export class GameSession {
   }
 
   private setDeadline(): void {
-    this.state.gameState.stageStartedAt = this.now();
+    const stageStartedAt = this.now();
     this.state.gameState.deadlineTs =
-      this.state.gameState.phase === 'ended'
+      this.state.gameState.phase === 'ended' || this.humanPlayerCount() === 1
         ? null
-        : this.now() + this.stageDurationMs;
+        : stageStartedAt + this.stageDurationMs;
+    this.state.gameState.stageStartedAt = stageStartedAt;
+  }
+
+  private humanPlayerCount(): number {
+    return this.state.players.filter((player) => player.isAI !== true).length;
   }
 
   private scheduleDeadline(retryDelayMs?: number): void {
