@@ -69,6 +69,17 @@ test('当前事件和协议错误均有穷举 presentation', () => {
   }
 });
 
+test('白天阶段标签明确提示何时进入放逐投票', () => {
+  assert.equal(
+    phaseLabel({ phase: 'day', day: 2, dayStage: 'discussion' } as never),
+    '第 2 天 · 白天讨论',
+  );
+  assert.equal(
+    phaseLabel({ phase: 'day', day: 2, dayStage: 'voting' } as never),
+    '第 2 天 · 放逐投票',
+  );
+});
+
 test('事件模板只显示安全中文，未知事件不回显原始值', () => {
   const playerName = (id: string | null) => id === 'p1' ? '一号玩家' : '未知目标';
   assert.equal(

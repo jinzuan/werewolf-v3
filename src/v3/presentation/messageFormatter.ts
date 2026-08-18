@@ -6,6 +6,7 @@ import {
 } from './eventMessages';
 import {
   GAME_PHASE_LABELS,
+  DAY_STAGE_LABELS,
   NIGHT_STAGE_LABELS,
   UNKNOWN_LABEL,
   actionLabel,
@@ -24,9 +25,13 @@ export const phaseLabel = (state: GameState | null | undefined): string => {
     return `第 ${state.day} 夜 · ${stage}${discussionRound}`;
   }
   const phase = GAME_PHASE_LABELS[state.phase];
+  const dayStage = (state as GameState & { dayStage?: string | null }).dayStage;
+  const dayLabel = dayStage && dayStage in DAY_STAGE_LABELS
+    ? DAY_STAGE_LABELS[dayStage as keyof typeof DAY_STAGE_LABELS]
+    : null;
   return phase
     ? state.phase === 'day' || state.phase === 'vote' || state.phase === 'voting'
-      ? `第 ${state.day} 天 · ${phase}`
+      ? `第 ${state.day} 天 · ${dayLabel ?? phase}`
       : phase
     : UNKNOWN_LABEL;
 };

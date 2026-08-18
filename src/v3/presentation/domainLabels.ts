@@ -1,4 +1,4 @@
-import type { EventVisibility } from '../../../shared/events';
+import type { DayStage, EventVisibility } from '../../../shared/events';
 import type { GameAction, NightStage, Role } from '../../../shared/types';
 import type {
   AllowedRoomAction,
@@ -114,6 +114,17 @@ export const NIGHT_STAGE_LABELS = {
   witch: '女巫行动',
   resolve: '夜间结算',
 } satisfies Record<NightStage, string>;
+
+export const DAY_STAGE_LABELS = {
+  dawn: '天亮公告',
+  speech: '轮流发言',
+  discussion: '白天讨论',
+  voting: '放逐投票',
+  exile_result: '放逐结果',
+  last_words: '遗言',
+  hunter: '猎人开枪',
+  day_end: '白天结束',
+} satisfies Record<DayStage, string>;
 
 export const EVENT_VISIBILITY_LABELS = {
   public_timeline: '公开时间线',
