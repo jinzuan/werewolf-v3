@@ -136,10 +136,11 @@ test('room recovery rebuilds active sessions from persisted snapshots', async ()
   assert.equal(snapshot.roomId, created.room.id);
   assert.equal(snapshot.gameId, started.gameId);
   assert.ok(snapshot.gameState.stageRevision);
-  assert.ok(
+  assert.equal(
     (snapshot.gameState as typeof snapshot.gameState & {
       deadlineTs?: number | null;
     }).deadlineTs,
+    null,
   );
   assert.ok(snapshot.lastSequence >= 2);
   await restored.close();
