@@ -479,6 +479,7 @@ export function GamePage() {
     <AppShell
       title={room.code}
       eyebrow="房间码"
+      pageClassName="v3-page--match"
       phase={phaseLabel(state)}
       countdown={countdown === '—' ? undefined : countdown}
       progress={progress ?? undefined}

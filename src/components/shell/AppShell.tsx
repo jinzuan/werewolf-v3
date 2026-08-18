@@ -12,9 +12,10 @@ interface AppShellProps {
   live?: boolean;
   progress?: number;
   connected?: boolean;
+  pageClassName?: string;
 }
 
-export function AppShell({ children, ...status }: AppShellProps) {
+export function AppShell({ children, pageClassName, ...status }: AppShellProps) {
   const { inRoom, scene } = useRoomShell();
 
   return (
@@ -25,7 +26,7 @@ export function AppShell({ children, ...status }: AppShellProps) {
         <TopStatusBar {...status} scene={scene} />
       )}
       <div className="v3-app-shell__body">
-        <main className="v3-page">{children}</main>
+        <main className={`v3-page ${pageClassName ?? ''}`.trim()}>{children}</main>
       </div>
     </div>
   );

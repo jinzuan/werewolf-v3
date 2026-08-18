@@ -2045,6 +2045,20 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
 @media (max-width: 767px) {
   :root { --page-gutter: var(--ww-page-gutter-mobile); --ww-text-display-size: 28px; --ww-text-display-line: 38px; --ww-text-page-title-size: 22px; --ww-text-page-title-line: 32px; }
 
+  .v3-page--match {
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+  }
+
+  .v3-page--match > .v3-mobile-match-surface {
+    height: 100%;
+    min-height: 0;
+    flex: 1 1 auto;
+  }
+
   .v3-topbar { position: sticky; min-height: 102px; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'identity actions' 'phase phase'; gap: var(--ww-space-2) var(--ww-space-3); padding: 9px var(--ww-page-gutter-mobile); }
   .v3-topbar__identity { grid-area: identity; }
   .v3-topbar__actions { grid-area: actions; }
@@ -2129,8 +2143,12 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
 /* Phone match navigation: one focused surface at a time, with the five
    player concerns available without turning the page into a long rail. */
 @media (max-width: 767px) {
+  :root { --v3-mobile-nav-height: calc(64px + env(safe-area-inset-bottom)); }
+
   .v3-mobile-match-surface {
-    padding-bottom: calc(72px + env(safe-area-inset-bottom));
+    height: 100%;
+    min-height: 0;
+    padding-bottom: var(--v3-mobile-nav-height);
   }
 
   .v3-mobile-match-nav {
@@ -2140,7 +2158,8 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
     width: 100vw;
     max-width: none;
     box-sizing: border-box;
-    min-height: 64px;
+    height: var(--v3-mobile-nav-height);
+    min-height: 0;
     display: flex;
     align-items: stretch;
     gap: 2px;
@@ -2232,7 +2251,10 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
   .v3-event-list--mobile { display: grid; }
 
   .v3-match-layout[data-mobile-section] {
-    display: block;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
   }
 
   .v3-match-layout[data-mobile-section] > .v3-match-layout__left,
@@ -2270,6 +2292,37 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
   .v3-game-layout[data-mobile-section='view'] .v3-match-side > .v3-mobile-view-panel,
   .v3-game-layout[data-mobile-section='view'] .v3-match-side > .v3-mobile-pane-view {
     display: block;
+  }
+
+  .v3-game-layout[data-mobile-section='chat'] > .v3-match-layout__center,
+  .v3-game-layout[data-mobile-section='events'] > .v3-match-layout__right {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .v3-game-layout[data-mobile-section='chat'] > .v3-match-layout__center > .v3-chat-panel {
+    height: 100%;
+    max-height: none;
+    min-height: 0;
+  }
+
+  .v3-game-layout[data-mobile-section='events'] .v3-match-side {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .v3-game-layout[data-mobile-section='events'] .v3-match-side > .v3-mobile-pane-events {
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .v3-game-layout[data-mobile-section='events'] .v3-event-list--mobile {
+    max-height: none;
+    min-height: 0;
+    flex: 1 1 auto;
   }
 
   .v3-game-layout[data-mobile-section='view'] .v3-match-side > .v3-mobile-pane-view {
