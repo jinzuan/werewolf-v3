@@ -38,10 +38,17 @@ export class PromptContextCache {
     const merged = [...(current?.events ?? []), ...delta];
     const deduped = [...new Map(merged.map((event) => [event.eventId, event])).values()]
       .sort((left, right) => left.sequence - right.sequence);
+    const observedSequence = delta.reduce(
+      (maximum, event) => Math.max(maximum, event.sequence),
+      afterSequence,
+    );
     const next: PromptContextCacheEntry = {
       gameId: session.gameId,
       viewerKey: key,
-      afterSequence: session.sequence,
+      // GameSession increments sequence before its event is appended. Advance
+      // only to a sequence returned by this read, otherwise a concurrent read
+      // can permanently skip an event that was not visible yet.
+      afterSequence: observedSequence,
       events: deduped,
       reads: (current?.reads ?? 0) + 1,
       droppedEvents: current?.droppedEvents ?? 0,
