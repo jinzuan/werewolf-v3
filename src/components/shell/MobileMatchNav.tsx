@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
+import { createPortal } from 'react-dom';
 
 export interface MobileMatchNavItem {
   id: string;
@@ -20,7 +21,7 @@ export function MobileMatchNav({
   onChange,
   ariaLabel = '手机端对局分区',
 }: MobileMatchNavProps) {
-  return (
+  const navigation = (
     <nav className="v3-mobile-match-nav" aria-label={ariaLabel}>
       {items.map(({ id, label, icon: Icon }) => (
         <button
@@ -36,4 +37,11 @@ export function MobileMatchNav({
       ))}
     </nav>
   );
+
+  // Keep the dock outside the scrolling room body. This also avoids an
+  // ancestor animation/containment context turning `position: fixed` into a
+  // content-relative bar on mobile browsers.
+  return typeof document === 'undefined'
+    ? navigation
+    : createPortal(navigation, document.body);
 }

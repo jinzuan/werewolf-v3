@@ -2129,10 +2129,11 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
 
   .v3-mobile-match-nav {
     position: fixed;
-    right: 0;
-    bottom: 0;
-    left: 0;
+    inset: auto 0 0;
     z-index: 60;
+    width: 100vw;
+    max-width: none;
+    box-sizing: border-box;
     min-height: 64px;
     display: flex;
     align-items: stretch;
