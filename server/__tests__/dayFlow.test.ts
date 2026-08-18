@@ -256,7 +256,10 @@ test('last words skip requires a reason and records a reasoned skip', async () =
   assert.equal(skipped.ok, true);
   assert.deepEqual(skipped.events[0]?.payload, {
     actorId: exiled.id,
+    day: 1,
+    round: 1,
     lastWords: true,
+    lastWordsRound: 1,
     reason: '懒得说',
   });
 });
@@ -282,7 +285,10 @@ test('normal last words speech remains a public event', async () => {
   assert.equal(spoken.ok, true);
   assert.deepEqual(spoken.events[0]?.payload, {
     actorId: exiled.id,
+    day: 1,
+    round: 1,
     content: '我的判断基于第一天的票型。',
     lastWords: true,
+    lastWordsRound: 1,
   });
 });
