@@ -19,6 +19,7 @@ import { ChatBubble } from '../../ui/ChatBubble';
 import { Input } from '../../ui/Input';
 import { RoleCard } from '../../ui/RoleCard';
 import { RoleRevealCard } from '../../ui/RoleRevealCard';
+import { getAvatarAsset } from '../../ui/assetRegistry';
 import {
   ACTION_DEFINITIONS,
   buildGameCommand,
@@ -183,6 +184,21 @@ export function GamePage() {
   };
   const isSpeechEvent = (event: (typeof visibleEvents)[number]): boolean =>
     event.eventType === 'day.speech' || event.eventType === 'wolf.message';
+  const chatMessages = useMemo(
+    () => visibleEvents.filter(isSpeechEvent),
+    [visibleEvents],
+  );
+  const systemEvents = useMemo(
+    () => visibleEvents.filter((event) => !isSpeechEvent(event)),
+    [visibleEvents],
+  );
+  const latestNightEvent = useMemo(
+    () => [...systemEvents].reverse().find((event) => event.eventType === 'night.resolved') ?? null,
+    [systemEvents],
+  );
+  const latestPublicEvent = latestNightEvent ?? [...systemEvents]
+    .reverse()
+    .find((event) => event.visibility === 'public_timeline') ?? null;
   const wolfKillTargetId = myPlayer?.role === 'wolf'
     ? [...visibleEvents]
         .reverse()
@@ -267,6 +283,11 @@ export function GamePage() {
         message: '',
       }));
     }
+  };
+
+  const avatarForPlayer = (playerId: string | null) => {
+    const player = players.find((candidate) => candidate.id === playerId);
+    return getAvatarAsset(player?.isAI ? 'computer' : 'player');
   };
 
   if (!room || !session) {
@@ -445,7 +466,9 @@ export function GamePage() {
               </div>
             </Card>
           }
-          center={isEliminated && !isLastWordsTurn ? (
+          right={
+            <div className="v3-match-side">
+            {isEliminated && !isLastWordsTurn ? (
             <Card className="v3-action-panel v3-spectator-panel">
               <div className="v3-panel-heading">
                 <div>
@@ -479,15 +502,6 @@ export function GamePage() {
                   {allowedActions.length ? '轮到你' : '等待队友'}
                 </Badge>
               </div>
-              {currentSpeakerName ? (
-                <div
-                  className={`v3-current-speaker v3-current-speaker--${speakerToneFor(currentSpeakerId)}`}
-                  aria-live="polite"
-                >
-                  <span className="v3-current-speaker__dot" />
-                  正在发言：<strong>{currentSpeakerName}</strong>
-                </div>
-              ) : null}
               {isLastWordsTurn ? (
                 <div className="v3-inline-note">
                   仅被投票放逐的玩家可以在此提交遗言；夜间死亡不会进入遗言阶段。
@@ -524,26 +538,6 @@ export function GamePage() {
                   <p className="v3-panel-copy">
                     {activeAction ? ACTION_HELP[activeAction] : ''}
                   </p>
-
-                  {showsTextInput ? (
-                    <Input
-                      value={message}
-                      onChange={(event) =>
-                        setActionDraft((current) => ({
-                          ...current,
-                          message: event.target.value,
-                        }))
-                      }
-                      placeholder={
-                        lastWordsSkip
-                          ? '填写放弃遗言的理由'
-                          :
-                        activeAction === 'wolf_speak'
-                          ? '发送到狼人频道'
-                          : '输入本轮公开发言'
-                      }
-                    />
-                  ) : null}
 
                   {definition?.input === 'target' ? (
                     <div className="v3-target-grid">
@@ -599,22 +593,26 @@ export function GamePage() {
                     </div>
                   ) : null}
 
-                  <div className="v3-action-panel__footer">
-                    <span>
-                      {selectedTarget
-                        ? `已选择：${playerName(selectedTarget)}`
-                        : activeAction
-                          ? ACTION_LABELS[activeAction]
-                          : '当前无行动'}
-                    </span>
-                    <Button
-                      disabled={loading || !canSubmit}
-                      onClick={() => void submitAction()}
-                    >
-                      <Check size={17} />
-                      确认{activeAction ? ACTION_LABELS[activeAction] : '行动'}
-                    </Button>
-                  </div>
+                  {showsTextInput ? (
+                    <div className="v3-inline-note">发言输入框在中间聊天区，发送后会进入公开时间线。</div>
+                  ) : (
+                    <div className="v3-action-panel__footer">
+                      <span>
+                        {selectedTarget
+                          ? `已选择：${playerName(selectedTarget)}`
+                          : activeAction
+                            ? ACTION_LABELS[activeAction]
+                            : '当前无行动'}
+                      </span>
+                      <Button
+                        disabled={loading || !canSubmit}
+                        onClick={() => void submitAction()}
+                      >
+                        <Check size={17} />
+                        确认{activeAction ? ACTION_LABELS[activeAction] : '行动'}
+                      </Button>
+                    </div>
+                  )}
                 </>
               ) : allowedActions.includes('confirm_role') ? (
                 <div className="v3-inline-note">
@@ -627,7 +625,41 @@ export function GamePage() {
               )}
             </Card>
           )}
-          right={
+          {latestPublicEvent ? (
+            <div className="v3-event-highlight" role="status" aria-live="polite">
+              <span>{latestNightEvent ? '昨夜公开' : '最近公开事件'}</span>
+              <p>{describeEvent(latestPublicEvent, playerName, { viewer: snapshot.viewer })}</p>
+            </div>
+          ) : null}
+          {typeof wolfKillTargetId === 'string' || latestSeerResult ? (
+            <div className="v3-event-private" role="status" aria-live="polite">
+              {typeof wolfKillTargetId === 'string' ? (
+                <span>今晚狼队袭击目标：<strong>{playerName(wolfKillTargetId)}</strong></span>
+              ) : null}
+              {latestSeerResult ? (
+                <span><strong>最近查验：</strong>{describeEvent(latestSeerResult, playerName, { viewer: snapshot.viewer })}</span>
+              ) : null}
+            </div>
+          ) : null}
+          <details className="v3-event-details">
+            <summary>
+              <span>事件与系统通知</span>
+              <Badge tone="info">{systemEvents.length}</Badge>
+            </summary>
+            <div className="v3-event-list">
+              {systemEvents.length === 0 ? (
+                <span className="v3-inline-note">暂无系统通知。</span>
+              ) : systemEvents.map((event) => (
+                <div key={event.eventId} className="v3-event-item">
+                  <time>{formatEventTime(event.occurredAt)}</time>
+                  <p>{describeEvent(event, playerName, { viewer: snapshot.viewer })}</p>
+                </div>
+              ))}
+            </div>
+          </details>
+            </div>
+          }
+          center={
             <Card className="v3-chat-panel">
               <div className="v3-panel-heading">
                 <div>
@@ -645,45 +677,29 @@ export function GamePage() {
                   正在发言：<strong>{currentSpeakerName}</strong>
                 </div>
               ) : null}
-              {typeof wolfKillTargetId === 'string' ? (
-                <div className="v3-wolf-resolution" role="status" aria-live="polite">
-                  今晚狼队袭击目标：<strong>{playerName(wolfKillTargetId)}</strong>
-                </div>
-              ) : null}
-              {latestSeerResult ? (
-                <div className="v3-inline-note" role="status" aria-live="polite">
-                  <strong>最近查验：</strong>{describeEvent(latestSeerResult, playerName, { viewer: snapshot.viewer })}
-                </div>
-              ) : null}
               <div className="v3-chat-list">
-                {visibleEvents.length === 0 ? (
-                  <div className="v3-inline-note">尚未收到可见事件。</div>
+                {chatMessages.length === 0 ? (
+                  <div className="v3-inline-note">还没有发言，等大家开口后会显示在这里。</div>
                 ) : (
-                  visibleEvents.map((event) => {
+                  chatMessages.map((event) => {
                     const actorId = eventActorId(event);
-                    const speech = isSpeechEvent(event);
                     return (
                       <ChatBubble
                         key={event.eventId}
                         author={
-                          speech
-                            ? playerName(actorId)
-                            : event.visibility === 'wolf_private'
-                              ? '狼人频道'
-                              : '系统'
+                          playerName(actorId)
                         }
                         time={formatEventTime(event.occurredAt)}
                         variant={
                           event.eventType === 'wolf.message'
                             ? 'wolf'
-                            : speech && actorId === myId
+                            : actorId === myId
                               ? 'self'
-                              : speech
-                                ? 'other'
-                                : 'system'
+                              : 'other'
                         }
-                        speakerTone={speech ? speakerToneFor(actorId) : undefined}
+                        speakerTone={speakerToneFor(actorId)}
                         visibility={event.visibility}
+                        avatarAsset={avatarForPlayer(actorId)}
                       >
                         {describeEvent(event, playerName, { viewer: snapshot.viewer })}
                       </ChatBubble>
@@ -691,6 +707,38 @@ export function GamePage() {
                   })
                 )}
               </div>
+              {showsTextInput ? (
+                <form
+                  className="v3-chat-input"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (canSubmit) void submitAction();
+                  }}
+                >
+                  <Input
+                    aria-label={lastWordsSkip ? '遗言内容' : '发言内容'}
+                    value={message}
+                    onChange={(event) =>
+                      setActionDraft((current) => ({
+                        ...current,
+                        message: event.target.value,
+                      }))
+                    }
+                    placeholder={
+                      lastWordsSkip
+                        ? '填写放弃遗言的理由'
+                        : activeAction === 'wolf_speak'
+                          ? '发送到狼人频道'
+                          : '输入本轮公开发言'
+                    }
+                  />
+                  <Button type="submit" disabled={loading || !canSubmit}>
+                    <MessageSquare size={17} />发送
+                  </Button>
+                </form>
+              ) : (
+                <div className="v3-chat-input-note">当前阶段不需要在聊天区输入内容。</div>
+              )}
             </Card>
           }
           footer={
