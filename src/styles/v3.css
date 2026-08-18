@@ -1202,10 +1202,12 @@ select {
 .v3-lobby-hero__actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(150px, 1fr));
-  max-width: 430px;
+  width: min(100%, 430px);
+  align-items: stretch;
 }
 
 .v3-lobby-hero__actions .v3-button {
+  min-width: 0;
   width: 100%;
 }
 
@@ -2625,7 +2627,16 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
 
   .v3-lobby-hero__actions .v3-button,
   .v3-empty-state__actions .v3-button {
+    min-width: 0;
     width: 100%;
+  }
+
+  .v3-lobby-hero__actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .v3-lobby-hero__actions .v3-button {
+    padding-inline: var(--ww-space-2);
   }
 
   .v3-section__header {
