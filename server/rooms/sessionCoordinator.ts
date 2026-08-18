@@ -208,7 +208,8 @@ export class SessionCoordinator {
       witchHasHealPotion: state.gameState.witchHasHealPotion,
       witchHasPoisonPotion: state.gameState.witchHasPoisonPotion,
       hunterShotAvailable: actorEntry.actions.includes('hunter_shoot'),
-      wolfVoteRound: state.gameState.wolfDiscussionRound,
+      wolfDiscussionRound: state.gameState.wolfDiscussionRound,
+      wolfVoteRound: 1,
       lastWordsRound:
         state.dayFlow.stage === 'last_words'
           ? 3 - state.dayFlow.lastWordsRemaining

@@ -206,8 +206,29 @@ try {
       payload: { action: 'check' },
     },
   );
+  const wolves = gameSession.players.filter(
+    (player) => player.isAlive && player.role === 'wolf',
+  );
+  for (let round = 1; round <= 2; round += 1) {
+    for (const wolf of wolves) {
+      await gameSession.dispatch(
+        {
+          commandId: `responsive-wolf-${round}-${wolf.id}`,
+          actorId: wolf.id,
+          sentAt: Date.now(),
+          roomId: gameSession.serialize().state.roomId,
+          gameId: gameSession.gameId,
+          expectedStageRevision: gameSession.stageRevision,
+        },
+        {
+          type: 'game.wolf_speak',
+          payload: { content: `第${round}轮确认目标与理由。` },
+        },
+      );
+    }
+  }
   await page.reload({ waitUntil: 'networkidle' });
-  await page.getByRole('tab', { name: '狼聊' }).waitFor({
+  await page.getByRole('tab', { name: '狼人投票' }).waitFor({
     timeout: 10_000,
   });
   await page.getByRole('tab', { name: '狼人投票' }).click();

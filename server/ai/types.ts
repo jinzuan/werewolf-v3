@@ -41,6 +41,7 @@ export interface AIPromptContext {
   witchPotionState?: string;
   hunterShotAvailable?: boolean;
   wolfTeammates?: string[];
+  wolfDiscussionRound?: number;
   wolfVoteRound?: number;
   wolfEdgeAssessment?: string;
   wolfTeamDisagreement?: string;

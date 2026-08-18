@@ -34,6 +34,7 @@ export const DOMAIN_EVENT_TYPES = [
   'wolf.vote_cast',
   'wolf.vote_unresolved',
   'wolf.kill_locked',
+  'wolf.discussion_round_started',
   'wolf.discussion_timed_out',
   'day.started',
   'day.discussion_started',

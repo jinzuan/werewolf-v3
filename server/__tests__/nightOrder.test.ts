@@ -7,6 +7,21 @@ import { GameSession } from '../session/gameSession';
 import { createPlayers, dispatch, initializeSession } from './fixtures';
 import { FakeClock } from './fakeClock';
 
+const discussTwice = async (
+  session: GameSession,
+  wolves: readonly ReturnType<typeof createPlayers>[number][],
+): Promise<void> => {
+  for (let round = 1; round <= 2; round += 1) {
+    for (const wolf of wolves) {
+      const result = await dispatch(session, wolf.id, {
+        type: 'game.wolf_speak',
+        payload: { content: `第${round}轮先讨论目标和理由。` },
+      });
+      assert.equal(result.ok, true);
+    }
+  }
+};
+
 test('night order is guard_seer then wolf discussion/vote then witch then resolve', async () => {
   const players = createPlayers();
   const session = new GameSession(
@@ -69,6 +84,28 @@ test('night order is guard_seer then wolf discussion/vote then witch then resolv
     (wolfSpeech.events[0]?.payload as { content: string }).content,
     '先看票型，今晚统一刀口。',
   );
+
+  for (const wolf of wolves.slice(1)) {
+    const result = await dispatch(session, wolf.id, {
+      type: 'game.wolf_speak',
+      payload: { content: '补充目标的公开风险和守救风险。' },
+    });
+    assert.equal(result.ok, true);
+  }
+  assert.equal(session.serialize().state.gameState.wolfDiscussionRound, 2);
+  assert.equal(session.serialize().state.night.stage, 'wolf_discussion');
+  const earlyRoundTwoVote = await dispatch(session, wolves[0].id, {
+    type: 'game.wolf_vote',
+    payload: { targetId: villager.id },
+  });
+  assert.equal(earlyRoundTwoVote.ok, false);
+  for (const wolf of wolves) {
+    const result = await dispatch(session, wolf.id, {
+      type: 'game.wolf_speak',
+      payload: { content: '第二轮确认或纠偏首选目标。' },
+    });
+    assert.equal(result.ok, true);
+  }
 
   for (const wolf of wolves) {
     const result = await dispatch(session, wolf.id, {
@@ -153,6 +190,7 @@ test('real session event projection feeds death, action, and vote history into f
     type: 'game.night_action',
     payload: { playerId: seer.id, action: 'check', targetId: wolves[0].id },
   });
+  await discussTwice(session, wolves);
   for (const wolf of wolves) {
     await dispatch(session, wolf.id, {
       type: 'game.wolf_vote',
@@ -299,6 +337,7 @@ test('wolf vote tie randomly kills a tied target without revote or empty kill', 
       payload: { action: 'check' },
     });
 
+    await discussTwice(session, wolves);
     for (const [index, wolf] of wolves.entries()) {
       const result = await dispatch(session, wolf.id, {
         type: 'game.wolf_vote',

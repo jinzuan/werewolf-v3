@@ -595,9 +595,21 @@ export class GameSession {
       const next = index >= 0 ? order[index + 1] : undefined;
       if (next) {
         this.state.gameState.wolfCurrentSpeaker = next;
+      } else if (this.state.gameState.wolfDiscussionRound < 2) {
+        const wolves = this.alivePlayers('wolf');
+        this.state.gameState.wolfDiscussionRound = 2;
+        this.state.gameState.wolfCurrentSpeaker = wolves[0]?.id ?? null;
+        this.advanceRevision();
+        events.push(
+          this.event(
+            'wolf.discussion_round_started',
+            { round: 2 },
+            'wolf_private',
+            wolves.map((player) => player.id),
+            correlationId,
+          ),
+        );
       } else {
-        // One bounded discussion pass per night.  The next committed action
-        // is a wolf vote; a provider cannot keep a wolf-speak loop alive.
         this.state.gameState.wolfCurrentSpeaker = null;
         this.state.night = startWolfVote(this.state.night);
       }
@@ -781,9 +793,6 @@ export class GameSession {
     correlationId: string,
   ): DomainEvent[] | null {
     if (actor.role !== 'wolf') return null;
-    if (this.state.night.stage === 'wolf_discussion') {
-      this.state.night = startWolfVote(this.state.night);
-    }
     const validation = validateWolfKillTarget(
       toCorePlayers(this.state.players),
       actor.id,
@@ -1436,7 +1445,7 @@ export class GameSession {
             .filter((player) => player.id === this.state.gameState.wolfCurrentSpeaker)
             .map((player) => ({
               playerId: player.id,
-              actions: ['wolf_speak', 'wolf_vote'],
+              actions: ['wolf_speak'],
             }));
         case 'wolf_vote':
           return alive('wolf')
@@ -1630,12 +1639,34 @@ export class GameSession {
         ];
       }
       if (this.state.night.stage === 'wolf_discussion') {
+        const wolves = this.alivePlayers('wolf');
+        if (this.state.gameState.wolfDiscussionRound < 2) {
+          this.state.gameState.wolfDiscussionRound = 2;
+          this.state.gameState.wolfCurrentSpeaker = wolves[0]?.id ?? null;
+          this.advanceRevision();
+          return [
+            this.event(
+              'wolf.discussion_timed_out',
+              { round: 1 },
+              'wolf_private',
+              wolves.map((player) => player.id),
+              correlationId,
+            ),
+            this.event(
+              'wolf.discussion_round_started',
+              { round: 2 },
+              'wolf_private',
+              wolves.map((player) => player.id),
+              correlationId,
+            ),
+          ];
+        }
         this.state.night = startWolfVote(this.state.night);
         this.advanceRevision();
         return [
           this.event(
             'wolf.discussion_timed_out',
-            {},
+            { round: 2 },
             'wolf_private',
             undefined,
             correlationId,
@@ -1989,6 +2020,9 @@ export class GameSession {
     gameState.deadlineTs ??= null;
     gameState.stageStartedAt ??= null;
     gameState.dayStage ??= null;
+    gameState.wolfDiscussionRound ??= 1;
+    gameState.wolfSpeakerOrder ??= [];
+    gameState.wolfCurrentSpeaker ??= null;
     legacy.roleConfirmations ??= Object.fromEntries(
       this.state.players.map((player) => [player.id, true]),
     );

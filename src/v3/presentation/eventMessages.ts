@@ -31,6 +31,7 @@ export const DOMAIN_EVENT_MESSAGE_KEYS = {
   'wolf.vote_cast': 'wolf_vote_cast',
   'wolf.vote_unresolved': 'wolf_vote_unresolved',
   'wolf.kill_locked': 'wolf_kill_locked',
+  'wolf.discussion_round_started': 'wolf_discussion_round_started',
   'wolf.discussion_timed_out': 'wolf_discussion_timed_out',
   'day.started': 'day_started',
   'day.discussion_started': 'day_discussion_started',
@@ -69,6 +70,7 @@ export const DOMAIN_EVENT_MESSAGES = {
   'wolf.vote_cast': '{actor}已提交狼人投票。',
   'wolf.vote_unresolved': '狼人尚未选出今晚的目标。',
   'wolf.kill_locked': '狼人已决定今晚的目标。',
+  'wolf.discussion_round_started': '狼人进入第 {round} 轮讨论。',
   'wolf.discussion_timed_out': '狼人讨论时间已结束。',
   'day.started': '第 {day} 天开始。',
   'day.discussion_started': '自由讨论开始。',
@@ -261,6 +263,8 @@ export const describeEvent = (
       )
         ? `狼人已决定今晚的目标：${target}。`
         : '狼人已决定今晚的目标。';
+    case 'wolf.discussion_round_started':
+      return `狼人进入第 ${typeof payload.round === 'number' ? payload.round : 2} 轮讨论。`;
     case 'wolf.discussion_timed_out':
       return '狼人讨论时间已结束。';
     case 'day.started':

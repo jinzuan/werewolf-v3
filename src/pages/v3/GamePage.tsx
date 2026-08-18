@@ -536,7 +536,9 @@ export function GamePage() {
                     ))}
                   </div>
                   <p className="v3-panel-copy">
-                    {activeAction ? ACTION_HELP[activeAction] : ''}
+                    {activeAction === 'wolf_speak' && state?.nightStage === 'wolf_discussion'
+                      ? `狼人第 ${state.wolfDiscussionRound ?? 1}/2 轮讨论：${state.wolfDiscussionRound === 2 ? '确认或纠偏首轮目标。' : '先提出目标与理由。'}`
+                      : activeAction ? ACTION_HELP[activeAction] : ''}
                   </p>
 
                   {definition?.input === 'target' ? (

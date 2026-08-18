@@ -90,6 +90,14 @@ const completeNight = async (
     type: 'game.skip_night',
     payload: { action: 'check' },
   });
+  for (let round = 1; round <= 2; round += 1) {
+    for (const wolf of wolves) {
+      await dispatch(session, wolf.id, {
+        type: 'game.wolf_speak',
+        payload: { content: `第${round}轮确认目标与理由。` },
+      });
+    }
+  }
   for (const wolf of wolves) {
     await dispatch(session, wolf.id, {
       type: 'game.wolf_vote',

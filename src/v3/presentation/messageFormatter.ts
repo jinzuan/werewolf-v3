@@ -18,7 +18,10 @@ export const phaseLabel = (state: GameState | null | undefined): string => {
   if (state.phase === 'night') {
     if (!state.nightStage) return `第 ${state.day} 夜`;
     const stage = NIGHT_STAGE_LABELS[state.nightStage] ?? UNKNOWN_LABEL;
-    return `第 ${state.day} 夜 · ${stage}`;
+    const discussionRound = state.nightStage === 'wolf_discussion'
+      ? `（第 ${state.wolfDiscussionRound ?? 1}/2 轮）`
+      : '';
+    return `第 ${state.day} 夜 · ${stage}${discussionRound}`;
   }
   const phase = GAME_PHASE_LABELS[state.phase];
   return phase

@@ -18,6 +18,7 @@ export interface AIRuntimeContextInput {
   witchHasHealPotion?: boolean;
   witchHasPoisonPotion?: boolean;
   hunterShotAvailable?: boolean;
+  wolfDiscussionRound?: number;
   wolfVoteRound?: number;
   lastWordsRound?: number;
   lastWordsRoundsRemaining?: number;
@@ -380,6 +381,7 @@ export const buildAIRuntimeContext = (
         : undefined,
     hunterShotAvailable: input.hunterShotAvailable,
     wolfTeammates,
+    wolfDiscussionRound: input.wolfDiscussionRound,
     wolfVoteRound: input.wolfVoteRound,
     publicSpeeches: publicFacts.publicSpeeches,
     currentRoundSpeeches: publicFacts.currentRoundSpeeches,

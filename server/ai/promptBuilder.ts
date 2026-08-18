@@ -301,6 +301,11 @@ const roleTaskTitle = (context: AIRequestContext): string[] => {
   }
   if (context.phase === 'night') {
     if (context.role === 'wolf') {
+      if (context.stage === 'wolf_discussion') {
+        return context.promptContext?.wolfDiscussionRound === 2
+          ? ['狼人第二轮确认与纠偏', '夜间讨论任务']
+          : ['狼人首轮目标讨论', '夜间讨论任务'];
+      }
       return context.promptContext?.wolfVoteRound && context.promptContext.wolfVoteRound > 1
         ? ['狼人刀首次平票后的再讨论', '夜间讨论任务']
         : ['夜间讨论任务'];
@@ -527,6 +532,7 @@ const placeholderValues = (
     witch_potion_state: promptContext.witchPotionState || '以服务端合法动作列表为准',
     hunter_shot_available: promptContext.hunterShotAvailable ? '有开枪资格' : '无开枪资格',
     wolf_teammates: listText(promptContext.wolfTeammates),
+    wolf_discussion_round: String(promptContext.wolfDiscussionRound ?? 1),
     wolf_vote_round: String(promptContext.wolfVoteRound ?? promptContext.roundNumber ?? 1),
     wolf_edge_assessment: promptContext.wolfEdgeAssessment || '无；只根据服务端可见事实评估',
     wolf_team_disagreement: promptContext.wolfTeamDisagreement || '无',

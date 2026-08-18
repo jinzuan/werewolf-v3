@@ -167,6 +167,18 @@ test('every living wolf receives every night chat message in speaker order', asy
     assert.deepEqual(message?.audienceIds, wolves.map((player) => player.id));
   }
 
+  assert.equal(session.serialize().state.gameState.wolfDiscussionRound, 2);
+  assert.equal(session.serialize().state.night.stage, 'wolf_discussion');
+  for (const [index, wolf] of wolves.entries()) {
+    const result = await dispatch(session, wolf.id, {
+      type: 'game.wolf_speak',
+      payload: { content: `狼聊-二-${index + 1}` },
+    });
+    assert.equal(result.ok, true);
+    const message = result.events.find((event) => event.eventType === 'wolf.message');
+    assert.equal((message?.payload as { round: number }).round, 2);
+  }
+
   for (const wolf of wolves) {
     const messages = (await session.eventsFor({
       kind: 'player',
@@ -175,7 +187,10 @@ test('every living wolf receives every night chat message in speaker order', asy
     }))
       .filter((event) => event.eventType === 'wolf.message')
       .map((event) => (event.payload as { content: string }).content);
-    assert.deepEqual(messages, ['狼聊-1', '狼聊-2', '狼聊-3', '狼聊-4']);
+    assert.deepEqual(messages, [
+      '狼聊-1', '狼聊-2', '狼聊-3', '狼聊-4',
+      '狼聊-二-1', '狼聊-二-2', '狼聊-二-3', '狼聊-二-4',
+    ]);
   }
 
   const villagerMessages = (await session.eventsFor({
