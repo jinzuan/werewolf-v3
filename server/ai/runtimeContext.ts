@@ -1,6 +1,7 @@
 import type { DomainEvent } from '../../shared/events';
 import type { GameAction, Player, Role } from '../../shared/types';
 import type { AILegalTarget, AIPromptContext } from './types';
+import { secureShuffle, type SecureRandomIndex } from './randomSelection';
 
 export interface AIRuntimeContextInput {
   actorId: string;
@@ -316,10 +317,14 @@ export const legalTargetsForAI = (
   allowedActions: readonly GameAction[],
   voteCandidates: readonly string[] = [],
   guardianLastTarget?: string | null,
+  randomIndex?: SecureRandomIndex,
 ): AILegalTarget[] => {
   const alive = players.filter((player) => player.isAlive);
   if (allowedActions.includes('wolf_vote')) {
-    return alive.map(({ id, name }) => ({ id, name }));
+    return secureShuffle(
+      alive.map(({ id, name }) => ({ id, name })),
+      randomIndex,
+    );
   }
   if (allowedActions.includes('vote')) {
     const candidates =

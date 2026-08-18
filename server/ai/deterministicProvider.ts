@@ -1,4 +1,5 @@
 import type { AIProvider, AISuggestion } from './types';
+import { randomElement } from './randomSelection';
 
 export interface DeterministicAIProviderOptions {
   mode?: 'rules-degraded' | 'test-deterministic';
@@ -57,14 +58,15 @@ export class DeterministicAIProvider implements AIProvider {
       };
     }
     if (allowed.has('game.wolf_vote')) {
-      const wolfTarget =
-        alive.find((player) => player.role !== 'wolf') ?? target ?? actor;
+      const wolfTarget = randomElement(alive.filter((player) => player.role !== 'wolf'))
+        ?? target
+        ?? actor;
       return {
         command: {
           type: 'game.wolf_vote' as const,
           payload: { targetId: wolfTarget.id },
         },
-        reason: 'deterministic first legal target',
+        reason: 'randomized legal wolf target',
       };
     }
     if (allowed.has('game.wolf_speak')) {

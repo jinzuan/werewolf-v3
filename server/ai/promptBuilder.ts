@@ -257,6 +257,9 @@ const buildOutputContract = (
     '只输出一个 JSON 对象，不输出 Markdown、解释或分析过程。',
     `action 只能是：${allowed.join('、') || '无'}.`,
     ...examples,
+    ...(context.role === 'wolf' && context.allowedCommandTypes.includes('game.wolf_vote')
+      ? ['狼刀有多个合法目标时，不按座位号或合法名单首项机械选择；结合当前可见证据判断，证据不足时保持目标多样化。']
+      : []),
     `发言/理由最多 ${speechLimit(context)} 字。`,
     ...(isLastWords && context.allowedCommandTypes.includes('game.skip_speech')
       ? ['遗言可以放弃，但不得静默：选择 skip_speech 时必须同时提供非空 reason；无理由的跳过不合法。']

@@ -18,6 +18,7 @@ import {
   type AITelemetry,
 } from './aiTelemetry';
 import { defaultAILogger, type AILogger } from './types';
+import { randomElement } from './randomSelection';
 
 export interface AIOrchestratorOptions {
   timeoutMs?: number;
@@ -351,10 +352,14 @@ export class AIOrchestrator {
     const firstGuardTarget = alive.find(
       (player) => player.id !== gameState?.guardianLastTarget,
     );
-    const firstWolfTarget =
-      alive.find(
-        (player) => player.id !== actor.id && player.role !== 'wolf',
-      ) ?? firstOther;
+    const wolfCandidates = alive.filter(
+      (player) => player.id !== actor.id && player.role !== 'wolf',
+    );
+    const promptTargets = context.promptContext?.legalTargets ?? [];
+    const legalWolfCandidates = promptTargets.length > 0
+      ? wolfCandidates.filter((player) => promptTargets.some((target) => target.id === player.id))
+      : wolfCandidates;
+    const wolfTarget = randomElement(legalWolfCandidates) ?? firstOther;
 
     if (allowed.has('confirm_role')) {
       return {
@@ -445,9 +450,9 @@ export class AIOrchestrator {
       return {
         command: {
           type: 'game.wolf_vote',
-          payload: { targetId: firstWolfTarget?.id ?? null },
+          payload: { targetId: wolfTarget?.id ?? null },
         },
-        reason: 'deterministic wolf vote fallback',
+        reason: 'randomized legal wolf target fallback',
       };
     }
     if (allowed.has('wolf_speak')) {
