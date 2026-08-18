@@ -196,6 +196,13 @@
   width: 100%;
 }
 
+.waiting-room__seat-note {
+  margin: var(--ww-space-3) 0 0;
+  color: var(--ww-text-muted);
+  font-size: var(--ww-text-caption-size);
+  line-height: var(--ww-text-caption-line);
+}
+
 .waiting-room__unassigned {
   display: grid;
   gap: 5px;

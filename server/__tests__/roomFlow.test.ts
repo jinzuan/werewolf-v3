@@ -72,6 +72,44 @@ test('room service exposes only RoomView and scoped credentials', async () => {
   assert.deepEqual(summaries.map((room) => room.roomCode), [created.room.code]);
 });
 
+test('human seats are randomly assigned by the server and never requested by the joiner', async () => {
+  const picks = [7, 0, 0];
+  const randomBounds = [12, 11, 10];
+  const rooms = new RoomService(
+    new InMemoryRoomRepository(),
+    new InMemoryEventStore(),
+    {
+      seatRandomIndex: (maxExclusive) => {
+        assert.equal(maxExclusive, randomBounds.shift());
+        return picks.shift() ?? 0;
+      },
+    },
+  );
+  const created = await rooms.create({
+    ...createRequest(rooms, 'host', 'random-seat-create', '随机座位房'),
+  });
+  await rooms.join({
+    actorId: 'guest-1',
+    name: 'Guest 1',
+    roomCode: created.room.code,
+    joinToken: created.credentials.joinToken,
+  });
+  await rooms.join({
+    actorId: 'guest-2',
+    name: 'Guest 2',
+    roomCode: created.room.code,
+    joinToken: created.credentials.joinToken,
+  });
+
+  const record = await rooms.getRecord(created.room.code);
+  const seats = record?.members
+    .filter((member) => member.kind === 'player')
+    .map((member) => member.seatIndex);
+  assert.deepEqual(seats, [7, 0, 1]);
+  assert.equal(new Set(seats).size, seats?.length);
+  await rooms.close();
+});
+
 test('room recovery rebuilds active sessions from persisted snapshots', async () => {
   const repository = new InMemoryRoomRepository();
   const eventStore = new InMemoryEventStore();

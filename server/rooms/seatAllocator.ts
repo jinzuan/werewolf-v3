@@ -66,24 +66,12 @@ export const occupiedSeatIndexes = (
   return occupied;
 };
 
-/**
- * Find a deterministic free seat. Seats are zero-based and are never assigned
- * to spectators. A requested seat is honoured only when it is valid and free.
- */
+/** Find the first free seat for migration and deterministic AI filling. */
 export const nextSeatIndex = (
   members: readonly RoomMember[],
   maxPlayers: number,
-  requestedSeatIndex?: number,
 ): number => {
   const occupied = occupiedSeatIndexes(members, maxPlayers);
-  if (
-    requestedSeatIndex !== undefined &&
-    isValidSeatIndex(requestedSeatIndex, maxPlayers) &&
-    !occupied.has(requestedSeatIndex)
-  ) {
-    return requestedSeatIndex;
-  }
-
   for (let seatIndex = 0; seatIndex < maxPlayers; seatIndex += 1) {
     if (!occupied.has(seatIndex)) return seatIndex;
   }
@@ -95,6 +83,29 @@ export const nextSeatIndex = (
 
 export const allocateSeatIndex = nextSeatIndex;
 export const findNextSeatIndex = nextSeatIndex;
+
+/**
+ * Pick one free player seat with a server-owned random source. Spectators are
+ * never considered, and callers never provide a requested seat number.
+ */
+export const randomFreeSeatIndex = (
+  members: readonly RoomMember[],
+  maxPlayers: number,
+  randomIndex: (maxExclusive: number) => number,
+): number => {
+  const occupied = occupiedSeatIndexes(members, maxPlayers);
+  const available = Array.from({ length: maxPlayers }, (_, seatIndex) => seatIndex)
+    .filter((seatIndex) => !occupied.has(seatIndex));
+  if (available.length === 0) return nextSeatIndex(members, maxPlayers);
+  const offset = randomIndex(available.length);
+  if (!Number.isInteger(offset) || offset < 0 || offset >= available.length) {
+    throw new SeatAllocationError(
+      'The server returned an invalid random seat index.',
+      'INVALID_SEAT_INDEX',
+    );
+  }
+  return available[offset]!;
+};
 
 /** Assign missing player seats while preserving every existing assignment. */
 export const allocateSeats = (
@@ -196,9 +207,8 @@ export class SeatAllocator {
 
   nextSeatIndex(
     members: readonly RoomMember[],
-    requestedSeatIndex?: number,
   ): number {
-    return nextSeatIndex(members, this.maxPlayers, requestedSeatIndex);
+    return nextSeatIndex(members, this.maxPlayers);
   }
 
   allocate(members: readonly RoomMember[]): RoomMember[] {

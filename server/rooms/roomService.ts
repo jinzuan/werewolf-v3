@@ -51,7 +51,7 @@ import type { ReviewPipeline } from '../review/reviewPipeline';
 import { RoomCatalogService, defaultRoomCatalogService } from './roomCatalogService';
 import { RoomConfigValidationError } from './roomConfigValidator';
 import { GameStartCoordinator, GameStartError } from './gameStartCoordinator';
-import { nextSeatIndex } from './seatAllocator';
+import { randomFreeSeatIndex } from './seatAllocator';
 import { RoomPolicy, RoomPolicyError, roomCounts } from './roomPolicy';
 import { RoomProjector, assertIdentityRoom } from './roomProjector';
 import { ConnectionRegistry } from './connectionRegistry';
@@ -247,6 +247,8 @@ export interface RoomServiceOptions {
   insightStore?: InsightStore;
   aiTelemetry?: AITelemetry;
   aiLogger?: AILogger;
+  /** Cryptographically random offset used for human seat assignment. */
+  seatRandomIndex?: (maxExclusive: number) => number;
   connectionRegistry?: ConnectionRegistry;
   lifecycleService?: RoomLifecycleService;
   lifecycleOutbox?: LifecycleOutbox;
@@ -267,6 +269,7 @@ export class RoomService {
   private readonly aiProvider?: AIProvider;
   private readonly aiTelemetry: AITelemetry;
   private readonly aiLogger: AILogger;
+  private readonly seatRandomIndex: (maxExclusive: number) => number;
   private readonly coordinator: SessionCoordinator;
   private readonly catalog: RoomCatalogService;
   private readonly policy: RoomPolicy;
@@ -320,6 +323,7 @@ export class RoomService {
     );
     this.aiTelemetry = options.aiTelemetry ?? defaultAITelemetry;
     this.aiLogger = options.aiLogger ?? defaultAILogger;
+    this.seatRandomIndex = options.seatRandomIndex ?? ((maxExclusive) => randomInt(maxExclusive));
     this.deploymentNamespace =
       options.deploymentNamespace ?? repositoryScope.deploymentNamespace ?? 'default';
     this.waitingRoomTtlMs = options.waitingRoomTtlMs ?? 30 * 60 * 1000;
@@ -552,7 +556,9 @@ export class RoomService {
       kind: config.mode === 'quick_computer' ? 'spectator' : 'player',
       omniscient: config.mode === 'quick_computer',
       resumeToken,
-      seatIndex: config.mode === 'quick_computer' ? null : 0,
+      seatIndex: config.mode === 'quick_computer'
+        ? null
+        : randomFreeSeatIndex([], config.maxPlayers, this.seatRandomIndex),
       isAI: false,
       ready: config.mode === 'quick_computer' ? null : false,
       avatarId: options.creator.avatarId,
@@ -657,7 +663,9 @@ export class RoomService {
             spectator && request.omniscientToken !== undefined &&
             request.omniscientToken === draft.omniscientToken,
           resumeToken,
-          seatIndex: spectator ? null : nextSeatIndex(draft.members, config.maxPlayers),
+          seatIndex: spectator
+            ? null
+            : randomFreeSeatIndex(draft.members, config.maxPlayers, this.seatRandomIndex),
           isAI: false,
           ready: spectator ? null : false,
           avatarId: request.avatarId ?? '',

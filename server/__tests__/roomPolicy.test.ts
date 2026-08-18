@@ -6,6 +6,7 @@ import {
   allocateSeats,
   inspectSeatLayout,
   nextSeatIndex,
+  randomFreeSeatIndex,
   SeatAllocationError,
 } from '../rooms/seatAllocator';
 import {
@@ -146,6 +147,19 @@ test('seat allocation preserves assigned seats and rejects duplicate persisted s
   assert.throws(
     () => nextSeatIndex([member('a', { seatIndex: 0 })], 1),
     (error: unknown) => error instanceof SeatAllocationError && error.code === 'ROOM_FULL',
+  );
+});
+
+test('random seat allocation only chooses an unoccupied player seat', () => {
+  const members = [
+    member('a', { seatIndex: 1 }),
+    member('watcher', { kind: 'spectator', seatIndex: null, ready: null }),
+  ];
+  assert.equal(randomFreeSeatIndex(members, 4, () => 0), 0);
+  assert.equal(randomFreeSeatIndex(members, 4, () => 1), 2);
+  assert.throws(
+    () => randomFreeSeatIndex(members, 4, () => 4),
+    (error: unknown) => error instanceof SeatAllocationError && error.code === 'INVALID_SEAT_INDEX',
   );
 });
 

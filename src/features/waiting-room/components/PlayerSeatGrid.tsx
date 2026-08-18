@@ -65,6 +65,10 @@ export function PlayerSeatGrid({ room, onSeatListFocus }: PlayerSeatGridProps) {
         })}
       </div>
 
+      <p className="waiting-room__seat-note">
+        入房后由系统随机安排席位；玩家不能自选或更换座位。
+      </p>
+
       {unassigned.length ? (
         <div className="waiting-room__unassigned" aria-label="待分配席位">
           <span className="waiting-room__eyebrow">待分配席位</span>
