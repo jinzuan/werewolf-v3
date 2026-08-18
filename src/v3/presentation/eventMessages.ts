@@ -137,7 +137,9 @@ const scopedActor = (
   event: DomainEvent,
   options: EventMessageOptions,
   actor: string,
-): string => isAdvancedView(event, options) ? actor : '你';
+): string => options.viewer?.kind === 'spectator' || isAdvancedView(event, options)
+  ? actor
+  : '你';
 
 const formattedDeaths = (
   payload: Record<string, unknown>,

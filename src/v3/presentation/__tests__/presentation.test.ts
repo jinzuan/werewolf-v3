@@ -126,6 +126,30 @@ test('全知观战将玩家视角的第一人称事件还原为真实席位名',
   );
 });
 
+test('公开观战不会把其他席位的行动主体显示成你', () => {
+  const playerName = (id: string | null) => id === 'p1' ? '一号玩家' : '未知目标';
+  const spectator = {
+    kind: 'spectator' as const,
+    spectatorId: 'watcher-1',
+    omniscient: false,
+  };
+  assert.equal(
+    describeEvent({
+      ...event('role.confirmed', { confirmed: true }),
+      actorId: 'p1',
+      visibility: 'public_timeline',
+    }, playerName, { viewer: spectator }),
+    '一号玩家已确认身份。',
+  );
+  assert.doesNotMatch(
+    describeEvent({
+      ...event('night.skipped', { actorId: 'p1' }),
+      visibility: 'public_timeline',
+    }, playerName, { viewer: spectator }),
+    /^你/,
+  );
+});
+
 test('狼人时间线展示逐狼投票目标，普通视角只看到安全提示', () => {
   const playerName = (id: string | null) => id === 'p1' ? '一号玩家' : id === 'p2' ? '二号玩家' : '未知目标';
   const vote = event('wolf.vote_cast', { actorId: 'p1', targetId: 'p2' });
