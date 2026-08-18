@@ -83,7 +83,8 @@ export class AIOrchestrator {
     private readonly now: () => number = Date.now,
     options: AIOrchestratorOptions = {},
   ) {
-    this.timeoutMs = options.timeoutMs ?? 5_000;
+    this.timeoutMs =
+      options.timeoutMs ?? Number(process.env.WW_AI_TIMEOUT_MS ?? '60000');
     this.aggregateTelemetry = options.telemetry ?? defaultAITelemetry;
     this.fallbackRegistry = options.fallbackRegistry ?? defaultAIFallbackRegistry;
     this.contextCache = options.contextCache;
