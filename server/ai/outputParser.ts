@@ -13,6 +13,7 @@ export type ParsedAIOutput =
       ok: false;
       code:
         | 'EMPTY_OUTPUT'
+        | 'INVALID_CONTEXT'
         | 'MALFORMED_OUTPUT'
         | 'ACTION_NOT_ALLOWED'
         | 'TARGET_NOT_ALLOWED'
@@ -48,6 +49,14 @@ const cleanText = (value: unknown): string =>
         .replace(/\s*```$/i, '')
         .trim()
     : '';
+
+/**
+ * INVALID_CONTEXT is a control sentinel used by the prompt contract. It is
+ * never valid player-authored content, including when the model embeds it in
+ * an otherwise normal-looking sentence or JSON field.
+ */
+const containsInvalidContextSentinel = (value: string): boolean =>
+  value.includes('INVALID_CONTEXT');
 
 const stripTargetDecorators = (value: string): string =>
   value
@@ -460,6 +469,12 @@ export const parseAIOutput = (
 ): ParsedAIOutput => {
   const raw = cleanText(rawOutput);
   if (!raw) return fail('EMPTY_OUTPUT', 'AI output is empty.');
+  if (containsInvalidContextSentinel(raw)) {
+    return fail(
+      'INVALID_CONTEXT',
+      'The AI returned the invalid-context sentinel instead of a player action.',
+    );
+  }
   const object = parseJson(raw);
   return object ? parseObject(object, context) : parsePlain(raw, context);
 };
