@@ -7,11 +7,38 @@ export interface AILegalTarget {
   name: string;
 }
 
+export type AIDeathStatus =
+  | 'alive'
+  | 'dead'
+  | 'dead_last_words'
+  | 'dead_hunter_action';
+
+export type AITurnKind =
+  | 'regular_action'
+  | 'regular_speech'
+  | 'last_words'
+  | 'hunter_shoot'
+  | 'read_only';
+
+/**
+ * Server-derived actor state. The model must not infer this from the player
+ * list or from the presence of a legal command alone.
+ */
+export interface AIActorStatus {
+  isAlive: boolean;
+  deathStatus: AIDeathStatus;
+  turnKind: AITurnKind;
+  /** First event sequence at which this actor was dead, when known. */
+  deathCutoffSequence?: number | null;
+}
+
 /**
  * Facts are already projected by the server for the current AI actor.
  * Prompt code may format these facts, but must not infer hidden state.
  */
 export interface AIPromptContext {
+  /** Authoritative status of the player receiving this prompt. */
+  actorStatus?: AIActorStatus;
   dayNumber?: number;
   roundNumber?: number;
   visibleEvents?: DomainEvent[];
@@ -91,6 +118,7 @@ export interface AIContextProjection {
   };
   experience: string;
   allowedActions: GameAction[];
+  actorStatus?: AIActorStatus;
 }
 
 export interface AIRequestContext {
@@ -104,6 +132,8 @@ export interface AIRequestContext {
   callId: string;
   players: Player[];
   allowedCommandTypes: GameCommand['type'][];
+  /** Authoritative status of the player receiving this provider request. */
+  actorStatus?: AIActorStatus;
   promptContext?: AIPromptContext;
   allowedActions?: GameAction[];
   projectedContext?: AIContextProjection;

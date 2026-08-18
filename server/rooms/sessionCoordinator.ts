@@ -8,6 +8,7 @@ import {
   type AITurnTask,
 } from '../ai/aiTurnScheduler';
 import { buildAIRuntimeContext } from '../ai/runtimeContext';
+import { deriveAIActorStatus } from '../ai/runtimeContext';
 import { PromptContextCache } from '../ai/promptContextCache';
 import { experienceLibrary } from '../ai/experienceLibrary';
 import type { AIProvider } from '../ai/types';
@@ -185,9 +186,17 @@ export class SessionCoordinator {
       kind: 'player',
       playerId: actor.id,
       role: actor.role,
+      isAlive: actor.isAlive,
     });
     const players = projectPlayers(state.players, actor.id, actor.role);
     const stage = state.gameState.phase === 'night' ? state.night.stage : state.dayFlow.stage;
+    const actorStatus = deriveAIActorStatus({
+      actorId: actor.id,
+      phase: state.gameState.phase,
+      stage,
+      players,
+      allowedActions: [task.actionClass as GameAction],
+    });
     const promptContext = buildAIRuntimeContext({
       actorId: actor.id,
       role: actor.role,
@@ -203,6 +212,7 @@ export class SessionCoordinator {
       players,
       visibleEvents: events,
       allowedActions: [task.actionClass as GameAction],
+      actorStatus,
       voteCandidates: state.dayFlow.voteCandidates,
       guardianLastTarget: state.gameState.guardianLastTarget,
       witchHasHealPotion: state.gameState.witchHasHealPotion,
@@ -237,6 +247,7 @@ export class SessionCoordinator {
       phase: state.gameState.phase,
       stage,
       stageRevision: task.stageRevision,
+      actorStatus,
       deadlineTs: state.gameState.deadlineTs,
       players,
       allowedActions: [task.actionClass as GameAction],

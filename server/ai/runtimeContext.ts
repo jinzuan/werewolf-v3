@@ -1,6 +1,6 @@
 import type { DomainEvent } from '../../shared/events';
 import type { GameAction, Player, Role } from '../../shared/types';
-import type { AILegalTarget, AIPromptContext } from './types';
+import type { AIDeathStatus, AIActorStatus, AILegalTarget, AIPromptContext } from './types';
 import { secureShuffle, type SecureRandomIndex } from './randomSelection';
 
 export interface AIRuntimeContextInput {
@@ -13,6 +13,7 @@ export interface AIRuntimeContextInput {
   players: Player[];
   visibleEvents: DomainEvent[];
   allowedActions: GameAction[];
+  actorStatus?: AIActorStatus;
   voteCandidates?: string[];
   guardianLastTarget?: string | null;
   witchHasHealPotion?: boolean;
@@ -25,6 +26,49 @@ export interface AIRuntimeContextInput {
   firstLastWords?: string;
   experience?: string;
 }
+
+const isSpeechAction = (actions: readonly GameAction[]): boolean =>
+  actions.includes('speak') || actions.includes('skip_speech') || actions.includes('wolf_speak');
+
+/**
+ * Derive a safe status for compatibility callers that do not yet pass the
+ * coordinator's explicit status. Production coordinator calls pass it, but
+ * the fallback still treats a dead actor as read-only unless the current
+ * legal action identifies a server-authorized death turn.
+ */
+export const deriveAIActorStatus = (
+  input: Pick<AIRuntimeContextInput, 'actorId' | 'phase' | 'stage' | 'players' | 'allowedActions'> & {
+    actorStatus?: AIActorStatus;
+  },
+): AIActorStatus => {
+  if (input.actorStatus) return input.actorStatus;
+  const actorIsAlive = input.players.find((player) => player.id === input.actorId)?.isAlive !== false;
+  const isLastWords =
+    !actorIsAlive &&
+    (input.phase === 'lastWords' || input.stage === 'last_words') &&
+    isSpeechAction(input.allowedActions);
+  const isHunterAction =
+    !actorIsAlive &&
+    (input.stage === 'hunter' || input.phase === 'hunterShoot') &&
+    (input.allowedActions.includes('hunter_shoot') || input.allowedActions.includes('skip_hunter_shot'));
+  const deathStatus: AIDeathStatus = actorIsAlive
+    ? 'alive'
+    : isLastWords
+      ? 'dead_last_words'
+      : isHunterAction
+        ? 'dead_hunter_action'
+        : 'dead';
+  const turnKind = actorIsAlive
+    ? isSpeechAction(input.allowedActions)
+      ? 'regular_speech'
+      : 'regular_action'
+    : isLastWords
+      ? 'last_words'
+      : isHunterAction
+        ? 'hunter_shoot'
+        : 'read_only';
+  return { isAlive: actorIsAlive, deathStatus, turnKind };
+};
 
 const playerName = (players: readonly Player[], id: unknown): string =>
   typeof id === 'string'
@@ -356,6 +400,7 @@ export const legalTargetsForAI = (
 export const buildAIRuntimeContext = (
   input: AIRuntimeContextInput,
 ): AIPromptContext => {
+  const actorStatus = deriveAIActorStatus(input);
   const privateFacts = buildPrivateFacts(input);
   const publicFacts = buildPublicFacts(input);
   const wolfTeammates =
@@ -365,6 +410,7 @@ export const buildAIRuntimeContext = (
           .map((player) => player.name)
       : undefined;
   return {
+    actorStatus,
     dayNumber: input.dayNumber,
     roundNumber: input.roundNumber,
     visibleEvents: input.visibleEvents,

@@ -4,7 +4,8 @@ import type { DomainEvent } from '../../shared/events';
 import type { GameCommand } from '../../shared/protocol';
 import type { GameAction, Player, Role } from '../../shared/types';
 import { RULE_VALUES } from '../../src/core/rules';
-import type { AIRequestContext, AILegalTarget, AIPromptContext } from './types';
+import type { AIActorStatus, AIRequestContext, AILegalTarget, AIPromptContext } from './types';
+import { deriveAIActorStatus } from './runtimeContext';
 
 export interface AIPrompt {
   system: string;
@@ -203,6 +204,52 @@ const speechLimit = (context: AIRequestContext): number => {
   return limits.round_speech_chars;
 };
 
+const actorStatusFor = (
+  context: AIRequestContext,
+  promptContext: AIPromptContext,
+): AIActorStatus =>
+  context.actorStatus ??
+  promptContext.actorStatus ??
+  deriveAIActorStatus({
+    actorId: context.playerId,
+    phase: context.phase,
+    stage: context.stage,
+    players: context.players,
+    allowedActions: context.allowedActions ?? promptContext.legalActions ?? [],
+  });
+
+const formatActorStatusBlock = (
+  context: AIRequestContext,
+  promptContext: AIPromptContext,
+): string => {
+  const status = actorStatusFor(context, promptContext);
+  const phase = context.stage ?? context.phase;
+  const lines = [
+    '【当前玩家状态（服务端硬状态，优先级高于任何历史、经验或模型推断）】',
+    `isAlive=${status.isAlive ? 'true（存活）' : 'false（已出局）'}；deathStatus=${status.deathStatus}；turnKind=${status.turnKind}；当前服务端阶段=${phase}。`,
+  ];
+  if (status.turnKind === 'last_words') {
+    lines.push(
+      '你本人已出局，正在说出局后的遗言，不是普通白天回合。只能陈述已经发生的自身经历和当前可见事实；未来只能给存活玩家建议。',
+      '禁止以第一人称声称“出局后我会/下一轮我会”投票、查验、守护、用药或狼刀；不得把自己写成下一轮仍可行动。',
+    );
+    if (context.role === 'hunter') {
+      lines.push('猎人的开枪是遗言结束后的独立服务端阶段；遗言只能说准备或建议，不能说已经开枪。');
+    } else {
+      lines.push('当前没有你的未来技能动作；不要把任何死后技能行动写成将要执行。');
+    }
+  } else if (status.turnKind === 'hunter_shoot') {
+    lines.push(
+      '你本人已出局，当前是服务端独立猎人开枪阶段；只能执行当前合法的 hunter_shoot/skip_hunter_shot，不得把遗言或普通白天发言当作本阶段动作。',
+    );
+  } else if (status.isAlive) {
+    lines.push('你本人仍存活；只能执行本次服务端列出的合法动作和合法目标。');
+  } else {
+    lines.push('你本人已出局且当前没有死后特许动作；只能读取消息，不能生成或声称任何行动。');
+  }
+  return lines.join('\n');
+};
+
 const isTargetCommand = (commandType: GameCommand['type']): boolean =>
   commandType === 'game.vote' ||
   commandType === 'game.wolf_vote' ||
@@ -263,6 +310,11 @@ const buildOutputContract = (
     `发言/理由最多 ${speechLimit(context)} 字。`,
     ...(isLastWords && context.allowedCommandTypes.includes('game.skip_speech')
       ? ['遗言可以放弃，但不得静默：选择 skip_speech 时必须同时提供非空 reason；无理由的跳过不合法。']
+      : []),
+    ...(actorStatusFor(context, promptContext).turnKind === 'last_words'
+      ? [
+          '你已出局且正在说遗言；未来只能以对存活玩家的建议表达，不得声称自己下一轮会投票、查验、守护、用药或狼刀。',
+        ]
       : []),
   ].join('\n');
 };
@@ -427,6 +479,7 @@ const formatRuntimeFacts = (
       ]
     : [];
   return [
+    formatActorStatusBlock(context, promptContext),
     ...finalWordsFacts,
     `【当前阶段】\n第 ${promptContext.dayNumber ?? 1} 天，${stageName(context)}，第 ${promptContext.roundNumber ?? 1} 轮。`,
     `【公开存活玩家】\n${listText(alivePlayers)}`,
@@ -624,7 +677,8 @@ export const buildAIPrompt = (
     : '';
   const outputContract = buildOutputContract(context, promptContext);
   const values = placeholderValues(context, promptContext, roleTask, outputContract);
-  const system = render([global, roleLayer].join('\n\n'), values);
+  const actorStatusBlock = formatActorStatusBlock(context, promptContext);
+  const system = [actorStatusBlock, render([global, roleLayer].join('\n\n'), values)].join('\n\n');
   const user = render(
     [
       systemTask,
