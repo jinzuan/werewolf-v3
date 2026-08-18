@@ -146,17 +146,12 @@ try {
   }, serverUrl);
   await page.goto(appUrl, { waitUntil: 'networkidle' });
 
-  await page.getByRole('button', { name: /创建普通房/ }).click();
-  const createDialog = page.getByRole('dialog', {
-    name: '创建普通房',
-  });
-  await createDialog.getByLabel('显示名称').fill('W2 Host');
-  await createDialog
-    .getByLabel('房间名称')
-    .fill('W2 Responsive Room');
-  await createDialog
-    .getByRole('button', { name: '创建并进入' })
-    .click();
+  await page.getByRole('button', { name: '创建房间' }).click();
+  await page.waitForURL(/\/rooms\/new\/players$/);
+  await page.getByLabel('显示名称').fill('W2 Host');
+  await page.getByLabel('房间名称').fill('W2 Responsive Room');
+  await page.getByRole('button', { name: '继续选择角色' }).click();
+  await page.getByRole('button', { name: '创建并进入等待房' }).click();
   await page.waitForURL(/\/room\/[A-Z2-9]{6}$/, {
     timeout: 10_000,
   });
