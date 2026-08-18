@@ -223,6 +223,17 @@ export function GamePage() {
     const actorId = event.payload?.actorId;
     return typeof actorId === 'string' ? actorId : event.actorId ?? null;
   };
+  const seerResultSummary = (event: (typeof visibleEvents)[number]): string => {
+    const targetId = typeof event.payload?.targetId === 'string'
+      ? event.payload.targetId
+      : null;
+    const alignment = event.payload?.alignment === 'wolf'
+      ? '狼人'
+      : event.payload?.alignment === 'good'
+        ? '好人'
+        : '未知阵营';
+    return `昨晚查验${playerName(targetId)}=${alignment}`;
+  };
   const chatMessages = useMemo(
     () => visibleEvents.filter(isSpeechEvent),
     [visibleEvents],
@@ -231,6 +242,23 @@ export function GamePage() {
     () => visibleEvents.filter((event) => !isSpeechEvent(event)),
     [visibleEvents],
   );
+  const mobileTimelineEvents = useMemo(
+    () => visibleEvents.filter(
+      (event) => event.visibility === 'public_timeline' && !isSpeechEvent(event),
+    ),
+    [visibleEvents],
+  );
+  const renderSystemEvents = (items: typeof visibleEvents) => items.length === 0 ? (
+    <span className="v3-inline-note">暂无系统通知。</span>
+  ) : items.map((event, index) => (
+    <Fragment key={event.eventId}>
+      <DayDivider event={event} previous={items[index - 1] ?? null} fallbackDay={state?.day ?? 1} />
+      <div className="v3-event-item">
+        <time>{formatEventTime(event.occurredAt)}</time>
+        <p>{describeEvent(event, playerName, { viewer: snapshot?.viewer ?? undefined })}</p>
+      </div>
+    </Fragment>
+  ));
   const seatStatus = useMemo(() => {
     const statuses = new Map<string, SeatStatus>();
     for (const player of players) {
@@ -568,6 +596,12 @@ export function GamePage() {
                   {allowedActions.length ? '轮到你' : '等待队友'}
                 </Badge>
               </div>
+              {latestSeerResult ? (
+                <div className="v3-mobile-private-result" role="status" aria-live="polite">
+                  <span>预言家私密查验</span>
+                  <strong>{seerResultSummary(latestSeerResult)}</strong>
+                </div>
+              ) : null}
               {isLastWordsTurn ? (
                 <div className="v3-inline-note">
                   仅被投票放逐的玩家可以在此提交遗言；夜间死亡不会进入遗言阶段。
@@ -724,20 +758,16 @@ export function GamePage() {
           >
             <summary>
               <span>事件与系统通知</span>
-              <Badge tone="info">{systemEvents.length}</Badge>
+              <span className="v3-event-counts">
+                <Badge tone="info" className="v3-event-count--desktop">{systemEvents.length}</Badge>
+                <Badge tone="info" className="v3-event-count--mobile">{mobileTimelineEvents.length}</Badge>
+              </span>
             </summary>
-            <div className="v3-event-list">
-              {systemEvents.length === 0 ? (
-                <span className="v3-inline-note">暂无系统通知。</span>
-              ) : systemEvents.map((event, index) => (
-                <Fragment key={event.eventId}>
-                  <DayDivider event={event} previous={systemEvents[index - 1] ?? null} fallbackDay={state?.day ?? 1} />
-                  <div className="v3-event-item">
-                    <time>{formatEventTime(event.occurredAt)}</time>
-                    <p>{describeEvent(event, playerName, { viewer: snapshot.viewer })}</p>
-                  </div>
-                </Fragment>
-              ))}
+            <div className="v3-event-list v3-event-list--desktop">
+              {renderSystemEvents(systemEvents)}
+            </div>
+            <div className="v3-event-list v3-event-list--mobile">
+              {renderSystemEvents(mobileTimelineEvents)}
             </div>
           </details>
             </div>

@@ -1594,10 +1594,13 @@ select {
 .v3-event-private { border-left: 3px solid var(--ww-state-info); background: color-mix(in srgb, var(--ww-state-info) 10%, var(--ww-bg-subtle)); }
 .v3-event-private span { display: block; overflow-wrap: anywhere; }
 .v3-event-private strong { color: var(--ww-text-strong); }
+.v3-mobile-private-result { display: none; }
 .v3-event-details { border: 1.5px solid var(--ww-border-default); border-radius: var(--ww-radius-control); background: var(--ww-bg-surface); }
 .v3-event-details summary { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: var(--ww-space-2); padding: 0 var(--ww-space-3); cursor: pointer; color: var(--ww-text-strong); font-weight: 600; list-style-position: inside; }
 .v3-event-details summary::marker { color: var(--ww-action-primary); }
+.v3-event-count--mobile { display: none; }
 .v3-event-list { max-height: min(38dvh, 360px); display: grid; overflow-y: auto; padding: 0 var(--ww-space-3) var(--ww-space-2); scrollbar-gutter: stable; }
+.v3-event-list--mobile { display: none; }
 .v3-event-item { display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: var(--ww-space-2); padding: var(--ww-space-2) 0; border-top: 1.5px solid var(--ww-border-default); }
 .v3-event-item time { color: var(--ww-text-muted); font: 600 var(--ww-text-caption-size)/20px var(--ww-font-family-number); }
 .v3-event-item p { min-width: 0; margin: 0; color: var(--ww-text-default); font-size: var(--ww-text-caption-size); overflow-wrap: anywhere; }
@@ -2205,6 +2208,25 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
   }
 
   .v3-mobile-only { display: none; }
+
+  .v3-mobile-private-result {
+    display: grid;
+    gap: 4px;
+    margin: calc(-1 * var(--ww-space-2)) 0 var(--ww-space-3);
+    padding: var(--ww-space-3);
+    border-left: 3px solid var(--ww-state-info);
+    border-radius: var(--ww-radius-control);
+    background: color-mix(in srgb, var(--ww-state-info) 10%, var(--ww-bg-subtle));
+    color: var(--ww-text-muted);
+    font-size: var(--ww-text-caption-size);
+  }
+
+  .v3-mobile-private-result strong { color: var(--ww-text-strong); }
+  .v3-event-count--desktop,
+  .v3-event-list--desktop { display: none; }
+  .v3-event-count--mobile,
+  .v3-event-list--mobile { display: inline-flex; }
+  .v3-event-list--mobile { display: grid; }
 
   .v3-match-layout[data-mobile-section] {
     display: block;
