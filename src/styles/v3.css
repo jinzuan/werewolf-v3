@@ -1009,22 +1009,26 @@ select {
 
 .v3-lobby-hero {
   position: relative;
-  min-height: 230px;
-  display: flex;
+  min-height: 244px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: var(--ww-space-8);
   margin-bottom: var(--ww-space-8);
   padding: var(--ww-space-8) var(--ww-space-10);
   overflow: hidden;
+  border: 1.5px solid var(--ww-wood-brown);
+  border-radius: var(--ww-radius-hero);
   border-color: var(--ww-wood-brown);
   background:
     linear-gradient(112deg, color-mix(in srgb, var(--ww-bg-raised) 94%, var(--ww-moon-yellow)), color-mix(in srgb, var(--ww-bg-surface) 88%, var(--ww-forest-green)));
+  box-shadow: var(--ww-shadow-card);
 }
 
 .v3-lobby-hero__copy {
   position: relative;
   z-index: 1;
+  min-width: 0;
   max-width: 680px;
 }
 
@@ -1071,6 +1075,16 @@ select {
   gap: var(--ww-space-3);
 }
 
+.v3-lobby-hero__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  max-width: 430px;
+}
+
+.v3-lobby-hero__actions .v3-button {
+  width: 100%;
+}
+
 .v3-lobby-list-status { justify-content: flex-end; }
 
 .v3-lobby-actions,
@@ -1085,7 +1099,7 @@ select {
 .v3-room-row {
   min-height: 82px;
   display: grid;
-  grid-template-columns: 48px minmax(130px, 1fr) auto auto 44px;
+  grid-template-columns: 48px minmax(0, 1fr) minmax(90px, auto) minmax(86px, auto) minmax(124px, auto);
   align-items: center;
   gap: var(--ww-space-3);
   padding: var(--ww-space-3);
@@ -1093,6 +1107,10 @@ select {
   border-radius: var(--ww-radius-card);
   background: var(--ww-bg-surface);
   box-shadow: var(--ww-shadow-card);
+}
+
+.v3-room-row > .v3-button {
+  width: 100%;
 }
 
 .v3-room-row__mark {
@@ -2009,7 +2027,8 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
 @media (max-width: 767px) {
   .v3-lobby-hero {
     min-height: 0;
-    align-items: flex-start;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
     padding: var(--ww-space-6);
   }
 
@@ -2022,8 +2041,15 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
     width: 76px;
     height: 76px;
     flex-basis: 76px;
+    grid-column: 1;
+    justify-self: end;
     font-size: 30px;
     box-shadow: 5px 6px 0 color-mix(in srgb, var(--ww-wood-brown) 65%, transparent);
+  }
+
+  .v3-lobby-hero__actions {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: none;
   }
 
   .v3-wizard-grid {
@@ -2149,7 +2175,6 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
   }
 
   .v3-lobby-hero {
-    flex-direction: column;
     align-items: stretch;
     gap: var(--ww-space-5);
     padding: var(--ww-space-6);
