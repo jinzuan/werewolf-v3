@@ -153,11 +153,17 @@ export function GamePage() {
     remainingServerMs(state?.deadlineTs, clockRef.current, now),
   );
   const actionKey = allowedActions.join('|');
+  const actionTransitionKey = [
+    snapshot?.gameId ?? 'no-game',
+    state?.day ?? 0,
+    state?.stageRevision ?? 0,
+    actionKey,
+  ].join('|');
   useEffect(() => {
-    if (!snapshot || actionKey === mobileActionKeyRef.current) return;
-    mobileActionKeyRef.current = actionKey;
+    if (actionTransitionKey === mobileActionKeyRef.current) return;
+    mobileActionKeyRef.current = actionTransitionKey;
     setMobileSection(actionKey ? 'action' : 'chat');
-  }, [actionKey, snapshot]);
+  }, [actionKey, actionTransitionKey]);
   const voteRound = snapshot
     ? currentVoteRoundProjection(snapshot, events, allowedActions)
     : null;
