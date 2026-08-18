@@ -5,12 +5,12 @@ import {
   MessageSquare,
   Shield,
   Swords,
-  UserRound,
   UsersRound,
 } from 'lucide-react';
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { GameAction, GameState } from '../../../shared/types';
 import { AppShell } from '../../components/shell/AppShell';
+import { PlayerSeatCard } from '../../components/match/PlayerSeatCard';
 import { MatchShell } from '../../components/shell/MatchShell';
 import { MobileMatchNav, type MobileMatchNavItem } from '../../components/shell/MobileMatchNav';
 import { useV3Store } from '../../stores/v3Store';
@@ -49,7 +49,7 @@ import { formatCountdown } from '../../v3/countdown';
 import { MAX_EVENT_WINDOW } from '../../v3/eventStream';
 import { chatEventsForViewer } from '../../v3/visibility';
 import { viewerPlayerId } from '../../v3/session';
-import { seatColorClass, seatColorIndex } from '../../v3/seatColors';
+import { seatColorIndex } from '../../v3/seatColors';
 
 const ROLE_DESCRIPTIONS = {
   wolf: '夜间与狼人队友讨论并决定袭击目标。',
@@ -70,12 +70,6 @@ const GAME_MOBILE_NAV_ITEMS: readonly MobileMatchNavItem[] = [
   { id: 'identity', label: '身份座位', icon: UsersRound },
   { id: 'view', label: '查看', icon: Eye },
 ];
-
-const seatStatusLabel: Record<SeatStatus, string> = {
-  alive: '存活',
-  exiled: '票出',
-  'night-death': '夜间出局',
-};
 
 const ACTION_HELP: Record<GameAction, string> = {
   confirm_role: '确认已查看自己的身份牌。',
@@ -513,35 +507,24 @@ export function GamePage() {
                     (target) => target.id === player.id,
                   );
                   const status = seatStatus.get(player.id) ?? 'alive';
-                  const statusLabel = seatStatusLabel[status];
                   const playerLabel = playerName(player.id);
                   return (
-                    <button
+                    <PlayerSeatCard
                       key={player.id}
-                      className={`v3-player-seat ${seatColorClass(player.order)} v3-player-seat--status-${status} ${!player.isAlive ? 'is-dead' : ''} ${selectedTarget === player.id ? 'is-selected' : ''} ${hasActiveSpeaker && currentSpeakerId === player.id ? `is-speaking v3-player-seat--speaker-${speakerToneFor(player.id)}` : ''}`}
-                      aria-current={hasActiveSpeaker && currentSpeakerId === player.id ? 'true' : undefined}
-                      aria-label={`${playerLabel}，${statusLabel}${targetable ? '，可选择' : ''}`}
-                      title={`${playerLabel} · ${statusLabel}`}
-                      disabled={!targetable}
-                      onClick={() =>
+                      player={player}
+                      label={playerLabel}
+                      status={status}
+                      targetable={targetable}
+                      selected={selectedTarget === player.id}
+                      speaking={hasActiveSpeaker && currentSpeakerId === player.id}
+                      speakerTone={speakerToneFor(player.id)}
+                      onSelect={() =>
                         setActionDraft((current) => ({
                           ...current,
                           selectedTarget: player.id,
                         }))
                       }
-                    >
-                      <span className="v3-player-seat__number">
-                        {player.order.toString().padStart(2, '0')}
-                      </span>
-                      <span className="v3-player-seat__avatar">
-                        <UserRound size={22} />
-                      </span>
-                      <span className="v3-player-seat__name">
-                        <strong>{playerLabel}</strong>
-                        {player.isAI ? <span className="v3-ai-label">AI</span> : null}
-                      </span>
-                      <span className="v3-player-seat__status" aria-label={statusLabel} title={statusLabel} />
-                    </button>
+                    />
                   );
                 })}
               </div>

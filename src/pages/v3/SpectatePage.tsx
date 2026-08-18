@@ -1,6 +1,7 @@
-import { Eye, List, Radio, ShieldQuestion, UsersRound } from 'lucide-react';
+import { Eye, List, Radio, UsersRound } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '../../components/shell/AppShell';
+import { PlayerSeatCard } from '../../components/match/PlayerSeatCard';
 import { MatchShell } from '../../components/shell/MatchShell';
 import { MobileMatchNav, type MobileMatchNavItem } from '../../components/shell/MobileMatchNav';
 import { useV3Store } from '../../stores/v3Store';
@@ -26,6 +27,7 @@ import { MAX_EVENT_WINDOW } from '../../v3/eventStream';
 import { formatCountdown } from '../../v3/countdown';
 
 type SpectateMobileSection = 'events' | 'identity' | 'view';
+type SpectateSeatStatus = 'alive' | 'exiled' | 'night-death';
 
 const SPECTATE_MOBILE_NAV_ITEMS: readonly MobileMatchNavItem[] = [
   { id: 'events', label: '时间线', icon: List },
@@ -59,6 +61,26 @@ export function SpectatePage() {
     () => createPlayerNameResolver(players, room?.members ?? []),
     [players, room?.members],
   );
+  const seatStatuses = useMemo(() => {
+    const statuses = new Map<string, SpectateSeatStatus>(
+      players.map((player) => [player.id, player.isAlive ? 'alive' : 'exiled']),
+    );
+    for (const event of events) {
+      const payload = event.payload as Record<string, unknown>;
+      if (event.eventType === 'day.exiled' && typeof payload.playerId === 'string') {
+        statuses.set(payload.playerId, 'exiled');
+      }
+      if (event.eventType === 'hunter.shot' && typeof payload.targetId === 'string') {
+        statuses.set(payload.targetId, 'night-death');
+      }
+      if (event.eventType === 'night.resolved' && Array.isArray(payload.deaths)) {
+        for (const playerId of payload.deaths) {
+          if (typeof playerId === 'string') statuses.set(playerId, 'night-death');
+        }
+      }
+    }
+    return statuses;
+  }, [events, players]);
 
   const isPublicSpectator =
     session?.mode === 'spectator' &&
@@ -126,14 +148,14 @@ export function SpectatePage() {
               </div>
               <Badge tone="info"><Eye size={13} />公开视角</Badge>
             </div>
-            <div className="v3-summary-list">
+            <div className="v3-spectate-player-grid">
               {players.map((player) => (
-                <div key={player.id}>
-                  <ShieldQuestion size={16} />
-                  <span>
-                    {player.order.toString().padStart(2, '0')} {playerName(player.id)}{player.isAI ? <> <span className="v3-ai-label">AI</span></> : null} · {player.isAlive ? '存活' : '已出局'}
-                  </span>
-                </div>
+                <PlayerSeatCard
+                  key={player.id}
+                  player={player}
+                  label={playerName(player.id)}
+                  status={seatStatuses.get(player.id) ?? 'alive'}
+                />
               ))}
             </div>
             <p className="v3-inline-note">身份字段、狼聊、查验、守护和用药详情不会进入本页。</p>

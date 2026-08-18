@@ -838,6 +838,7 @@ select {
 .v3-wizard-advanced > div { padding-top: var(--ww-space-3); }
 
 .v3-page {
+  min-height: 100%;
   min-width: 0;
   padding: var(--ww-space-6) var(--page-gutter) max(var(--ww-space-8), env(safe-area-inset-bottom));
   animation: v3-page-enter var(--ww-motion-standard) var(--ww-motion-easing) both;
@@ -1426,7 +1427,8 @@ select {
 
 .v3-action-tabs button.is-active { background: var(--ww-bg-subtle); }
 
-.v3-player-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--ww-space-2); }
+.v3-player-grid,
+.v3-spectate-player-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--ww-space-2); }
 
 .v3-player-seat {
   position: relative;
@@ -1608,6 +1610,7 @@ select {
 
 .v3-playback-bar { min-height: 60px; justify-content: flex-end; gap: var(--ww-space-2); margin-bottom: var(--ww-space-4); padding-bottom: var(--ww-space-3); border-bottom: 1.5px solid var(--ww-border-default); }
 .v3-spectate-layout { grid-template-columns: minmax(240px, .75fr) minmax(380px, 1.6fr) minmax(260px, .8fr); }
+.v3-spectate-player-grid { align-content: start; }
 .v3-summary-list, .v3-identity-list, .v3-call-list { display: grid; }
 .v3-summary-list > div, .v3-identity-list > div, .v3-call-list > div { min-height: 46px; display: grid; align-items: center; gap: var(--ww-space-2); border-bottom: 1.5px solid var(--ww-border-default); }
 .v3-summary-list > div { grid-template-columns: 20px 1fr; }
@@ -2019,7 +2022,8 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
 
   .v3-topbar { grid-template-columns: minmax(170px, .8fr) minmax(240px, 1.2fr) auto; gap: var(--ww-space-4); }
   .v3-match-layout, .v3-spectate-layout, .v3-monitor-layout { grid-template-columns: minmax(260px, .85fr) minmax(420px, 1.4fr); grid-template-areas: 'left center' 'right right' 'footer footer'; }
-  .v3-player-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .v3-player-grid,
+  .v3-spectate-player-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .v3-self-status { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .v3-self-status > div:nth-child(2) { border-right: 0; }
   .v3-self-status > div:nth-child(-n + 2) { padding-bottom: 10px; border-bottom: 1.5px solid var(--ww-border-default); }
@@ -2257,7 +2261,8 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
   .v3-topbar__identity span { display: none; }
   .v3-topbar__identity strong { font-size: 16px; }
   .v3-topbar__actions { gap: 5px; }
-  .v3-player-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .v3-player-grid,
+  .v3-spectate-player-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .v3-player-seat { min-height: 116px; }
   .v3-self-status { grid-template-columns: 1fr; }
   .v3-self-status > div, .v3-self-status > div:nth-child(2) { padding: 8px 0; border-right: 0; border-bottom: 1.5px solid var(--ww-border-default); }
@@ -2438,7 +2443,8 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
     height: auto;
   }
 
-  .v3-player-grid {
+  .v3-player-grid,
+  .v3-spectate-player-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: var(--ww-space-3);
   }
