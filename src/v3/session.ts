@@ -157,6 +157,7 @@ const ROOM_PRIVATE_KEYS = new Set([
 
 const PUBLIC_SPECTATOR_PRIVATE_STATE_KEYS = [
   'nightActions',
+  'seerResults',
   'actionDone',
   'votes',
   'wolfVotes',
@@ -237,6 +238,12 @@ export const isSnapshotSafeForViewer = (
       'witchActionComplete',
       'witchAntidoteUsed',
     ].some((key) => hasOwn(snapshot.gameState, key))
+  ) {
+    return false;
+  }
+  if (
+    (viewer.role !== 'seer' || viewer.isAlive === false) &&
+    hasOwn(snapshot.gameState, 'seerResults')
   ) {
     return false;
   }

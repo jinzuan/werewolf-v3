@@ -135,6 +135,7 @@ const createGameState = (roomId: string): AuthorityGameState => ({
   turn: 1,
   votes: {},
   nightActions: [],
+  seerResults: {},
   winner: null,
   currentSpeaker: null,
   speakerOrder: [],
@@ -749,13 +750,18 @@ export class GameSession {
         return null;
       }
       this.state.night = completeSeer(this.state.night, action.targetId);
+      const alignment = getSeerResult(corePlayers, action.targetId);
+      if (alignment !== null) {
+        this.state.gameState.seerResults ??= {};
+        this.state.gameState.seerResults[action.targetId] = alignment;
+      }
       this.recordNightAction(action);
       return [
         this.event(
           'seer.result',
           {
             targetId: action.targetId,
-            alignment: getSeerResult(corePlayers, action.targetId),
+            alignment,
           },
           'role_private',
           [actor.id],
@@ -2108,6 +2114,7 @@ export class GameSession {
     gameState.deadlineTs ??= null;
     gameState.stageStartedAt ??= null;
     gameState.dayStage ??= null;
+    gameState.seerResults ??= {};
     gameState.wolfDiscussionRound ??= 1;
     gameState.wolfSpeakerOrder ??= [];
     gameState.wolfCurrentSpeaker ??= null;

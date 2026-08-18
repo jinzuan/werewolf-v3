@@ -242,6 +242,8 @@ export function GamePage() {
         : '未知阵营';
     return `昨晚查验${playerName(targetId)}=${alignment}`;
   };
+  const seerCheckedAlignment = (playerId: string): 'wolf' | 'good' | undefined =>
+    myPlayer?.role === 'seer' ? state?.seerResults?.[playerId] : undefined;
   const chatMessages = useMemo(
     () => visibleEvents.filter(isSpeechEvent),
     [visibleEvents],
@@ -589,6 +591,7 @@ export function GamePage() {
                       status={status}
                       targetable={targetable}
                       selected={selectedTarget === player.id}
+                      checkedAlignment={seerCheckedAlignment(player.id)}
                       speaking={hasActiveSpeaker && currentSpeakerId === player.id}
                       speakerTone={speakerToneFor(player.id)}
                       onSelect={() =>
@@ -713,6 +716,11 @@ export function GamePage() {
                             {player.order.toString().padStart(2, '0')}
                           </span>
                           <strong>{playerName(player.id)}</strong>
+                          {seerCheckedAlignment(player.id) ? (
+                            <small className="v3-target-grid__seer-check">
+                              已查验·{seerCheckedAlignment(player.id) === 'wolf' ? '狼人' : '好人'}
+                            </small>
+                          ) : null}
                           {selectedTarget === player.id ? (
                             <Check size={16} />
                           ) : null}

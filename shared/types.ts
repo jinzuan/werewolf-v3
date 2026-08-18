@@ -86,6 +86,8 @@ export interface GameState {
   turn: number;
   votes: Record<string, string>;
   nightActions: NightAction[];
+  /** Private alignment-only history for the living seer. */
+  seerResults?: Record<string, 'wolf' | 'good'>;
   winner: 'wolf' | 'good' | null;
   currentSpeaker: string | null;
   speakerOrder: string[];

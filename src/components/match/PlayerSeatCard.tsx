@@ -3,6 +3,7 @@ import type { Player } from '../../../shared/types';
 import { seatColorClass } from '../../v3/seatColors';
 
 export type PlayerSeatStatus = 'alive' | 'exiled' | 'night-death';
+export type SeerAlignment = 'wolf' | 'good';
 
 const STATUS_LABELS: Record<PlayerSeatStatus, string> = {
   alive: '存活',
@@ -18,6 +19,7 @@ interface PlayerSeatCardProps {
   selected?: boolean;
   speaking?: boolean;
   speakerTone?: number;
+  checkedAlignment?: SeerAlignment;
   onSelect?: () => void;
 }
 
@@ -30,6 +32,7 @@ export function PlayerSeatCard({
   selected = false,
   speaking = false,
   speakerTone = 0,
+  checkedAlignment,
   onSelect,
 }: PlayerSeatCardProps) {
   const statusLabel = STATUS_LABELS[status];
@@ -53,6 +56,11 @@ export function PlayerSeatCard({
       <span className="v3-player-seat__name">
         <strong>{label}</strong>
         {player.isAI ? <span className="v3-ai-label">AI</span> : null}
+        {checkedAlignment ? (
+          <span className="v3-player-seat__seer-check" title="预言家已查验">
+            已查验·{checkedAlignment === 'wolf' ? '狼人' : '好人'}
+          </span>
+        ) : null}
       </span>
       <span className="v3-player-seat__status" aria-label={statusLabel} title={statusLabel} />
     </>

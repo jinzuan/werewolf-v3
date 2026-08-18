@@ -163,6 +163,9 @@ const projectGameState = (
     delete projected.witchActionComplete;
     delete projected.witchAntidoteUsed;
   }
+  if (!(isLivePlayer(viewer) && viewer.role === 'seer')) {
+    delete projected.seerResults;
+  }
   return projected;
 };
 

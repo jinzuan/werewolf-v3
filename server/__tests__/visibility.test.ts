@@ -75,6 +75,13 @@ test('private night facts never leak to villagers or public spectators', async (
       role: 'seer',
     }),
   );
+  const seerSnapshot = await session.snapshotFor({
+    kind: 'player',
+    playerId: seer.id,
+    role: 'seer',
+  });
+  const villagerSnapshot = await session.snapshotFor(villagerView);
+  const publicSnapshot = await session.snapshotFor(publicSpectator);
 
   for (const payload of [villagerPayload, publicPayload]) {
     assert.doesNotMatch(payload, /SECRET_WOLF_CHAT/);
@@ -90,6 +97,10 @@ test('private night facts never leak to villagers or public spectators', async (
   assert.match(seerPayload, /seer\.result/);
   assert.match(seerPayload, new RegExp(`"targetId":"${wolf.id}"`));
   assert.match(seerPayload, /"alignment":"wolf"/);
+  assert.deepEqual(seerSnapshot.gameState.seerResults, { [wolf.id]: 'wolf' });
+  assert.equal('seerResults' in villagerSnapshot.gameState, false);
+  assert.equal('seerResults' in publicSnapshot.gameState, false);
+  assert.equal(seerSnapshot.players.find((player) => player.id === wolf.id)?.role, null);
 
   assert.match(omniscientPayload, /SECRET_WOLF_CHAT/);
   assert.match(omniscientPayload, /guardian\.completed/);
