@@ -402,6 +402,8 @@ export function GamePage() {
             </Card>
           ) : null}
           <MatchShell
+          centerAriaLabel="聊天与发言"
+          rightAriaLabel="行动与事件"
           left={
             <Card className="v3-player-panel">
               <div className="v3-panel-heading">
