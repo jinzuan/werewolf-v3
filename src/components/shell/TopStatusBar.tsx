@@ -66,10 +66,10 @@ export function TopStatusBar({
         <Button
           className="v3-topbar__menu"
           variant="icon"
-          aria-label="打开导航"
+          aria-label="打开导航菜单"
           aria-controls="v3-side-nav"
           aria-expanded={menuOpen}
-          title="导航"
+          title="导航菜单"
           onClick={onMenu}
         >
           <Menu size={18} />

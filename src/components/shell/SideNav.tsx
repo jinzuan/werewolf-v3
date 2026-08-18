@@ -1,5 +1,6 @@
 import { Gamepad2, House, Settings, X } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
+import { useEffect } from 'react';
 import { useV3Store } from '../../stores/v3Store';
 import { roomPath } from '../../app/routes/roomRouting';
 
@@ -16,6 +17,15 @@ export function SideNav({ open, onClose }: { open: boolean; onClose: () => void 
       : []),
     { to: '/settings', label: '设置', icon: Settings },
   ];
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onClose, open]);
 
   return (
     <>

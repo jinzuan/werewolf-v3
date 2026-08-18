@@ -1,6 +1,6 @@
-import { ArrowRight, Monitor, Save, UserRound, Volume2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Home, Monitor, Save, UserRound, Volume2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { AppShell } from '../../components/shell/AppShell';
 import { endpointDiagnosticsEnabled, getServerUrl, setServerUrl } from '../../net/serverEndpoint';
 import { useV3Store } from '../../stores/v3Store';
@@ -22,6 +22,7 @@ const readMotionPreference = (): MotionPreference => {
 };
 
 export function SettingsPage() {
+  const navigate = useNavigate();
   const connected = useV3Store((state) => state.connected);
   const [motionPreference, setMotionPreference] = useState<MotionPreference>(readMotionPreference);
   const [nickname, setNickname] = useState(() => readPlayerNickname());
@@ -44,7 +45,11 @@ export function SettingsPage() {
     <AppShell title="设置" eyebrow="玩家端偏好" connected={connected}>
       <div className="v3-page-heading">
         <div><span>本地显示与辅助功能</span><h1>设置</h1></div>
-        <Button onClick={save}><Save size={17} />{saved ? '已保存' : '保存设置'}</Button>
+        <div className="v3-page-heading__actions">
+          <Button variant="quiet" onClick={() => navigate(-1)}><ArrowLeft size={17} />返回上一级</Button>
+          <Link className="v3-button v3-button--quiet" to="/lobby"><Home size={17} />返回大厅</Link>
+          <Button onClick={save}><Save size={17} />{saved ? '已保存' : '保存设置'}</Button>
+        </div>
       </div>
 
       <div className="v3-settings-layout">

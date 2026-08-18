@@ -1,10 +1,7 @@
 import {
-  Bot,
   Check,
-  Circle,
   MessageSquare,
   Shield,
-  Skull,
   UserRound,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -55,6 +52,14 @@ const ROLE_DESCRIPTIONS = {
   guardian: '每晚守护一名玩家，阻止当晚袭击。',
   villager: '没有夜间技能，通过发言与投票找出狼人。',
 } as const;
+
+type SeatStatus = 'alive' | 'exiled' | 'night-death';
+
+const seatStatusLabel: Record<SeatStatus, string> = {
+  alive: '存活',
+  exiled: '票出',
+  'night-death': '夜间出局',
+};
 
 const ACTION_HELP: Record<GameAction, string> = {
   confirm_role: '确认已查看自己的身份牌。',
@@ -193,13 +198,27 @@ export function GamePage() {
     () => visibleEvents.filter((event) => !isSpeechEvent(event)),
     [visibleEvents],
   );
-  const latestNightEvent = useMemo(
-    () => [...systemEvents].reverse().find((event) => event.eventType === 'night.resolved') ?? null,
-    [systemEvents],
-  );
-  const latestPublicEvent = latestNightEvent ?? [...systemEvents]
-    .reverse()
-    .find((event) => event.visibility === 'public_timeline') ?? null;
+  const seatStatus = useMemo(() => {
+    const statuses = new Map<string, SeatStatus>();
+    for (const player of players) {
+      statuses.set(player.id, player.isAlive ? 'alive' : 'exiled');
+    }
+    for (const event of events) {
+      const payload = event.payload as Record<string, unknown>;
+      if (event.eventType === 'day.exiled' && typeof payload.playerId === 'string') {
+        statuses.set(payload.playerId, 'exiled');
+      }
+      if (event.eventType === 'hunter.shot' && typeof payload.targetId === 'string') {
+        statuses.set(payload.targetId, 'night-death');
+      }
+      if (event.eventType === 'night.resolved' && Array.isArray(payload.deaths)) {
+        for (const playerId of payload.deaths) {
+          if (typeof playerId === 'string') statuses.set(playerId, 'night-death');
+        }
+      }
+    }
+    return statuses;
+  }, [events, players]);
   const wolfKillTargetId = myPlayer?.role === 'wolf'
     ? [...visibleEvents]
         .reverse()
@@ -406,8 +425,8 @@ export function GamePage() {
           centerAriaLabel="聊天与发言"
           rightAriaLabel="行动与事件"
           left={
-            <Card className="v3-player-panel">
-              <div className="v3-panel-heading">
+            <details className="v3-card v3-player-panel" open>
+              <summary className="v3-panel-heading v3-collapsible-heading">
                 <div>
                   <span>{players.length} 席</span>
                   <h2>玩家座位</h2>
@@ -415,17 +434,22 @@ export function GamePage() {
                 <Badge tone="success">
                   {players.filter((player) => player.isAlive).length} 人存活
                 </Badge>
-              </div>
+              </summary>
               <div className="v3-player-grid">
                 {players.map((player) => {
                   const targetable = targets.some(
                     (target) => target.id === player.id,
                   );
+                  const status = seatStatus.get(player.id) ?? 'alive';
+                  const statusLabel = seatStatusLabel[status];
+                  const playerLabel = playerName(player.id);
                   return (
                     <button
                       key={player.id}
-                      className={`v3-player-seat ${!player.isAlive ? 'is-dead' : ''} ${selectedTarget === player.id ? 'is-selected' : ''} ${hasActiveSpeaker && currentSpeakerId === player.id ? `is-speaking v3-player-seat--speaker-${speakerToneFor(player.id)}` : ''}`}
+                      className={`v3-player-seat v3-player-seat--status-${status} ${!player.isAlive ? 'is-dead' : ''} ${selectedTarget === player.id ? 'is-selected' : ''} ${hasActiveSpeaker && currentSpeakerId === player.id ? `is-speaking v3-player-seat--speaker-${speakerToneFor(player.id)}` : ''}`}
                       aria-current={hasActiveSpeaker && currentSpeakerId === player.id ? 'true' : undefined}
+                      aria-label={`${playerLabel}，${statusLabel}${targetable ? '，可选择' : ''}`}
+                      title={`${playerLabel} · ${statusLabel}`}
                       disabled={!targetable}
                       onClick={() =>
                         setActionDraft((current) => ({
@@ -441,33 +465,15 @@ export function GamePage() {
                         <UserRound size={22} />
                       </span>
                       <span className="v3-player-seat__name">
-                        <strong>{playerName(player.id)}</strong>
+                        <strong>{playerLabel}</strong>
                         {player.isAI ? <span className="v3-ai-label">AI</span> : null}
                       </span>
-                      <span className="v3-player-seat__status">
-                        {!player.isAlive ? (
-                          <Skull size={13} />
-                        ) : player.isAI ? (
-                          <Bot size={13} />
-                        ) : (
-                          <Circle size={9} fill="currentColor" />
-                        )}
-                        {!player.isAlive
-                          ? '已出局'
-                          : targetable
-                            ? '可选择'
-                            : player.isAI
-                              ? '电脑玩家在线'
-                              : '存活'}
-                        {player.role && player.id !== myId && myPlayer?.role === 'wolf'
-                          ? ` · ${ROLE_LABELS[player.role]}`
-                          : ''}
-                      </span>
+                      <span className="v3-player-seat__status" aria-label={statusLabel} title={statusLabel} />
                     </button>
                   );
                 })}
               </div>
-            </Card>
+            </details>
           }
           right={
             <div className="v3-match-side">
@@ -480,15 +486,6 @@ export function GamePage() {
                 </div>
                 <Badge tone="info">只读</Badge>
               </div>
-              {currentSpeakerName ? (
-                <div
-                  className={`v3-current-speaker v3-current-speaker--${speakerToneFor(currentSpeakerId)}`}
-                  aria-live="polite"
-                >
-                  <span className="v3-current-speaker__dot" />
-                  正在发言：<strong>{currentSpeakerName}</strong>
-                </div>
-              ) : null}
               <p className="v3-panel-copy">
                 你已出局，当前页面已切换为观战视角。可以继续查看剩余玩家的公开发言、投票和出局结果，但不能提交任何行动。
               </p>
@@ -628,12 +625,6 @@ export function GamePage() {
               )}
             </Card>
           )}
-          {latestPublicEvent ? (
-            <div className="v3-event-highlight" role="status" aria-live="polite">
-              <span>{latestNightEvent ? '昨夜公开' : '最近公开事件'}</span>
-              <p>{describeEvent(latestPublicEvent, playerName, { viewer: snapshot.viewer })}</p>
-            </div>
-          ) : null}
           {typeof wolfKillTargetId === 'string' || latestSeerResult ? (
             <div className="v3-event-private" role="status" aria-live="polite">
               {typeof wolfKillTargetId === 'string' ? (
@@ -742,37 +733,6 @@ export function GamePage() {
               ) : (
                 <div className="v3-chat-input-note">当前阶段不需要在聊天区输入内容。</div>
               )}
-            </Card>
-          }
-          footer={
-            <Card className="v3-self-status">
-              <div>
-                <span>自身身份</span>
-                <strong>
-                  <Shield size={17} />
-                  {myPlayer?.role
-                    ? ROLE_LABELS[myPlayer.role]
-                    : '未公开'}
-                </strong>
-              </div>
-              <div>
-                <span>存活状态</span>
-                <Badge tone={myPlayer?.isAlive ? 'success' : 'danger'}>
-                  {myPlayer?.isAlive ? '存活' : '已出局'}
-                </Badge>
-              </div>
-              <div>
-                <span>阶段</span>
-                <Badge tone="gold">{phaseLabel(state)}</Badge>
-              </div>
-              <div>
-                <span>允许命令</span>
-                <strong>
-                  {allowedActions
-                    .map((action) => ACTION_LABELS[action])
-                    .join(' / ') || '无'}
-                </strong>
-              </div>
             </Card>
           }
           />
