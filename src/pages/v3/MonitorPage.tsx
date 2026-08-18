@@ -5,7 +5,9 @@ import { MatchShell } from '../../components/shell/MatchShell';
 import { useV3Store } from '../../stores/v3Store';
 import { Badge } from '../../ui/Badge';
 import { Card } from '../../ui/Card';
+import { ChatBubble } from '../../ui/ChatBubble';
 import { Input } from '../../ui/Input';
+import { avatarAssetMap, getAvatarAsset, roleAssetMap } from '../../ui/assetRegistry';
 import {
   createPlayerNameResolver,
   describeEvent,
@@ -23,6 +25,8 @@ import {
 } from '../../v3/serverClock';
 import { MAX_EVENT_WINDOW } from '../../v3/eventStream';
 import { formatCountdown } from '../../v3/countdown';
+import { chatEventsForViewer } from '../../v3/visibility';
+import { seatColorClass, seatColorIndex } from '../../v3/seatColors';
 
 export function MonitorPage() {
   const connected = useV3Store((state) => state.connected);
@@ -42,6 +46,7 @@ export function MonitorPage() {
   }, [snapshot?.gameState.deadlineTs]);
   const [visibility, setVisibility] = useState('all');
   const [query, setQuery] = useState('');
+  const [flippedPlayers, setFlippedPlayers] = useState<Set<string>>(() => new Set());
   const omniscient =
     session?.mode === 'spectator' &&
     room?.viewer.kind === 'spectator' &&
@@ -61,6 +66,34 @@ export function MonitorPage() {
       describeEvent(event, playerName).toLowerCase().includes(query.trim().toLowerCase()),
     )
     .slice(-MAX_EVENT_WINDOW), [events, visibility, query, playerName]);
+  const chatMessages = useMemo(
+    () => chatEventsForViewer(events, snapshot?.viewer ?? null)
+      .filter((event) => event.eventType === 'day.speech' || event.eventType === 'wolf.message')
+      .slice(-MAX_EVENT_WINDOW),
+    [events, snapshot?.viewer],
+  );
+  const playerById = useMemo(
+    () => new Map(players.map((player) => [player.id, player])),
+    [players],
+  );
+
+  useEffect(() => {
+    setFlippedPlayers(new Set());
+  }, [snapshot?.gameId]);
+
+  const togglePlayerIdentity = (playerId: string): void => {
+    setFlippedPlayers((current) => {
+      const next = new Set(current);
+      if (next.has(playerId)) next.delete(playerId);
+      else next.add(playerId);
+      return next;
+    });
+  };
+
+  const eventActorId = (event: (typeof chatMessages)[number]): string | null => {
+    const actorId = event.payload?.actorId;
+    return typeof actorId === 'string' ? actorId : event.actorId ?? null;
+  };
 
   if (!omniscient) {
     return (
@@ -120,39 +153,93 @@ export function MonitorPage() {
             <div className="v3-panel-heading"><div><span>{players.length} 席完整身份</span><h2>身份摘要</h2></div></div>
             <div className="v3-identity-list">
               {players.map((player) => (
-                <div key={player.id} className={!player.isAlive ? 'is-dead' : undefined}>
-                  <span className="v3-numeric">{player.order.toString().padStart(2, '0')}</span>
+                <div key={player.id} className={`v3-monitor-identity-row ${seatColorClass(player.order)}${!player.isAlive ? ' is-dead' : ''}`}>
+                  <button
+                    type="button"
+                    className={`v3-monitor-identity-flip${flippedPlayers.has(player.id) ? ' is-flipped' : ''}`}
+                    aria-label={`${player.name}，${flippedPlayers.has(player.id) ? '收起身份牌' : '翻开身份牌'}`}
+                    aria-pressed={flippedPlayers.has(player.id)}
+                    onClick={() => togglePlayerIdentity(player.id)}
+                  >
+                    <span className="v3-monitor-identity-flip__inner">
+                      <span className="v3-monitor-identity-flip__face v3-monitor-identity-flip__face--front">
+                        <img
+                          src={getAvatarAsset(player.isAI ? 'computer' : 'player').src}
+                          alt=""
+                        />
+                      </span>
+                      <span className="v3-monitor-identity-flip__face v3-monitor-identity-flip__face--back">
+                        {player.role ? <img src={roleAssetMap[player.role].src} alt="" /> : null}
+                      </span>
+                    </span>
+                  </button>
                   <strong>
+                    <span className="v3-numeric">{player.order.toString().padStart(2, '0')}</span>{' '}
                     {playerName(player.id)}{player.isAI ? <span className="v3-ai-label">AI</span> : null}
-                    {' · '}{player.role ? ROLE_LABELS[player.role] : '未分配'}
                   </strong>
                   <Badge tone={!player.isAlive ? 'danger' : 'success'}>{player.isAlive ? '存活' : '已出局'}</Badge>
+                  {flippedPlayers.has(player.id) ? (
+                    <span className="v3-monitor-identity-role">
+                      {player.role ? ROLE_LABELS[player.role] : '身份待分配'}
+                    </span>
+                  ) : null}
                 </div>
               ))}
             </div>
+            <p className="v3-inline-note">点击座位头像翻开身份牌；身份、夜间私密行动和狼人频道仅在此全知视角显示。</p>
           </Card>
         }
         center={
-          <Card>
-            <div className="v3-panel-heading"><div><span>完整对局记录</span><h2>事件时间线</h2></div></div>
-            <div className="v3-console-events">
-              {filteredEvents.length === 0 ? (
-                <div className="v3-inline-note">当前筛选条件下没有事件。</div>
-              ) : filteredEvents.map((event) => (
-                <div key={event.eventId}>
-                  <time>{formatEventTime(event.occurredAt)}</time>
-                  <Badge tone={
-                    event.visibility === 'public_timeline' ? 'gold' :
-                    event.visibility === 'wolf_private' ? 'danger' :
-                    event.visibility === 'role_private' ? 'purple' : 'info'
-                  }>
-                    {VISIBILITY_LABELS[event.visibility]}
-                  </Badge>
-                  <p>{describeEvent(event, playerName)}</p>
-                </div>
-              ))}
-            </div>
-          </Card>
+          <div className="v3-monitor-stream">
+            <Card>
+              <div className="v3-panel-heading"><div><span>完整对局记录</span><h2>事件时间线</h2></div></div>
+              <div className="v3-console-events">
+                {filteredEvents.length === 0 ? (
+                  <div className="v3-inline-note">当前筛选条件下没有事件。</div>
+                ) : filteredEvents.map((event) => (
+                  <div key={event.eventId}>
+                    <time>{formatEventTime(event.occurredAt)}</time>
+                    <Badge tone={
+                      event.visibility === 'public_timeline' ? 'gold' :
+                      event.visibility === 'wolf_private' ? 'danger' :
+                      event.visibility === 'role_private' ? 'purple' : 'info'
+                    }>
+                      {VISIBILITY_LABELS[event.visibility]}
+                    </Badge>
+                    <p>{describeEvent(event, playerName, { viewer: snapshot.viewer })}</p>
+                  </div>
+                ))}
+              </div>
+            </Card>
+            <Card className="v3-monitor-chat">
+              <div className="v3-panel-heading">
+                <div><span>全知观战聊天</span><h2>发言与狼人频道</h2></div>
+                <Badge tone="danger">含狼人频道</Badge>
+              </div>
+              <div className="v3-chat-list">
+                {chatMessages.length === 0 ? (
+                  <div className="v3-inline-note">当前还没有发言记录。</div>
+                ) : chatMessages.map((event) => {
+                  const actorId = eventActorId(event);
+                  const player = actorId ? playerById.get(actorId) : undefined;
+                  return (
+                    <ChatBubble
+                      key={event.eventId}
+                      author={playerName(actorId)}
+                      authorRole={player?.role ? ROLE_LABELS[player.role] : '身份未知'}
+                      time={formatEventTime(event.occurredAt)}
+                      variant={event.eventType === 'wolf.message' ? 'wolf' : 'other'}
+                      speakerTone={player ? seatColorIndex(player.order) : undefined}
+                      visibility={event.visibility}
+                      avatarAsset={player ? getAvatarAsset(player.isAI ? 'computer' : 'player') : avatarAssetMap.spectator}
+                    >
+                      {describeEvent(event, playerName, { viewer: snapshot.viewer })}
+                    </ChatBubble>
+                  );
+                })}
+              </div>
+            </Card>
+          </div>
         }
         right={
           <Card>

@@ -7,6 +7,7 @@ import type { VisualAsset } from './assetRegistry';
 interface ChatBubbleProps {
   author: string;
   time: string;
+  authorRole?: string;
   children: React.ReactNode;
   variant?: 'self' | 'other' | 'system' | 'wolf';
   visibility?: EventVisibility;
@@ -17,6 +18,7 @@ interface ChatBubbleProps {
 export function ChatBubble({
   author,
   time,
+  authorRole,
   children,
   variant = 'other',
   visibility = 'public_timeline',
@@ -48,6 +50,7 @@ export function ChatBubble({
       )}>
         <header>
           <strong>{author}</strong>
+          {authorRole ? <span className="v3-chat-role">{authorRole}</span> : null}
           {variant === 'wolf' ? (
             <Badge tone="danger"><ShieldAlert size={12} />狼人频道</Badge>
           ) : null}
