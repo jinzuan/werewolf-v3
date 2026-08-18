@@ -15,6 +15,7 @@ interface SeatProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'child
   avatar?: ReactNode;
   avatarAsset?: VisualAsset;
   selected?: boolean;
+  colorTone?: number;
   statusLabel?: string;
   meta?: string;
 }
@@ -51,6 +52,7 @@ export function Seat({
   avatar,
   avatarAsset,
   selected = false,
+  colorTone,
   statusLabel,
   meta,
   className,
@@ -68,6 +70,7 @@ export function Seat({
         'ww-seat',
         `ww-seat--${kind}`,
         `ww-seat--${presence}`,
+        colorTone === undefined ? undefined : `v3-seat-color-${colorTone}`,
         selected && 'is-selected',
         disabled && 'is-disabled',
         className,

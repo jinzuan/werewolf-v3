@@ -43,6 +43,7 @@ import { formatCountdown } from '../../v3/countdown';
 import { MAX_EVENT_WINDOW } from '../../v3/eventStream';
 import { chatEventsForViewer } from '../../v3/visibility';
 import { viewerPlayerId } from '../../v3/session';
+import { seatColorClass, seatColorIndex } from '../../v3/seatColors';
 
 const ROLE_DESCRIPTIONS = {
   wolf: '夜间与狼人队友讨论并决定袭击目标。',
@@ -182,7 +183,7 @@ export function GamePage() {
     : null;
   const speakerToneFor = (id: string | null): number => {
     const player = players.find((candidate) => candidate.id === id);
-    return player ? Math.max(0, (player.order - 1) % 6) : 0;
+    return player ? seatColorIndex(player.order) : 0;
   };
   const eventActorId = (event: (typeof visibleEvents)[number]): string | null => {
     const actorId = event.payload?.actorId;
@@ -446,7 +447,7 @@ export function GamePage() {
                   return (
                     <button
                       key={player.id}
-                      className={`v3-player-seat v3-player-seat--status-${status} ${!player.isAlive ? 'is-dead' : ''} ${selectedTarget === player.id ? 'is-selected' : ''} ${hasActiveSpeaker && currentSpeakerId === player.id ? `is-speaking v3-player-seat--speaker-${speakerToneFor(player.id)}` : ''}`}
+                      className={`v3-player-seat ${seatColorClass(player.order)} v3-player-seat--status-${status} ${!player.isAlive ? 'is-dead' : ''} ${selectedTarget === player.id ? 'is-selected' : ''} ${hasActiveSpeaker && currentSpeakerId === player.id ? `is-speaking v3-player-seat--speaker-${speakerToneFor(player.id)}` : ''}`}
                       aria-current={hasActiveSpeaker && currentSpeakerId === player.id ? 'true' : undefined}
                       aria-label={`${playerLabel}，${statusLabel}${targetable ? '，可选择' : ''}`}
                       title={`${playerLabel} · ${statusLabel}`}
@@ -666,7 +667,7 @@ export function GamePage() {
               </div>
               {currentSpeakerName ? (
                 <div
-                  className={`v3-current-speaker v3-current-speaker--${speakerToneFor(currentSpeakerId)}`}
+                  className={`v3-current-speaker v3-seat-color-${speakerToneFor(currentSpeakerId)}`}
                   aria-live="polite"
                 >
                   <span className="v3-current-speaker__dot" />

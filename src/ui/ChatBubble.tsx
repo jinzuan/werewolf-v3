@@ -33,7 +33,11 @@ export function ChatBubble({
   }
 
   return (
-    <div className={cn('v3-chat-row', `v3-chat-row--${variant}`)}>
+    <div className={cn(
+      'v3-chat-row',
+      `v3-chat-row--${variant}`,
+      speakerTone === undefined ? undefined : `v3-seat-color-${speakerTone}`,
+    )}>
       <span className="v3-chat-avatar" aria-hidden="true">
         {avatarAsset ? <img src={avatarAsset.src} alt="" /> : <span>{author.slice(0, 1)}</span>}
       </span>

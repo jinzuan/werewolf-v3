@@ -49,14 +49,15 @@ export function PlayerSeatGrid({ room, onSeatListFocus }: PlayerSeatGridProps) {
             ? member.isAI || member.ready ? 'ready' : 'online'
             : 'offline';
           return (
-            <Seat
-              key={member.id}
-              seatNumber={seatIndex + 1}
+              <Seat
+                key={member.id}
+                seatNumber={seatIndex + 1}
               name={member.name}
               kind={kind}
               presence={presence}
-              host={member.isHost}
-              statusLabel={memberReadyLabel(member)}
+                host={member.isHost}
+                colorTone={seatIndex}
+                statusLabel={memberReadyLabel(member)}
               avatarAsset={member.isAI ? avatarAssetMap.computer : avatarAssetMap.player}
               disabled
             />
