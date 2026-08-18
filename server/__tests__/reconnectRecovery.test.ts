@@ -3,10 +3,12 @@ import { createServer as createHttpServer } from 'node:http';
 import test from 'node:test';
 import { io as createClient, type Socket } from 'socket.io-client';
 import { Server } from 'socket.io';
+import type { DomainEvent } from '../../shared/events';
 import { InMemoryEventStore } from '../events/store';
 import { InMemoryRoomRepository } from '../rooms/repository';
 import { RoomService } from '../rooms/roomService';
 import { bindSocketTransport } from '../transport/socketTransport';
+import { createRequest, startRoom } from './fixtures';
 
 type SocketAck = {
   ok: boolean;
@@ -32,6 +34,9 @@ const waitFor = async (
 
 const emitCommand = <T>(socket: Socket, request: unknown): Promise<T> =>
   new Promise((resolve) => socket.emit('v3:command', request, resolve));
+
+const emitEvents = <T>(socket: Socket, request: unknown): Promise<T> =>
+  new Promise((resolve) => socket.emit('v3:events', request, resolve));
 
 test('socket reconnection can resume the same seat repeatedly after a five-minute gap', async () => {
   let now = 0;
@@ -115,6 +120,117 @@ test('socket reconnection can resume the same seat repeatedly after a five-minut
         );
       }
     }
+  } finally {
+    host.disconnect();
+    await rooms.close();
+    await new Promise<void>((resolve) => io.close(() => resolve()));
+    await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+  }
+});
+
+test('long reconnect replays every event after the persisted watermark across pages', async () => {
+  const eventStore = new InMemoryEventStore();
+  const rooms = new RoomService(new InMemoryRoomRepository(), eventStore, {
+    roomSweepIntervalMs: 0,
+  });
+  const created = await rooms.create({
+    ...createRequest(rooms, 'host', 'long-reconnect-create', 'long reconnect room'),
+  });
+  const httpServer = createHttpServer();
+  const io = new Server(httpServer, { cors: { origin: true } });
+  bindSocketTransport(io, rooms);
+  await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
+  const address = httpServer.address();
+  assert.ok(address && typeof address === 'object');
+  const url = `http://127.0.0.1:${address.port}`;
+  const host = createClient(url, {
+    auth: { resumeToken: created.credentials.resumeToken },
+    transports: ['websocket'],
+    reconnection: false,
+  });
+
+  try {
+    const identity = await rooms.identity(
+      created.room.code,
+      'host',
+      created.credentials.resumeToken,
+    );
+    await startRoom(rooms, identity, 'long-reconnect');
+    const session = rooms.session(created.room.code);
+    assert.ok(session);
+    const initial = session.serialize();
+    const gameId = session.gameId;
+    const history = Array.from({ length: 250 }, (_, index): DomainEvent => {
+      const sequence = initial.state.sequence + index + 1;
+      return {
+        eventId: `offline-${sequence}`,
+        roomId: created.room.id,
+        gameId,
+        sequence,
+        occurredAt: sequence,
+        phase: 'day',
+        stage: 'speech',
+        actorId: 'host',
+        eventType: 'day.speech',
+        payload: { content: `离线期间事件-${sequence}` },
+        visibility: 'public_timeline',
+        correlationId: `offline-command-${sequence}`,
+        schemaVersion: 1,
+      };
+    });
+    await eventStore.append({
+      streamId: `game:${gameId}`,
+      expectedVersion: initial.state.streamVersion,
+      events: history,
+    });
+
+    await waitForConnect(host);
+    const resumed = await emitCommand<SocketAck>(host, {
+      meta: {
+        commandId: 'long-reconnect-resume',
+        actorId: 'host',
+        sentAt: Date.now(),
+      },
+      actorName: 'Host',
+      command: {
+        type: 'room.resume',
+        payload: {
+          roomCode: created.room.code,
+          afterSequence: initial.state.sequence,
+        },
+      },
+    });
+    assert.equal(resumed.ok, true);
+
+    type EventsAck = {
+      ok: boolean;
+      afterSequence: number;
+      lastSequence: number;
+      events: DomainEvent[];
+      hasMore: boolean;
+      nextAfterSequence: number | null;
+    };
+    const received: DomainEvent[] = [];
+    let afterSequence = initial.state.sequence;
+    for (;;) {
+      const page = await emitEvents<EventsAck>(host, {
+        roomCode: created.room.code,
+        actorId: 'host',
+        afterSequence,
+        limit: 200,
+      });
+      assert.equal(page.ok, true);
+      received.push(...page.events);
+      if (!page.hasMore) break;
+      assert.ok(page.nextAfterSequence !== null);
+      assert.ok(page.nextAfterSequence > afterSequence);
+      afterSequence = page.nextAfterSequence;
+    }
+
+    assert.deepEqual(
+      received.map((event) => event.sequence),
+      history.map((event) => event.sequence),
+    );
   } finally {
     host.disconnect();
     await rooms.close();

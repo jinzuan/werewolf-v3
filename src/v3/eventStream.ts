@@ -17,6 +17,8 @@ export interface EventStreamState {
 
 export interface EventStreamMergeResult extends EventStreamState {
   accepted: boolean;
+  /** The envelope starts after a local gap and must be replayed from the watermark. */
+  needsRecovery?: boolean;
 }
 
 export const mergeEventEnvelope = (
@@ -50,22 +52,28 @@ export const mergeEventEnvelope = (
   for (const event of visible) merged.set(event.eventId, event);
   const cursor = envelope.hasMore === true
     ? envelope.nextAfterSequence ?? envelope.afterSequence
-    : envelope.lastSequence
-      ?? envelope.nextAfterSequence
-      ?? envelope.afterSequence;
+      : envelope.lastSequence
+        ?? envelope.nextAfterSequence
+        ?? envelope.afterSequence;
+  const startsAfterLocalWatermark = envelope.afterSequence > state.lastSeenSeq;
+  const hasStalledPage = envelope.hasMore === true &&
+    envelope.afterSequence >= state.lastSeenSeq &&
+    cursor <= state.lastSeenSeq;
+  const needsRecovery = startsAfterLocalWatermark || hasStalledPage;
 
   return {
     roomId: state.roomId,
     gameId: state.gameId,
     lastSeenSeq: Math.max(
       state.lastSeenSeq,
-      envelope.afterSequence,
-      cursor,
-      ...scoped.map((event) => event.sequence),
+      ...(needsRecovery
+        ? []
+        : [envelope.afterSequence, cursor, ...scoped.map((event) => event.sequence)]),
     ),
     events: [...merged.values()]
       .sort((left, right) => left.sequence - right.sequence)
       .slice(-MAX_EVENT_WINDOW),
     accepted: true,
+    ...(needsRecovery ? { needsRecovery: true } : {}),
   };
 };

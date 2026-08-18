@@ -471,7 +471,7 @@ test('matching event envelopes advance a monotonic cursor and deduplicate', () =
     type: 'game.events',
     roomId: 'room-1',
     gameId: 'game-1',
-    afterSequence: 2,
+    afterSequence: 0,
     events: [first, second, second],
   };
   const merged = mergeEventEnvelope(

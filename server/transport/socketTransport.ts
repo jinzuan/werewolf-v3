@@ -232,9 +232,14 @@ export function bindSocketTransport(
     });
     const events = page.events;
     const snapshot = await rooms.snapshot(identity);
+    const pageCursor = page.nextAfterSequence ?? afterSequence;
+    const hasMore = page.hasMore || snapshot.lastSequence > pageCursor;
+    const nextAfterSequence = page.nextAfterSequence ?? afterSequence;
     targetState.lastSequence = page.hasMore
-      ? (page.nextAfterSequence ?? afterSequence)
-      : Math.max(afterSequence, snapshot.lastSequence, events.at(-1)?.sequence ?? afterSequence);
+      ? nextAfterSequence
+      : hasMore
+        ? nextAfterSequence
+        : Math.max(afterSequence, snapshot.lastSequence, pageCursor, events.at(-1)?.sequence ?? afterSequence);
     target.emit('v3:events', {
       type: 'game.events',
       roomId: snapshot.roomId,
@@ -243,8 +248,8 @@ export function bindSocketTransport(
       lastSequence: snapshot.lastSequence,
       ...(page.beforeSequence === undefined ? {} : { beforeSequence: page.beforeSequence }),
       limit: page.limit,
-      hasMore: page.hasMore,
-      nextAfterSequence: page.nextAfterSequence,
+      hasMore,
+      nextAfterSequence,
       nextBeforeSequence: page.nextBeforeSequence,
       events,
     });
@@ -467,6 +472,12 @@ export function bindSocketTransport(
               throw new RoomServiceError({ code: 'IDENTITY_ALREADY_BOUND', messageKey: 'room.error.identity_already_bound' });
             }
             const resumeToken = (socket.handshake.auth as { resumeToken?: string }).resumeToken;
+            const afterSequence = command.type === 'room.resume'
+              ? command.payload.afterSequence ?? 0
+              : command.payload.afterSequence;
+            if (!Number.isSafeInteger(afterSequence) || afterSequence < 0) {
+              throw new RoomServiceError({ code: 'INVALID_COMMAND', messageKey: 'room.error.invalid_command' });
+            }
             const access = await rooms.resume(command.payload.roomCode, meta.actorId, resumeToken);
             const identity = await bind(access, meta.actorId);
             if (command.type === 'spectator.resume') {
@@ -474,6 +485,10 @@ export function bindSocketTransport(
               state(socket).lastSequence = events.at(-1)?.sequence ?? command.payload.afterSequence;
               ack?.({ ok: true, ...access, events });
             } else {
+              // This only seeds the transport's delivery cursor. Recovery
+              // still reads the authoritative history below, so a stale
+              // browser cursor can never make the server discard events.
+              state(socket).lastSequence = afterSequence;
               ack?.({ ok: true, ...access });
             }
             await pushRoom(access.room.code, 'reconnected');
@@ -626,7 +641,7 @@ export function bindSocketTransport(
     socket.on(
       'v3:events',
       async (
-        request: { roomCode?: string; actorId?: string; afterSequence?: number },
+        request: { roomCode?: string; actorId?: string; afterSequence?: number; limit?: number },
         ack?: (response: unknown) => void,
       ) => {
         try {
@@ -638,16 +653,47 @@ export function bindSocketTransport(
           if (!Number.isSafeInteger(afterSequence) || afterSequence < 0) {
             throw new RoomServiceError({ code: 'INVALID_COMMAND', messageKey: 'room.error.invalid_command' });
           }
-          const events = await rooms.events(identity, afterSequence);
-          const snapshot = await rooms.snapshot(identity);
-          state(socket).lastSequence = snapshot.lastSequence;
+          const limit = request.limit === undefined
+            ? EVENT_HISTORY_MAX_LIMIT
+            : request.limit;
+          if (!Number.isSafeInteger(limit) || limit < 1 || limit > EVENT_HISTORY_MAX_LIMIT) {
+            throw new RoomServiceError({ code: 'INVALID_COMMAND', messageKey: 'room.error.invalid_command' });
+          }
+          let page = await rooms.eventsPage(identity, {
+            afterSequence,
+            limit,
+          });
+          let snapshot = await rooms.snapshot(identity);
+          // Avoid returning a non-progressing page when the first read saw no
+          // events but the following snapshot saw a commit. The client can
+          // safely continue from the same watermark only when a page contains
+          // a real raw-stream cursor.
+          for (let attempt = 0; attempt < 2; attempt += 1) {
+            const firstPageCursor = page.nextAfterSequence ?? afterSequence;
+            if (firstPageCursor !== afterSequence || snapshot.lastSequence <= firstPageCursor) break;
+            page = await rooms.eventsPage(identity, { afterSequence, limit });
+            snapshot = await rooms.snapshot(identity);
+          }
+          // The snapshot is read after the page. If a new event committed in
+          // between, force another page instead of advancing the socket
+          // cursor past an event that was not in this response.
+          const pageCursor = page.nextAfterSequence ?? afterSequence;
+          const hasMore = page.hasMore || snapshot.lastSequence > pageCursor;
+          const nextAfterSequence = page.nextAfterSequence ?? afterSequence;
+          state(socket).lastSequence = hasMore
+            ? nextAfterSequence
+            : Math.max(afterSequence, snapshot.lastSequence, pageCursor);
           ack?.({
             ok: true,
             roomId: snapshot.roomId,
             gameId: snapshot.gameId,
             afterSequence,
             lastSequence: snapshot.lastSequence,
-            events,
+            limit: page.limit,
+            hasMore,
+            nextAfterSequence,
+            nextBeforeSequence: page.nextBeforeSequence,
+            events: page.events,
           });
         } catch (error) {
           ack?.(errorResponse(error));

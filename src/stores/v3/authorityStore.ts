@@ -443,6 +443,11 @@ export const useV3Store = create<V3Store>()((set, get) => {
     if (!stream) return false;
     const result = mergeEventEnvelope(stream, envelope, viewer);
     if (!result.accepted) return false;
+    // A live push can have been produced from a newer server-side cursor
+    // while the browser was suspended or while another push was in flight.
+    // Do not commit that future cursor locally: the caller will recover from
+    // the durable watermark and fetch the missing range.
+    if (result.needsRecovery) return false;
     const nextSession = setCursor(
       session,
       result.gameId,
@@ -453,10 +458,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
     return true;
   };
 
-  const acceptSnapshot = (
-    incoming: ProjectedSnapshot,
-    preserveCursor = false,
-  ): boolean => {
+  const acceptSnapshot = (incoming: ProjectedSnapshot): boolean => {
     const current = get();
     const session = current.session;
     if (
@@ -472,17 +474,16 @@ export const useV3Store = create<V3Store>()((set, get) => {
     const pending = bufferedGameMessages.filter((message) =>
       message.roomId === incoming.roomId && message.gameId === incoming.gameId,
     );
-    const pendingStart = pending.length > 0
-      ? Math.min(...pending.map((message) => message.afterSequence))
-      : undefined;
     const nextSession = setCursor(
       session,
       incoming.gameId,
-      preserveCursor
-        ? session.lastSeenSeq
-        : pendingStart === undefined
-          ? Math.max(session.lastSeenSeq, incoming.lastSequence)
-          : Math.max(session.lastSeenSeq, pendingStart),
+      // A snapshot describes state at `lastSequence`; it does not prove that
+      // the client has received the event history leading to that state. The
+      // event replay below is the only operation allowed to advance the
+      // watermark. Pending pushes are also kept at the local cursor because
+      // their transport `afterSequence` may belong to a different socket
+      // push that the browser never observed.
+      session.lastSeenSeq,
     );
     if (sessionIdentityChanged(session, nextSession)) {
       persistSessionIdentity(nextSession);
@@ -521,30 +522,49 @@ export const useV3Store = create<V3Store>()((set, get) => {
     }
     const accepted = acceptSnapshot(
       response.snapshot,
-      current.session.gameId === response.snapshot.gameId,
     );
     if (!accepted) return false;
 
     const session = get().session;
     if (!session) return false;
-    const eventsResponse = await fetchV3Events(
-      session.roomCode,
-      session.actorId,
-      session.lastSeenSeq,
-    );
-    if (eventsResponse.ok === false) {
-      set({ error: responseMessage(eventsResponse) });
-      return false;
+    let afterSequence = session.lastSeenSeq;
+    for (;;) {
+      const eventsResponse = await fetchV3Events(
+        session.roomCode,
+        session.actorId,
+        afterSequence,
+      );
+      if (eventsResponse.ok === false) {
+        set({ error: responseMessage(eventsResponse) });
+        return false;
+      }
+      const merged = acceptEnvelope({
+        type: 'game.events',
+        roomId: eventsResponse.roomId,
+        gameId: eventsResponse.gameId,
+        afterSequence: eventsResponse.afterSequence,
+        lastSequence: eventsResponse.lastSequence,
+        limit: eventsResponse.limit,
+        hasMore: eventsResponse.hasMore,
+        nextAfterSequence: eventsResponse.nextAfterSequence,
+        nextBeforeSequence: eventsResponse.nextBeforeSequence,
+        events: eventsResponse.events,
+      });
+      if (!merged) return false;
+      if (eventsResponse.hasMore !== true) break;
+
+      const nextAfterSequence = eventsResponse.nextAfterSequence;
+      const currentAfterSequence = get().session?.lastSeenSeq ?? afterSequence;
+      if (
+        nextAfterSequence === null ||
+        nextAfterSequence === undefined ||
+        nextAfterSequence <= afterSequence && currentAfterSequence <= afterSequence
+      ) {
+        set({ error: '事件补拉游标未前进，已停止自动重试。' });
+        return false;
+      }
+      afterSequence = Math.max(nextAfterSequence, currentAfterSequence);
     }
-    const merged = acceptEnvelope({
-      type: 'game.events',
-      roomId: eventsResponse.roomId,
-      gameId: eventsResponse.gameId,
-      afterSequence: eventsResponse.afterSequence,
-      lastSequence: eventsResponse.lastSequence,
-      events: eventsResponse.events,
-    });
-    if (!merged) return false;
     if (get().room?.status === 'ended') await refreshReview();
     return true;
   };
@@ -692,6 +712,9 @@ export const useV3Store = create<V3Store>()((set, get) => {
         }
       }),
       subscribeV3Snapshots((message) => {
+        const before = get();
+        const beforeCursor = before.session?.lastSeenSeq ?? 0;
+        const hadSnapshot = before.snapshot !== null;
         const accepted = acceptSnapshot(message.snapshot);
         if (!accepted) {
           const current = get();
@@ -701,6 +724,21 @@ export const useV3Store = create<V3Store>()((set, get) => {
           ) {
             void recover();
           }
+          return;
+        }
+        const current = get();
+        if (
+          current.session &&
+          current.room &&
+          isRoomStatusWithGame(current.room.status) &&
+          current.room.gameId &&
+          !current.recovering &&
+          (!hadSnapshot || message.snapshot.lastSequence > beforeCursor)
+        ) {
+          // A snapshot is state, not history. Always reconcile when it is the
+          // first projection after a reconnect or advertises a stream cursor
+          // beyond the locally covered watermark.
+          void recoverGameProjection();
         }
       }),
       subscribeV3Errors((response) => {

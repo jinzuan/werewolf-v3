@@ -33,6 +33,7 @@ import type {
   SpectatorCommand,
   V3Command,
 } from '../../shared/protocol';
+import { EVENT_HISTORY_MAX_LIMIT } from '../../shared/protocol';
 import { getServerEndpoint } from './serverEndpoint';
 
 /**
@@ -555,14 +556,20 @@ export const resumeV3Room = (
   roomCode: string,
   _roomId?: string,
   resumeToken?: string,
-  _afterSequence?: number,
+  afterSequence?: number,
 ): Promise<ClientAck<ResumeRoomAck extends ProtocolAck<infer P> ? P : never>> =>
   emitAck(
     openRoomConnection({ resumeToken }, true),
     'v3:command',
     roomReadRequest(
       actorId,
-      { type: 'room.resume', payload: { roomCode } },
+      {
+        type: 'room.resume',
+        payload: {
+          roomCode,
+          ...(afterSequence === undefined ? {} : { afterSequence }),
+        },
+      },
       actorName,
     ),
   );
@@ -728,9 +735,10 @@ export const fetchV3Events = (
   roomCode: string,
   actorId: string,
   afterSequence = 0,
+  limit = EVENT_HISTORY_MAX_LIMIT,
 ): Promise<ClientAck<GameEventsAck extends ProtocolAck<infer P> ? P : never>> =>
   emitAck(
     openRoomConnection(),
     'v3:events',
-    { roomCode, actorId, afterSequence },
+    { roomCode, actorId, afterSequence, limit },
   );

@@ -297,7 +297,7 @@ export type RoomReadCommand =
   | { type: 'catalog.get'; payload: EmptyRoomCommandPayload }
   | { type: 'room.create'; payload: CreateRoomCommandPayload }
   | { type: 'room.join'; payload: { roomCode: string; joinToken?: string } }
-  | { type: 'room.resume'; payload: { roomCode: string } }
+  | { type: 'room.resume'; payload: { roomCode: string; afterSequence?: number } }
   | { type: 'room.get'; payload: { roomCode: string } }
   | { type: 'room.ai_config.get'; payload: EmptyRoomCommandPayload }
   | { type: 'room.command_receipt'; payload: { commandId: string } }
