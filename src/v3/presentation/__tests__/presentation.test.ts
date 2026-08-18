@@ -135,6 +135,34 @@ test('狼人能看到狼队最终锁定的袭击目标，其他玩家只能看�
   );
 });
 
+test('公开放逐结果展示 AI 投票理由，投票前事件不展示票型', () => {
+  const playerName = (id: string | null) =>
+    id === 'p1' ? '一号玩家' : id === 'p2' ? '二号玩家' : '未知目标';
+  const history = [
+    { voterId: 'p1', targetId: 'p2', reason: '票型判断' },
+    { voterId: 'p2', targetId: null, reason: '暂不确定' },
+  ];
+  const spectator = {
+    kind: 'spectator' as const,
+    spectatorId: 'watcher-1',
+    omniscient: false,
+  };
+
+  assert.equal(
+    describeEvent(event('day.exile_result', { voteHistory: history }), playerName, {
+      viewer: spectator,
+    }),
+    '放逐投票已锁定，结果待结算。 投票明细：一号玩家投票给二号玩家（理由：票型判断）；二号玩家弃票（理由：暂不确定）',
+  );
+  assert.equal(
+    describeEvent({
+      ...event('day.exile_result', { voteHistory: history }),
+      visibility: 'role_private',
+    }, playerName, { viewer: spectator }),
+    '放逐投票已锁定，结果待结算。',
+  );
+});
+
 test('未知错误码使用安全兜底并提供恢复意图', () => {
   assert.equal(getErrorMessage('not-a-protocol-code'), '请求未完成，请稍后重试。');
   assert.equal(getErrorMessage('__proto__'), '请求未完成，请稍后重试。');

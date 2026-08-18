@@ -149,6 +149,42 @@ const winnerLabel = (winner: unknown): string => {
   return '胜负结果未知';
 };
 
+/** Vote reasons become public only in the post-lock result events. */
+const publicVoteDetails = (
+  event: DomainEvent,
+  payload: Record<string, unknown>,
+  playerName: (id: string | null) => string,
+): string => {
+  if (event.visibility !== 'public_timeline' || !Array.isArray(payload.voteHistory)) {
+    return '';
+  }
+  return payload.voteHistory
+    .flatMap((ballot): string[] => {
+      if (ballot === null || typeof ballot !== 'object') return [];
+      const item = ballot as Record<string, unknown>;
+      const voter = safePlayerName(playerName, idFrom(item, 'voterId'));
+      const targetId = idFrom(item, 'targetId');
+      const target = targetId === null
+        ? '弃票'
+        : safePlayerName(playerName, targetId);
+      const reason = textValue(item.reason, '').slice(0, 80);
+      return [
+        `${voter}${targetId === null ? '弃票' : `投票给${target}`}${reason ? `（理由：${reason}）` : ''}`,
+      ];
+    })
+    .join('；');
+};
+
+const appendPublicVoteDetails = (
+  event: DomainEvent,
+  payload: Record<string, unknown>,
+  base: string,
+  playerName: (id: string | null) => string,
+): string => {
+  const details = publicVoteDetails(event, payload, playerName);
+  return details ? `${base} 投票明细：${details}` : base;
+};
+
 /**
  * Render a projected event without ever using eventType as a fallback.
  * Payload text is player-authored content and is therefore preserved; domain
@@ -240,13 +276,33 @@ export const describeEvent = (
     case 'day.vote_cast':
       return `${actor}已投票。`;
     case 'day.revote_required':
-      return '本轮出现平票，将在候选人中重新投票。';
+      return appendPublicVoteDetails(
+        event,
+        payload,
+        '本轮出现平票，将在候选人中重新投票。',
+        playerName,
+      );
     case 'day.exile_result':
-      return '放逐投票已锁定，结果待结算。';
+      return appendPublicVoteDetails(
+        event,
+        payload,
+        '放逐投票已锁定，结果待结算。',
+        playerName,
+      );
     case 'day.no_exile':
-      return '本轮无人出局。';
+      return appendPublicVoteDetails(
+        event,
+        payload,
+        '本轮无人出局。',
+        playerName,
+      );
     case 'day.exiled':
-      return `${target}被投票出局。`;
+      return appendPublicVoteDetails(
+        event,
+        payload,
+        `${target}被投票出局。`,
+        playerName,
+      );
     case 'day.ended':
       return `第 ${dayFrom(payload)} 天结束。`;
     case 'hunter.entitled':
