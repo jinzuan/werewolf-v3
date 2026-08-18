@@ -28,6 +28,14 @@ import { formatCountdown } from '../../v3/countdown';
 import { chatEventsForViewer } from '../../v3/visibility';
 import { seatColorClass, seatColorIndex } from '../../v3/seatColors';
 
+type MonitorSeatStatus = 'alive' | 'dead' | 'exiled';
+
+const monitorSeatStatusLabel: Record<MonitorSeatStatus, string> = {
+  alive: '存活',
+  dead: '已死亡',
+  exiled: '流放',
+};
+
 export function MonitorPage() {
   const connected = useV3Store((state) => state.connected);
   const session = useV3Store((state) => state.session);
@@ -76,6 +84,26 @@ export function MonitorPage() {
     () => new Map(players.map((player) => [player.id, player])),
     [players],
   );
+  const seatStatuses = useMemo(() => {
+    const statuses = new Map<string, MonitorSeatStatus>(
+      players.map((player) => [player.id, player.isAlive ? 'alive' : 'dead']),
+    );
+    for (const event of events) {
+      const payload = event.payload as Record<string, unknown>;
+      if (event.eventType === 'day.exiled' && typeof payload.playerId === 'string') {
+        statuses.set(payload.playerId, 'exiled');
+      }
+      if (event.eventType === 'hunter.shot' && typeof payload.targetId === 'string') {
+        statuses.set(payload.targetId, 'dead');
+      }
+      if (event.eventType === 'night.resolved' && Array.isArray(payload.deaths)) {
+        for (const playerId of payload.deaths) {
+          if (typeof playerId === 'string') statuses.set(playerId, 'dead');
+        }
+      }
+    }
+    return statuses;
+  }, [events, players]);
 
   useEffect(() => {
     setFlippedPlayers(new Set());
@@ -152,8 +180,10 @@ export function MonitorPage() {
           <Card>
             <div className="v3-panel-heading"><div><span>{players.length} 席完整身份</span><h2>身份摘要</h2></div></div>
             <div className="v3-identity-list">
-              {players.map((player) => (
-                <div key={player.id} className={`v3-monitor-identity-row ${seatColorClass(player.order)}${!player.isAlive ? ' is-dead' : ''}`}>
+              {players.map((player) => {
+                const status = seatStatuses.get(player.id) ?? (player.isAlive ? 'alive' : 'dead');
+                return (
+                <div key={player.id} className={`v3-monitor-identity-row ${seatColorClass(player.order)} is-${status}`}>
                   <button
                     type="button"
                     className={`v3-monitor-identity-flip${flippedPlayers.has(player.id) ? ' is-flipped' : ''}`}
@@ -172,19 +202,21 @@ export function MonitorPage() {
                         {player.role ? <img src={roleAssetMap[player.role].src} alt="" /> : null}
                       </span>
                     </span>
+                    <span className={`v3-monitor-identity-flip__status v3-monitor-identity-flip__status--${status}`} aria-label={monitorSeatStatusLabel[status]} />
                   </button>
                   <strong>
                     <span className="v3-numeric">{player.order.toString().padStart(2, '0')}</span>{' '}
                     <span className="v3-monitor-identity-name">{playerName(player.id)}</span>{player.isAI ? <span className="v3-ai-label">AI</span> : null}
                   </strong>
-                  <Badge tone={!player.isAlive ? 'danger' : 'success'}>{player.isAlive ? '存活' : '已出局'}</Badge>
+                  <Badge tone={status === 'alive' ? 'success' : status === 'exiled' ? 'neutral' : 'danger'}>{monitorSeatStatusLabel[status]}</Badge>
                   {flippedPlayers.has(player.id) ? (
                     <span className="v3-monitor-identity-role">
                       {player.role ? ROLE_LABELS[player.role] : '身份待分配'}
                     </span>
                   ) : null}
                 </div>
-              ))}
+                );
+              })}
             </div>
             <p className="v3-inline-note">点击座位头像翻开身份牌；身份、夜间私密行动和狼人频道仅在此全知视角显示。</p>
           </Card>
