@@ -1,4 +1,5 @@
 export * from './domainLabels';
+export * from './daySeparators';
 export * from './errorMessages';
 export * from './eventMessages';
 export * from './messageFormatter';

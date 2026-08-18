@@ -1519,6 +1519,27 @@ select {
 .v3-chat-bubble p { margin: 7px 0 0; overflow-wrap: anywhere; }
 .v3-chat-visibility { gap: 3px; }
 .v3-chat-system { display: grid; grid-template-columns: 42px 1fr; gap: var(--ww-space-2); padding: 7px 0; border-bottom: 1.5px solid var(--ww-border-default); color: var(--ww-text-muted); font-size: var(--ww-text-caption-size); }
+.v3-day-divider {
+  min-height: 34px;
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ww-space-3);
+  margin: var(--ww-space-2) 0;
+  color: var(--ww-state-warning);
+  font: 700 var(--ww-text-caption-size)/20px var(--ww-font-family-number);
+  letter-spacing: .04em;
+  text-align: center;
+  white-space: nowrap;
+}
+.v3-day-divider::before,
+.v3-day-divider::after {
+  width: min(72px, 16%);
+  height: 1px;
+  background: color-mix(in srgb, var(--ww-state-warning) 48%, var(--ww-border-default));
+  content: '';
+}
 .v3-chat-input { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--ww-space-2); margin-top: auto; padding-top: var(--ww-space-4); }
 .v3-chat-input-note { margin-top: auto; padding-top: var(--ww-space-4); color: var(--ww-text-muted); font-size: var(--ww-text-caption-size); }
 .v3-event-highlight, .v3-event-private { display: grid; gap: 4px; padding: var(--ww-space-3); border-radius: var(--ww-radius-control); background: color-mix(in srgb, var(--ww-moon-yellow) 14%, var(--ww-bg-subtle)); color: var(--ww-text-muted); font-size: var(--ww-text-caption-size); }
@@ -1659,6 +1680,15 @@ select {
 .v3-console-events { min-height: 0; max-height: min(62dvh, 660px); display: grid; overflow-y: auto; padding-right: var(--ww-space-1); scrollbar-gutter: stable; }
 .v3-console-events > div { min-height: 72px; display: grid; grid-template-columns: 62px 72px minmax(0, 1fr); align-items: start; gap: 10px; padding: 10px 0; border-bottom: 1.5px solid var(--ww-border-default); }
 .v3-console-events p { margin: 0; }
+.v3-console-events > .v3-day-divider,
+.v3-event-list > .v3-day-divider,
+.v3-timeline > .v3-day-divider {
+  min-height: 34px;
+  display: flex;
+  grid-template-columns: none;
+  padding: 0;
+  border-bottom: 0;
+}
 .v3-call-list > div { grid-template-columns: 20px minmax(72px, 1fr) minmax(86px, 1fr) auto; }
 .v3-call-list svg { color: var(--ww-state-success); }
 .v3-call-list .is-warning svg { color: var(--ww-state-warning); }

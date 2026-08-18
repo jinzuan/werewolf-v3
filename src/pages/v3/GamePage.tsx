@@ -4,7 +4,7 @@ import {
   Shield,
   UserRound,
 } from 'lucide-react';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { GameAction, GameState } from '../../../shared/types';
 import { AppShell } from '../../components/shell/AppShell';
 import { MatchShell } from '../../components/shell/MatchShell';
@@ -16,6 +16,7 @@ import { ChatBubble } from '../../ui/ChatBubble';
 import { Input } from '../../ui/Input';
 import { RoleCard } from '../../ui/RoleCard';
 import { RoleRevealCard } from '../../ui/RoleRevealCard';
+import { DayDivider } from '../../ui/DayDivider';
 import { getAvatarAsset } from '../../ui/assetRegistry';
 import {
   ACTION_DEFINITIONS,
@@ -683,11 +684,14 @@ export function GamePage() {
             <div className="v3-event-list">
               {systemEvents.length === 0 ? (
                 <span className="v3-inline-note">暂无系统通知。</span>
-              ) : systemEvents.map((event) => (
-                <div key={event.eventId} className="v3-event-item">
-                  <time>{formatEventTime(event.occurredAt)}</time>
-                  <p>{describeEvent(event, playerName, { viewer: snapshot.viewer })}</p>
-                </div>
+              ) : systemEvents.map((event, index) => (
+                <Fragment key={event.eventId}>
+                  <DayDivider event={event} previous={systemEvents[index - 1] ?? null} fallbackDay={state?.day ?? 1} />
+                  <div className="v3-event-item">
+                    <time>{formatEventTime(event.occurredAt)}</time>
+                    <p>{describeEvent(event, playerName, { viewer: snapshot.viewer })}</p>
+                  </div>
+                </Fragment>
               ))}
             </div>
           </details>
@@ -715,28 +719,30 @@ export function GamePage() {
                 {chatMessages.length === 0 ? (
                   <div className="v3-inline-note">还没有发言，等大家开口后会显示在这里。</div>
                 ) : (
-                  chatMessages.map((event) => {
+                  chatMessages.map((event, index) => {
                     const actorId = eventActorId(event);
                     return (
-                      <ChatBubble
-                        key={event.eventId}
-                        author={
-                          playerName(actorId)
-                        }
-                        time={formatEventTime(event.occurredAt)}
-                        variant={
-                          event.eventType === 'wolf.message'
-                            ? 'wolf'
-                            : actorId === myId
-                              ? 'self'
-                              : 'other'
-                        }
-                        speakerTone={speakerToneFor(actorId)}
-                        visibility={event.visibility}
-                        avatarAsset={avatarForPlayer(actorId)}
-                      >
-                        {describeEvent(event, playerName, { viewer: snapshot.viewer })}
-                      </ChatBubble>
+                      <Fragment key={event.eventId}>
+                        <DayDivider event={event} previous={chatMessages[index - 1] ?? null} fallbackDay={state?.day ?? 1} />
+                        <ChatBubble
+                          author={
+                            playerName(actorId)
+                          }
+                          time={formatEventTime(event.occurredAt)}
+                          variant={
+                            event.eventType === 'wolf.message'
+                              ? 'wolf'
+                              : actorId === myId
+                                ? 'self'
+                                : 'other'
+                          }
+                          speakerTone={speakerToneFor(actorId)}
+                          visibility={event.visibility}
+                          avatarAsset={avatarForPlayer(actorId)}
+                        >
+                          {describeEvent(event, playerName, { viewer: snapshot.viewer })}
+                        </ChatBubble>
+                      </Fragment>
                     );
                   })
                 )}

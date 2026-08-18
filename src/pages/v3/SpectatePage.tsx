@@ -1,10 +1,11 @@
 import { Eye, Radio, ShieldQuestion } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '../../components/shell/AppShell';
 import { MatchShell } from '../../components/shell/MatchShell';
 import { useV3Store } from '../../stores/v3Store';
 import { Badge } from '../../ui/Badge';
 import { Card } from '../../ui/Card';
+import { DayDivider } from '../../ui/DayDivider';
 import { avatarAssetMap } from '../../ui/assetRegistry';
 import {
   createPlayerNameResolver,
@@ -130,15 +131,18 @@ export function SpectatePage() {
             <div className="v3-timeline">
               {publicEvents.length === 0 ? (
                 <div className="v3-inline-note">当前还没有公开事件。</div>
-              ) : publicEvents.map((event) => (
-                <div key={event.eventId}>
-                  <time>{formatEventTime(event.occurredAt).slice(0, 5)}</time>
-                  <span className="v3-timeline__dot v3-timeline__dot--gold" />
+              ) : publicEvents.map((event, index) => (
+                <Fragment key={event.eventId}>
+                  <DayDivider event={event} previous={publicEvents[index - 1] ?? null} fallbackDay={snapshot.gameState.day} />
                   <div>
-                    <strong>{describeEvent(event, playerName, { viewer: snapshot.viewer })}</strong>
-                    <span>{VISIBILITY_LABELS[event.visibility]}</span>
+                    <time>{formatEventTime(event.occurredAt).slice(0, 5)}</time>
+                    <span className="v3-timeline__dot v3-timeline__dot--gold" />
+                    <div>
+                      <strong>{describeEvent(event, playerName, { viewer: snapshot.viewer })}</strong>
+                      <span>{VISIBILITY_LABELS[event.visibility]}</span>
+                    </div>
                   </div>
-                </div>
+                </Fragment>
               ))}
             </div>
           </Card>

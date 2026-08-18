@@ -1,10 +1,11 @@
 import { Bot, EyeOff, Radio } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '../../components/shell/AppShell';
 import { MatchShell } from '../../components/shell/MatchShell';
 import { useV3Store } from '../../stores/v3Store';
 import { Badge } from '../../ui/Badge';
 import { Card } from '../../ui/Card';
+import { DayDivider } from '../../ui/DayDivider';
 import { ChatBubble } from '../../ui/ChatBubble';
 import { Input } from '../../ui/Input';
 import { avatarAssetMap, getAvatarAsset, roleAssetMap } from '../../ui/assetRegistry';
@@ -228,18 +229,21 @@ export function MonitorPage() {
               <div className="v3-console-events">
                 {filteredEvents.length === 0 ? (
                   <div className="v3-inline-note">当前筛选条件下没有事件。</div>
-                ) : filteredEvents.map((event) => (
-                  <div key={event.eventId}>
-                    <time>{formatEventTime(event.occurredAt)}</time>
-                    <Badge tone={
-                      event.visibility === 'public_timeline' ? 'gold' :
-                      event.visibility === 'wolf_private' ? 'danger' :
-                      event.visibility === 'role_private' ? 'purple' : 'info'
-                    }>
-                      {VISIBILITY_LABELS[event.visibility]}
-                    </Badge>
-                    <p>{describeEvent(event, playerName, { viewer: snapshot.viewer })}</p>
-                  </div>
+                ) : filteredEvents.map((event, index) => (
+                  <Fragment key={event.eventId}>
+                    <DayDivider event={event} previous={filteredEvents[index - 1] ?? null} fallbackDay={snapshot.gameState.day} />
+                    <div>
+                      <time>{formatEventTime(event.occurredAt)}</time>
+                      <Badge tone={
+                        event.visibility === 'public_timeline' ? 'gold' :
+                        event.visibility === 'wolf_private' ? 'danger' :
+                        event.visibility === 'role_private' ? 'purple' : 'info'
+                      }>
+                        {VISIBILITY_LABELS[event.visibility]}
+                      </Badge>
+                      <p>{describeEvent(event, playerName, { viewer: snapshot.viewer })}</p>
+                    </div>
+                  </Fragment>
                 ))}
               </div>
             </Card>
@@ -251,22 +255,24 @@ export function MonitorPage() {
               <div className="v3-chat-list">
                 {chatMessages.length === 0 ? (
                   <div className="v3-inline-note">当前还没有发言记录。</div>
-                ) : chatMessages.map((event) => {
+                ) : chatMessages.map((event, index) => {
                   const actorId = eventActorId(event);
                   const player = actorId ? playerById.get(actorId) : undefined;
                   return (
-                    <ChatBubble
-                      key={event.eventId}
-                      author={playerName(actorId)}
-                      authorRole={player?.role ? ROLE_LABELS[player.role] : '身份未知'}
-                      time={formatEventTime(event.occurredAt)}
-                      variant={event.eventType === 'wolf.message' ? 'wolf' : 'other'}
-                      speakerTone={player ? seatColorIndex(player.order) : undefined}
-                      visibility={event.visibility}
-                      avatarAsset={player ? getAvatarAsset(player.isAI ? 'computer' : 'player') : avatarAssetMap.spectator}
-                    >
-                      {describeEvent(event, playerName, { viewer: snapshot.viewer })}
-                    </ChatBubble>
+                    <Fragment key={event.eventId}>
+                      <DayDivider event={event} previous={chatMessages[index - 1] ?? null} fallbackDay={snapshot.gameState.day} />
+                      <ChatBubble
+                        author={playerName(actorId)}
+                        authorRole={player?.role ? ROLE_LABELS[player.role] : '身份未知'}
+                        time={formatEventTime(event.occurredAt)}
+                        variant={event.eventType === 'wolf.message' ? 'wolf' : 'other'}
+                        speakerTone={player ? seatColorIndex(player.order) : undefined}
+                        visibility={event.visibility}
+                        avatarAsset={player ? getAvatarAsset(player.isAI ? 'computer' : 'player') : avatarAssetMap.spectator}
+                      >
+                        {describeEvent(event, playerName, { viewer: snapshot.viewer })}
+                      </ChatBubble>
+                    </Fragment>
                   );
                 })}
               </div>
