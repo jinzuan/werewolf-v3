@@ -1499,6 +1499,7 @@ select {
 .v3-player-seat--speaker-0, .v3-player-seat--speaker-1, .v3-player-seat--speaker-2, .v3-player-seat--speaker-3, .v3-player-seat--speaker-4, .v3-player-seat--speaker-5, .v3-player-seat--speaker-6, .v3-player-seat--speaker-7, .v3-player-seat--speaker-8, .v3-player-seat--speaker-9, .v3-player-seat--speaker-10, .v3-player-seat--speaker-11 { --v3-speaker-color: var(--v3-seat-color); }
 
 .v3-current-speaker {
+  flex: 0 0 auto;
   min-height: 38px;
   display: flex;
   align-items: center;
@@ -1548,6 +1549,7 @@ select {
 .v3-segmented--compact button { padding: 0 var(--ww-space-2); }
 
 .v3-chat-panel { height: 700px; max-height: calc(100dvh - 180px); min-height: 420px; display: flex; flex-direction: column; overflow: hidden; }
+.v3-chat-list-wrap { position: relative; min-height: 0; display: flex; flex: 1 1 auto; }
 .v3-chat-list { min-height: 0; flex: 1 1 auto; display: grid; align-content: start; gap: var(--ww-space-3); margin-top: var(--ww-space-4); padding: 0 var(--ww-space-1) 0 2px; overflow-y: auto; scrollbar-gutter: stable; }
 .v3-chat-row { min-width: 0; display: flex; align-items: flex-start; gap: var(--ww-space-2); }
 .v3-chat-row--self { flex-direction: row-reverse; }
@@ -1585,7 +1587,8 @@ select {
   background: color-mix(in srgb, var(--ww-state-warning) 48%, var(--ww-border-default));
   content: '';
 }
-.v3-chat-input { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--ww-space-2); margin-top: auto; padding-top: var(--ww-space-4); }
+.v3-chat-jump { position: absolute; right: 10px; bottom: 10px; z-index: 2; min-height: 36px; padding-inline: 10px; border: 1.5px solid var(--ww-border-default); background: color-mix(in srgb, var(--ww-bg-surface) 94%, transparent); box-shadow: var(--ww-shadow-card); }
+.v3-chat-input { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--ww-space-2); flex: 0 0 auto; margin-top: auto; padding-top: var(--ww-space-4); }
 .v3-chat-input-note { margin-top: auto; padding-top: var(--ww-space-4); color: var(--ww-text-muted); font-size: var(--ww-text-caption-size); }
 .v3-event-highlight, .v3-event-private { display: grid; gap: 4px; padding: var(--ww-space-3); border-radius: var(--ww-radius-control); background: color-mix(in srgb, var(--ww-moon-yellow) 14%, var(--ww-bg-subtle)); color: var(--ww-text-muted); font-size: var(--ww-text-caption-size); }
 .v3-event-highlight { border-left: 3px solid var(--ww-state-warning); }

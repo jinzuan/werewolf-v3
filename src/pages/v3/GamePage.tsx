@@ -1,4 +1,5 @@
 import {
+  ArrowDown,
   Check,
   Eye,
   List,
@@ -110,7 +111,10 @@ export function GamePage() {
   const [roleRevealed, setRoleRevealed] = useState(false);
   const [roleInfoOpen, setRoleInfoOpen] = useState(false);
   const chatInputRef = useRef<HTMLInputElement | null>(null);
+  const chatListRef = useRef<HTMLDivElement | null>(null);
+  const timelineListRef = useRef<HTMLDivElement | null>(null);
   const [chatInputFocused, setChatInputFocused] = useState(false);
+  const [chatAtBottom, setChatAtBottom] = useState(true);
   const [mobileSection, setMobileSection] = useState<GameMobileSection>('chat');
   const mobileActionKeyRef = useRef('');
 
@@ -379,6 +383,31 @@ export function GamePage() {
     }, Math.max(0, autoSkipAt - Date.now()));
     return () => window.clearTimeout(timer);
   }, [allowedActions, autoSkipSpeech, chatInputFocused, dispatch, message, myId, myPlayer?.role, state?.stageStartedAt]);
+
+  useLayoutEffect(() => {
+    if (mobileSection === 'chat') {
+      const list = chatListRef.current;
+      if (list) list.scrollTop = list.scrollHeight;
+      setChatAtBottom(true);
+    }
+    if (mobileSection === 'events') {
+      const list = timelineListRef.current;
+      if (list) list.scrollTop = list.scrollHeight;
+    }
+  }, [chatMessages.length, mobileSection, mobileTimelineEvents.length]);
+
+  const updateChatScrollPosition = () => {
+    const list = chatListRef.current;
+    if (!list) return;
+    setChatAtBottom(list.scrollHeight - list.scrollTop - list.clientHeight < 24);
+  };
+
+  const returnChatToBottom = () => {
+    const list = chatListRef.current;
+    if (!list) return;
+    list.scrollTo({ top: list.scrollHeight, behavior: 'smooth' });
+    setChatAtBottom(true);
+  };
 
   const submitAction = async () => {
     if (!activeAction) return;
@@ -769,7 +798,7 @@ export function GamePage() {
             <div className="v3-event-list v3-event-list--desktop">
               {renderSystemEvents(systemEvents)}
             </div>
-            <div className="v3-event-list v3-event-list--mobile">
+            <div ref={timelineListRef} className="v3-event-list v3-event-list--mobile">
               {renderSystemEvents(mobileTimelineEvents)}
             </div>
           </details>
@@ -793,73 +822,88 @@ export function GamePage() {
                   正在发言：<strong>{currentSpeakerName}</strong>
                 </div>
               ) : null}
-              <div className="v3-chat-list">
-                {chatMessages.length === 0 ? (
-                  <div className="v3-inline-note">还没有发言，等大家开口后会显示在这里。</div>
-                ) : (
-                  chatMessages.map((event, index) => {
-                    const actorId = eventActorId(event);
-                    return (
-                      <Fragment key={event.eventId}>
-                        <DayDivider event={event} previous={chatMessages[index - 1] ?? null} fallbackDay={state?.day ?? 1} />
-                        <ChatBubble
-                          author={
-                            playerName(actorId)
-                          }
-                          time={formatEventTime(event.occurredAt)}
-                          variant={
-                            event.eventType === 'wolf.message'
-                              ? 'wolf'
-                              : actorId === myId
-                                ? 'self'
-                                : 'other'
-                          }
-                          speakerTone={speakerToneFor(actorId)}
-                          visibility={event.visibility}
-                          avatarAsset={avatarForPlayer(actorId)}
-                        >
-                          {describeEvent(event, playerName, { viewer: snapshot.viewer })}
-                        </ChatBubble>
-                      </Fragment>
-                    );
-                  })
-                )}
-              </div>
-              {showsTextInput ? (
-                <form
-                  className="v3-chat-input"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    if (canSubmit) void submitAction();
-                  }}
+              <div className="v3-chat-list-wrap">
+                <div
+                  ref={chatListRef}
+                  className="v3-chat-list"
+                  onScroll={updateChatScrollPosition}
                 >
-                  <Input
-                    ref={chatInputRef}
-                    aria-label={lastWordsSkip ? '遗言内容' : '发言内容'}
-                    value={message}
-                    onFocus={() => setChatInputFocused(true)}
-                    onBlur={() => setChatInputFocused(false)}
-                    onChange={(event) =>
-                      setActionDraft((current) => ({
-                        ...current,
-                        message: event.target.value,
-                      }))
-                    }
-                    placeholder={
-                      lastWordsSkip
+                  {chatMessages.length === 0 ? (
+                    <div className="v3-inline-note">还没有发言，等大家开口后会显示在这里。</div>
+                  ) : (
+                    chatMessages.map((event, index) => {
+                      const actorId = eventActorId(event);
+                      return (
+                        <Fragment key={event.eventId}>
+                          <DayDivider event={event} previous={chatMessages[index - 1] ?? null} fallbackDay={state?.day ?? 1} />
+                          <ChatBubble
+                            author={
+                              playerName(actorId)
+                            }
+                            time={formatEventTime(event.occurredAt)}
+                            variant={
+                              event.eventType === 'wolf.message'
+                                ? 'wolf'
+                                : actorId === myId
+                                  ? 'self'
+                                  : 'other'
+                            }
+                            speakerTone={speakerToneFor(actorId)}
+                            visibility={event.visibility}
+                            avatarAsset={avatarForPlayer(actorId)}
+                          >
+                            {describeEvent(event, playerName, { viewer: snapshot.viewer })}
+                          </ChatBubble>
+                        </Fragment>
+                      );
+                    })
+                  )}
+                </div>
+                {!chatAtBottom && chatMessages.length > 0 ? (
+                  <Button
+                    type="button"
+                    variant="quiet"
+                    className="v3-chat-jump"
+                    onClick={returnChatToBottom}
+                  >
+                    <ArrowDown size={16} />回到最新
+                  </Button>
+                ) : null}
+              </div>
+              <form
+                className="v3-chat-input"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (canSubmit) void submitAction();
+                }}
+              >
+                <Input
+                  ref={chatInputRef}
+                  disabled={!showsTextInput || loading}
+                  aria-label={lastWordsSkip ? '遗言内容' : '发言内容'}
+                  value={message}
+                  onFocus={() => setChatInputFocused(true)}
+                  onBlur={() => setChatInputFocused(false)}
+                  onChange={(event) =>
+                    setActionDraft((current) => ({
+                      ...current,
+                      message: event.target.value,
+                    }))
+                  }
+                  placeholder={
+                    !showsTextInput
+                      ? '当前阶段不能发言'
+                      : lastWordsSkip
                         ? '填写放弃遗言的理由'
                         : activeAction === 'wolf_speak'
                           ? '发送到狼人频道'
                           : '输入本轮公开发言'
-                    }
-                  />
-                  <Button type="submit" disabled={loading || !canSubmit}>
-                    <MessageSquare size={17} />发送
-                  </Button>
-                </form>
-              ) : (
-                <div className="v3-chat-input-note">当前阶段不需要在聊天区输入内容。</div>
-              )}
+                  }
+                />
+                <Button type="submit" disabled={!showsTextInput || loading || !canSubmit}>
+                  <MessageSquare size={17} />发送
+                </Button>
+              </form>
             </Card>
           }
           />
