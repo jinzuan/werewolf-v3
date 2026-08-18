@@ -99,6 +99,8 @@ export function GamePage() {
   });
   const [roleRevealed, setRoleRevealed] = useState(false);
   const [roleInfoOpen, setRoleInfoOpen] = useState(false);
+  const chatInputRef = useRef<HTMLInputElement | null>(null);
+  const [chatInputFocused, setChatInputFocused] = useState(false);
 
   const state = snapshot?.gameState ?? null;
   const players = useMemo(() => snapshot?.players ?? [], [snapshot?.players]);
@@ -170,6 +172,10 @@ export function GamePage() {
   const playerName = useMemo(
     () => createPlayerNameResolver(players, room?.members ?? []),
     [players, room?.members],
+  );
+  const humanPlayerCount = useMemo(
+    () => room?.members.filter((member) => member.kind === 'player' && !member.isAI).length ?? 0,
+    [room?.members],
   );
   const hasActiveSpeaker =
     (state?.phase === 'day' &&
@@ -285,6 +291,37 @@ export function GamePage() {
         (activeAction === 'confirm_role' || resolvedTarget !== null)) ||
       (definition?.input === 'target' &&
         (resolvedTarget !== null || definition.allowsEmptyTarget === true)));
+
+  const autoSkipSpeech =
+    humanPlayerCount > 1 &&
+    state?.phase === 'day' &&
+    (dayStage === 'speech' || dayStage === 'discussion') &&
+    currentSpeakerId === myId &&
+    allowedActions.includes('skip_speech') &&
+    showsTextInput;
+
+  useEffect(() => {
+    if (!autoSkipSpeech) return undefined;
+    const stageStartedAt = state?.stageStartedAt ?? Date.now();
+    const autoSkipAt = stageStartedAt + 10_000;
+    const timer = window.setTimeout(() => {
+      const inputIsBusy =
+        chatInputFocused ||
+        document.activeElement === chatInputRef.current ||
+        message.trim().length > 0;
+      if (inputIsBusy) return;
+      const command = buildGameCommand({
+        actorId: myId,
+        actorRole: myPlayer?.role,
+        action: 'skip_speech',
+        allowedActions,
+        targetId: null,
+        content: '',
+      });
+      if (command) void dispatch(command);
+    }, Math.max(0, autoSkipAt - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [allowedActions, autoSkipSpeech, chatInputFocused, dispatch, message, myId, myPlayer?.role, state?.stageStartedAt]);
 
   const submitAction = async () => {
     if (!activeAction) return;
@@ -713,8 +750,11 @@ export function GamePage() {
                   }}
                 >
                   <Input
+                    ref={chatInputRef}
                     aria-label={lastWordsSkip ? '遗言内容' : '发言内容'}
                     value={message}
+                    onFocus={() => setChatInputFocused(true)}
+                    onBlur={() => setChatInputFocused(false)}
                     onChange={(event) =>
                       setActionDraft((current) => ({
                         ...current,

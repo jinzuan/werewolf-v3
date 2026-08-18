@@ -1360,8 +1360,8 @@ select {
 .v3-segmented--compact { grid-auto-columns: 44px; }
 .v3-segmented--compact button { padding: 0 var(--ww-space-2); }
 
-.v3-chat-panel { height: min(72dvh, 720px); min-height: 480px; display: flex; flex-direction: column; overflow: hidden; }
-.v3-chat-list { min-height: 0; flex: 1; display: grid; align-content: start; gap: var(--ww-space-3); margin-top: var(--ww-space-4); padding: 0 var(--ww-space-1) 0 2px; overflow-y: auto; scrollbar-gutter: stable; }
+.v3-chat-panel { height: 620px; max-height: calc(100dvh - 180px); min-height: 420px; display: flex; flex-direction: column; overflow: hidden; }
+.v3-chat-list { min-height: 0; flex: 1 1 auto; display: grid; align-content: start; gap: var(--ww-space-3); margin-top: var(--ww-space-4); padding: 0 var(--ww-space-1) 0 2px; overflow-y: auto; scrollbar-gutter: stable; }
 .v3-chat-row { min-width: 0; display: flex; align-items: flex-start; gap: var(--ww-space-2); }
 .v3-chat-row--self { flex-direction: row-reverse; }
 .v3-chat-avatar { width: 36px; height: 36px; flex: 0 0 36px; display: grid; place-items: center; overflow: hidden; border: 1.5px solid var(--v3-seat-color, var(--ww-border-strong)); border-radius: 50%; background: color-mix(in srgb, var(--v3-seat-color, var(--ww-bg-subtle)) 14%, var(--ww-bg-subtle)); color: var(--v3-seat-color, var(--ww-text-strong)); font-weight: 700; }
@@ -1703,8 +1703,9 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
   .v3-result-grid { grid-template-columns: minmax(0, 1fr); }
   .v3-result-hero { align-items: flex-start; flex-wrap: wrap; padding: var(--ww-space-4); }
   .v3-result-hero .v3-badge { margin-left: auto; }
-  .v3-chat-panel { height: min(68dvh, 600px); min-height: 420px; }
-  .v3-chat-list, .v3-timeline, .v3-console-events { max-height: min(52dvh, 460px); }
+  .v3-chat-panel { height: min(560px, calc(100dvh - 140px)); max-height: none; min-height: 360px; }
+  .v3-chat-list { max-height: none; }
+  .v3-timeline, .v3-console-events { max-height: min(52dvh, 460px); }
   .v3-action-panel__footer { align-items: stretch; flex-direction: column; }
   .v3-action-panel__footer .v3-button { width: 100%; }
   .v3-chat-input { position: sticky; bottom: env(safe-area-inset-bottom); padding-bottom: max(4px, env(safe-area-inset-bottom)); background: var(--ww-bg-surface); }
