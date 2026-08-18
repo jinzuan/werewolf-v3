@@ -80,13 +80,16 @@ export function RoomActions({
         <div className="waiting-room__action-list waiting-room__action-list--flow">
         {isPlayer && room.status === 'ready_check' && can('set_ready') ? (
           <Button
+            className="waiting-room__ready-action"
             variant={ready ? 'secondary' : 'primary'}
             size="action"
             disabled={locked || busy('set_ready')}
             onClick={() => onSetReady(!ready)}
           >
             <CheckCircle size={17} aria-hidden="true" />
-            {busy('set_ready') ? '正在提交准备…' : ready ? '取消准备' : '确认准备'}
+            <span className="waiting-room__action-label">
+              {busy('set_ready') ? '正在提交准备…' : ready ? '取消准备' : '确认准备'}
+            </span>
           </Button>
         ) : null}
 

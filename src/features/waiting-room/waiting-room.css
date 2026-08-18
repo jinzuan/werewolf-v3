@@ -324,6 +324,15 @@
 .waiting-room__action-list .v3-button--action { min-width: 150px; }
 .waiting-room__action-list--flow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .waiting-room__action-list--flow .v3-button { width: 100%; }
+.waiting-room__ready-action {
+  min-height: var(--ww-height-action);
+  white-space: nowrap;
+  transform: none !important;
+}
+.waiting-room__ready-action:hover:not(:disabled),
+.waiting-room__ready-action:active:not(:disabled) {
+  transform: none !important;
+}
 .waiting-room__action-list--secondary { padding-top: var(--ww-space-2); border-top: 1.5px solid var(--ww-border-default); }
 .waiting-room__action-hint,
 .waiting-room__action-blocker { flex: 1 1 100%; margin: 0; }
