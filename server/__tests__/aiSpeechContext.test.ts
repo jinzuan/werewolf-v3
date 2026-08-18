@@ -121,20 +121,45 @@ test('dead hunter action is a distinct server-authorized turn', () => {
   assert.doesNotMatch(prompt.user, /普通白天回合/);
 });
 
-test('regular speech prompt requires a concise response followed by new content', () => {
+test('regular speech prompt permits independent judgment, positive interaction, and intentional silence', () => {
   const prompt = buildAIPrompt({
     ...context(
       { isAlive: true, deathStatus: 'alive', turnKind: 'regular_speech' },
-      ['speak'],
-      ['game.speak'],
+      ['speak', 'skip_speech'],
+      ['game.speak', 'game.skip_speech'],
     ),
     phase: 'day',
     stage: 'speech',
   });
 
-  assert.match(prompt.system, /回应上一位发言者或当前争议焦点/);
-  assert.match(prompt.system, /形成“回应 \+ 新增”/);
-  assert.match(prompt.system, /不要逐字复述.*换词重说/);
+  assert.match(prompt.system, /回应上一位或当前焦点/);
+  assert.match(prompt.system, /不是每次发言的必填开头/);
+  assert.match(prompt.system, /认可一个好判断/);
+  assert.match(prompt.system, /暂认好人/);
+  assert.match(prompt.system, /金水.*银水/);
+  assert.match(prompt.system, /选择 skip_speech/);
+  assert.match(prompt.system, /归票.*落票/);
+  assert.match(prompt.system, /哦对对对/);
+  assert.match(prompt.user, /skip_speech/);
+});
+
+test('speech continuity guidance is not injected into a non-speech action', () => {
+  const prompt = buildAIPrompt({
+    ...context(
+      { isAlive: true, deathStatus: 'alive', turnKind: 'regular_action' },
+      ['vote'],
+      ['game.vote'],
+    ),
+    phase: 'voting',
+    stage: 'voting',
+    promptContext: {
+      legalActions: ['vote'],
+      legalTargets: [{ id: 'villager-10', name: '玩家10' }],
+    },
+  });
+
+  assert.doesNotMatch(prompt.system, /你不是发言接力员/);
+  assert.match(prompt.user, /合法目标/);
 });
 
 test('last-words prompt keeps its dedicated response and supplement guidance', () => {
@@ -144,7 +169,7 @@ test('last-words prompt keeps its dedicated response and supplement guidance', (
     ['game.speak'],
   ));
 
-  assert.doesNotMatch(prompt.system, /形成“回应 \+ 新增”/);
+  assert.doesNotMatch(prompt.system, /你不是发言接力员/);
   assert.match(prompt.user, /只补遗漏、回应新增信息或给最终行动建议/);
 });
 

@@ -721,7 +721,7 @@ export const buildAIPrompt = (
     ? fencedText(sectionByTitle(readPromptFile('system-prompts.md'), systemTaskTitleValue.replace(/^##\s+\d+\.\s+/, '')))
     : '';
   const speechContinuityGuidance = usesSpeechContinuityGuidance(context)
-    ? loadFragment('system-prompts.md', '发言衔接规则')
+    ? loadFragment('system-prompts.md', '发言衔接与真人博弈心智')
     : '';
   const outputContract = buildOutputContract(context, promptContext);
   const values = placeholderValues(context, promptContext, roleTask, outputContract);

@@ -60,6 +60,26 @@ const commandTypeForAction = (action: GameAction): GameCommand['type'] => {
   }
 };
 
+const isRegularSpeechAction = (action: string): boolean =>
+  action === 'speak' || action === 'skip_speech';
+
+/**
+ * A normal public speech turn is one server turn with two legal outcomes:
+ * substantive speech or an intentional no-content skip. Keeping both in the
+ * provider context lets the model make that decision from the projected facts
+ * instead of forcing every AI to emit filler just because `speak` is first in
+ * the authority action list.
+ */
+const aiActionsForTask = (action: string): GameAction[] =>
+  isRegularSpeechAction(action)
+    ? ['speak', 'skip_speech']
+    : [action as GameAction];
+
+const aiCommandTypesForTask = (action: string): GameCommand['type'][] =>
+  isRegularSpeechAction(action)
+    ? ['game.speak', 'game.skip_speech']
+    : [commandTypeForAction(action as GameAction)];
+
 const projectPlayers = (players: readonly Player[], actorId: string, role: Player['role']): Player[] =>
   players.map((player) => ({
     ...player,
@@ -190,7 +210,7 @@ export class SessionCoordinator {
       phase: state.gameState.phase,
       stage,
       players,
-      allowedActions: [task.actionClass as GameAction],
+      allowedActions: aiActionsForTask(task.actionClass),
     });
     actorStatus.deathCutoffSequence = viewer.deathCutoffSequence;
     const promptContext = buildAIRuntimeContext({
@@ -246,8 +266,8 @@ export class SessionCoordinator {
       actorStatus,
       deadlineTs: state.gameState.deadlineTs,
       players,
-      allowedActions: [task.actionClass as GameAction],
-      allowedCommandTypes: [commandTypeForAction(task.actionClass as GameAction)],
+      allowedActions: aiActionsForTask(task.actionClass),
+      allowedCommandTypes: aiCommandTypesForTask(task.actionClass),
       promptContext,
       signal: task.signal,
     });
