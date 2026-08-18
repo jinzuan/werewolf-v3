@@ -1,7 +1,8 @@
-import { Bot, EyeOff, Radio } from 'lucide-react';
+import { Bot, Eye, EyeOff, List, MessageSquare, Radio, UsersRound } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '../../components/shell/AppShell';
 import { MatchShell } from '../../components/shell/MatchShell';
+import { MobileMatchNav, type MobileMatchNavItem } from '../../components/shell/MobileMatchNav';
 import { useV3Store } from '../../stores/v3Store';
 import { Badge } from '../../ui/Badge';
 import { Card } from '../../ui/Card';
@@ -30,6 +31,14 @@ import { chatEventsForViewer } from '../../v3/visibility';
 import { seatColorClass, seatColorIndex } from '../../v3/seatColors';
 
 type MonitorSeatStatus = 'alive' | 'dead' | 'exiled';
+type MonitorMobileSection = 'events' | 'chat' | 'identity' | 'view';
+
+const MONITOR_MOBILE_NAV_ITEMS: readonly MobileMatchNavItem[] = [
+  { id: 'events', label: '时间线', icon: List },
+  { id: 'chat', label: '聊天', icon: MessageSquare },
+  { id: 'identity', label: '身份座位', icon: UsersRound },
+  { id: 'view', label: '查看', icon: Eye },
+];
 
 const monitorSeatStatusLabel: Record<MonitorSeatStatus, string> = {
   alive: '存活',
@@ -43,6 +52,7 @@ export function MonitorPage() {
   const room = useV3Store((state) => state.room);
   const snapshot = useV3Store((state) => state.snapshot);
   const events = useV3Store((state) => state.events);
+  const [mobileSection, setMobileSection] = useState<MonitorMobileSection>('events');
   const clockRef = useRef<ServerClockSample | null>(null);
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
@@ -175,8 +185,15 @@ export function MonitorPage() {
         <span className="v3-inline-note">已授权查看完整对局信息</span>
       </div>
 
+      <div className="v3-mobile-match-surface">
+      <MobileMatchNav
+        items={MONITOR_MOBILE_NAV_ITEMS}
+        active={mobileSection}
+        onChange={(section) => setMobileSection(section as MonitorMobileSection)}
+      />
       <MatchShell
         className="v3-monitor-layout"
+        mobileSection={mobileSection}
         left={
           <Card>
             <div className="v3-panel-heading"><div><span>{players.length} 席完整身份</span><h2>身份摘要</h2></div></div>
@@ -325,6 +342,7 @@ export function MonitorPage() {
           </details>
         }
       />
+      </div>
     </AppShell>
   );
 }

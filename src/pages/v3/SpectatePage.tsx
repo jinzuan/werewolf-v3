@@ -1,7 +1,8 @@
-import { Eye, Radio, ShieldQuestion } from 'lucide-react';
+import { Eye, List, Radio, ShieldQuestion, UsersRound } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '../../components/shell/AppShell';
 import { MatchShell } from '../../components/shell/MatchShell';
+import { MobileMatchNav, type MobileMatchNavItem } from '../../components/shell/MobileMatchNav';
 import { useV3Store } from '../../stores/v3Store';
 import { Badge } from '../../ui/Badge';
 import { Card } from '../../ui/Card';
@@ -24,12 +25,21 @@ import {
 import { MAX_EVENT_WINDOW } from '../../v3/eventStream';
 import { formatCountdown } from '../../v3/countdown';
 
+type SpectateMobileSection = 'events' | 'identity' | 'view';
+
+const SPECTATE_MOBILE_NAV_ITEMS: readonly MobileMatchNavItem[] = [
+  { id: 'events', label: '时间线', icon: List },
+  { id: 'identity', label: '身份座位', icon: UsersRound },
+  { id: 'view', label: '查看', icon: Eye },
+];
+
 export function SpectatePage() {
   const connected = useV3Store((state) => state.connected);
   const session = useV3Store((state) => state.session);
   const room = useV3Store((state) => state.room);
   const snapshot = useV3Store((state) => state.snapshot);
   const events = useV3Store((state) => state.events);
+  const [mobileSection, setMobileSection] = useState<SpectateMobileSection>('events');
   const clockRef = useRef<ServerClockSample | null>(null);
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
@@ -98,8 +108,15 @@ export function SpectatePage() {
         </span>
       </div>
 
+      <div className="v3-mobile-match-surface">
+      <MobileMatchNav
+        items={SPECTATE_MOBILE_NAV_ITEMS}
+        active={mobileSection}
+        onChange={(section) => setMobileSection(section as SpectateMobileSection)}
+      />
       <MatchShell
         className="v3-spectate-layout"
+        mobileSection={mobileSection}
         left={
           <Card>
             <div className="v3-panel-heading">
@@ -167,6 +184,7 @@ export function SpectatePage() {
           </Card>
         }
       />
+      </div>
     </AppShell>
   );
 }

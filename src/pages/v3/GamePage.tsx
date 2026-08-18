@@ -1,13 +1,18 @@
 import {
   Check,
+  Eye,
+  List,
   MessageSquare,
   Shield,
+  Swords,
   UserRound,
+  UsersRound,
 } from 'lucide-react';
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { GameAction, GameState } from '../../../shared/types';
 import { AppShell } from '../../components/shell/AppShell';
 import { MatchShell } from '../../components/shell/MatchShell';
+import { MobileMatchNav, type MobileMatchNavItem } from '../../components/shell/MobileMatchNav';
 import { useV3Store } from '../../stores/v3Store';
 import { Badge } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
@@ -56,6 +61,15 @@ const ROLE_DESCRIPTIONS = {
 } as const;
 
 type SeatStatus = 'alive' | 'exiled' | 'night-death';
+type GameMobileSection = 'chat' | 'events' | 'action' | 'identity' | 'view';
+
+const GAME_MOBILE_NAV_ITEMS: readonly MobileMatchNavItem[] = [
+  { id: 'chat', label: '聊天', icon: MessageSquare },
+  { id: 'events', label: '时间线', icon: List },
+  { id: 'action', label: '行动', icon: Swords },
+  { id: 'identity', label: '身份座位', icon: UsersRound },
+  { id: 'view', label: '查看', icon: Eye },
+];
 
 const seatStatusLabel: Record<SeatStatus, string> = {
   alive: '存活',
@@ -102,6 +116,8 @@ export function GamePage() {
   const [roleInfoOpen, setRoleInfoOpen] = useState(false);
   const chatInputRef = useRef<HTMLInputElement | null>(null);
   const [chatInputFocused, setChatInputFocused] = useState(false);
+  const [mobileSection, setMobileSection] = useState<GameMobileSection>('chat');
+  const mobileActionKeyRef = useRef('');
 
   const state = snapshot?.gameState ?? null;
   const players = useMemo(() => snapshot?.players ?? [], [snapshot?.players]);
@@ -143,6 +159,11 @@ export function GamePage() {
     remainingServerMs(state?.deadlineTs, clockRef.current, now),
   );
   const actionKey = allowedActions.join('|');
+  useEffect(() => {
+    if (!snapshot || actionKey === mobileActionKeyRef.current) return;
+    mobileActionKeyRef.current = actionKey;
+    setMobileSection(actionKey ? 'action' : 'chat');
+  }, [actionKey, snapshot]);
   const voteRound = snapshot
     ? currentVoteRoundProjection(snapshot, events, allowedActions)
     : null;
@@ -411,6 +432,16 @@ export function GamePage() {
         </Card>
       ) : (
         <>
+          <div
+            className="v3-mobile-match-surface v3-game-workspace"
+            data-mobile-section={mobileSection}
+            data-role-confirmation={isRoleConfirmation ? 'true' : 'false'}
+          >
+          <MobileMatchNav
+            items={GAME_MOBILE_NAV_ITEMS}
+            active={mobileSection}
+            onChange={(section) => setMobileSection(section as GameMobileSection)}
+          />
           {myPlayer?.role ? (
             <Card className="v3-identity-panel">
               <div className="v3-panel-heading">
@@ -461,6 +492,8 @@ export function GamePage() {
             </Card>
           ) : null}
           <MatchShell
+          className="v3-game-layout"
+          mobileSection={mobileSection}
           centerAriaLabel="聊天与发言"
           rightAriaLabel="行动与事件"
           left={
@@ -517,7 +550,7 @@ export function GamePage() {
           right={
             <div className="v3-match-side">
             {isEliminated && !isLastWordsTurn ? (
-            <Card className="v3-action-panel v3-spectator-panel">
+            <Card className="v3-action-panel v3-spectator-panel v3-mobile-pane-action">
               <div className="v3-panel-heading">
                 <div>
                   <span>你已离开行动席</span>
@@ -531,7 +564,7 @@ export function GamePage() {
               <div className="v3-inline-note">服务端已关闭你的私密行动与夜间信息权限。</div>
             </Card>
           ) : (
-            <Card className="v3-action-panel">
+            <Card className="v3-action-panel v3-mobile-pane-action">
               <div className="v3-panel-heading">
                 <div>
                   <span>{isLastWordsTurn ? '票出者专属' : '当前阶段'}</span>
@@ -667,7 +700,7 @@ export function GamePage() {
             </Card>
           )}
           {typeof wolfKillTargetId === 'string' || latestSeerResult ? (
-            <div className="v3-event-private" role="status" aria-live="polite">
+            <div className="v3-event-private v3-mobile-pane-view" role="status" aria-live="polite">
               {typeof wolfKillTargetId === 'string' ? (
                 <span>今晚狼队袭击目标：<strong>{playerName(wolfKillTargetId)}</strong></span>
               ) : null}
@@ -676,7 +709,22 @@ export function GamePage() {
               ) : null}
             </div>
           ) : null}
-          <details className="v3-event-details">
+          <Card className="v3-mobile-only v3-mobile-view-panel">
+            <div className="v3-panel-heading">
+              <div><span>当前玩家视角</span><h2>查看</h2></div>
+              <Eye size={18} />
+            </div>
+            <div className="v3-setting-row">
+              <div><strong>当前阶段</strong><span>服务端实时状态</span></div>
+              <strong>{phaseLabel(state)}</strong>
+            </div>
+            <div className="v3-setting-row">
+              <div><strong>存活席位</strong><span>只显示当前权限允许的信息</span></div>
+              <strong>{players.filter((player) => player.isAlive).length} / {players.length}</strong>
+            </div>
+            <p className="v3-inline-note">身份牌和私密行动只属于你；其他玩家的身份不会在玩家视角展开。</p>
+          </Card>
+          <details className="v3-event-details v3-mobile-pane-events">
             <summary>
               <span>事件与系统通知</span>
               <Badge tone="info">{systemEvents.length}</Badge>
@@ -785,6 +833,7 @@ export function GamePage() {
             </Card>
           }
           />
+          </div>
         </>
       )}
     </AppShell>

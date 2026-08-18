@@ -10,6 +10,7 @@ interface MatchShellProps {
   ariaLabel?: string;
   centerAriaLabel?: string;
   rightAriaLabel?: string;
+  mobileSection?: string;
 }
 
 export function MatchShell({
@@ -21,9 +22,14 @@ export function MatchShell({
   ariaLabel = '对局内容',
   centerAriaLabel = '当前阶段',
   rightAriaLabel = '对局记录',
+  mobileSection,
 }: MatchShellProps) {
   return (
-    <div className={`v3-match-layout ${className}`.trim()} aria-label={ariaLabel}>
+    <div
+      className={`v3-match-layout ${className}`.trim()}
+      aria-label={ariaLabel}
+      data-mobile-section={mobileSection}
+    >
       <aside className="v3-match-layout__left" aria-label="座位信息">{left}</aside>
       <section className="v3-match-layout__center" aria-label={centerAriaLabel}>{center}</section>
       <aside className="v3-match-layout__right" aria-label={rightAriaLabel}>{right}</aside>

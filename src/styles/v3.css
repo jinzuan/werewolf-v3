@@ -1337,6 +1337,9 @@ select {
 .v3-match-layout__center > .v3-card,
 .v3-match-layout__right > .v3-card { height: auto; }
 .v3-match-side { min-width: 0; display: grid; align-content: start; gap: var(--ww-space-3); }
+.v3-mobile-match-surface { min-width: 0; }
+.v3-mobile-match-nav,
+.v3-mobile-only { display: none; }
 
 .v3-panel-heading {
   min-height: 48px;
@@ -2070,6 +2073,143 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
     border-top: 1.5px solid var(--ww-border-default);
     background: color-mix(in srgb, var(--ww-bg-surface) 94%, transparent);
     backdrop-filter: blur(10px);
+  }
+}
+
+/* Phone match navigation: one focused surface at a time, with the five
+   player concerns available without turning the page into a long rail. */
+@media (max-width: 767px) {
+  .v3-mobile-match-surface {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom));
+  }
+
+  .v3-mobile-match-nav {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 60;
+    min-height: 64px;
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    padding: 5px 4px max(5px, env(safe-area-inset-bottom));
+    border-top: 1.5px solid var(--ww-border-default);
+    background: color-mix(in srgb, var(--ww-bg-surface) 96%, transparent);
+    box-shadow: 0 -6px 18px rgba(23, 33, 59, .12);
+    backdrop-filter: blur(12px);
+  }
+
+  .v3-mobile-match-nav button {
+    min-width: 0;
+    min-height: 52px;
+    flex: 1 1 0;
+    display: grid;
+    place-items: center;
+    gap: 2px;
+    padding: 4px 2px;
+    border: 1.5px solid transparent;
+    border-radius: var(--ww-radius-control);
+    background: transparent;
+    color: var(--ww-text-muted);
+    cursor: pointer;
+    font-size: 11px;
+    line-height: 16px;
+  }
+
+  .v3-mobile-match-nav button.is-active {
+    border-color: color-mix(in srgb, var(--ww-action-primary) 38%, var(--ww-border-default));
+    background: color-mix(in srgb, var(--ww-action-primary) 12%, var(--ww-bg-raised));
+    color: var(--ww-text-strong);
+    font-weight: 700;
+  }
+
+  .v3-mobile-match-nav button:active {
+    background: var(--ww-bg-subtle);
+  }
+
+  .v3-mobile-match-nav button > span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .v3-mobile-only { display: none; }
+
+  .v3-match-layout[data-mobile-section] {
+    display: block;
+  }
+
+  .v3-match-layout[data-mobile-section] > .v3-match-layout__left,
+  .v3-match-layout[data-mobile-section] > .v3-match-layout__center,
+  .v3-match-layout[data-mobile-section] > .v3-match-layout__right,
+  .v3-match-layout[data-mobile-section] > .v3-match-layout__footer {
+    display: none;
+  }
+
+  .v3-match-layout[data-mobile-section='chat'] > .v3-match-layout__center,
+  .v3-match-layout[data-mobile-section='events'] > .v3-match-layout__center,
+  .v3-match-layout[data-mobile-section='action'] > .v3-match-layout__right,
+  .v3-match-layout[data-mobile-section='identity'] > .v3-match-layout__left,
+  .v3-match-layout[data-mobile-section='view'] > .v3-match-layout__right {
+    display: block;
+  }
+
+  .v3-game-workspace[data-mobile-section] .v3-identity-panel {
+    display: none;
+  }
+
+  .v3-game-workspace[data-mobile-section='identity'] .v3-identity-panel,
+  .v3-game-workspace[data-mobile-section='action'][data-role-confirmation='true'] .v3-identity-panel {
+    display: block;
+  }
+
+  .v3-game-layout[data-mobile-section] .v3-match-side > * {
+    display: none;
+  }
+
+  .v3-game-layout[data-mobile-section='action'] .v3-match-side > .v3-mobile-pane-action,
+  .v3-game-layout[data-mobile-section='events'] .v3-match-side > .v3-mobile-pane-events,
+  .v3-game-layout[data-mobile-section='view'] .v3-match-side > .v3-mobile-view-panel,
+  .v3-game-layout[data-mobile-section='view'] .v3-match-side > .v3-mobile-pane-view {
+    display: block;
+  }
+
+  .v3-game-layout[data-mobile-section='view'] .v3-match-side > .v3-mobile-pane-view {
+    display: grid;
+  }
+
+  .v3-mobile-view-panel {
+    display: none;
+  }
+
+  .v3-monitor-layout[data-mobile-section='events'] .v3-monitor-stream > .v3-monitor-chat,
+  .v3-monitor-layout[data-mobile-section='chat'] .v3-monitor-stream > .v3-card:not(.v3-monitor-chat) {
+    display: none;
+  }
+
+  .v3-monitor-layout[data-mobile-section='view'] > .v3-match-layout__footer {
+    display: block;
+    margin-top: var(--ww-space-4);
+  }
+
+  .v3-monitor-layout[data-mobile-section='events'] .v3-monitor-stream,
+  .v3-monitor-layout[data-mobile-section='chat'] .v3-monitor-stream {
+    display: block;
+  }
+
+  .v3-monitor-layout[data-mobile-section='events'] .v3-monitor-stream > .v3-card,
+  .v3-monitor-layout[data-mobile-section='chat'] .v3-monitor-stream > .v3-card {
+    height: auto;
+    min-height: 0;
+  }
+
+  .v3-spectate-layout[data-mobile-section='events'] .v3-match-layout__center > .v3-card,
+  .v3-spectate-layout[data-mobile-section='identity'] .v3-match-layout__left > .v3-card,
+  .v3-spectate-layout[data-mobile-section='view'] .v3-match-layout__right > .v3-card {
+    height: auto;
+    min-height: 0;
   }
 }
 
