@@ -186,7 +186,7 @@ function RoomPreview({ draft }: { draft: WizardDraft }) {
     ? Math.max(0, draft.maxPlayers - draft.minHumanPlayers)
     : draft.computerSeats;
   return (
-    <Card>
+    <Card className="v3-room-preview">
       <div className="v3-card-heading">
         <Sparkles size={20} />
         <div>
@@ -194,14 +194,14 @@ function RoomPreview({ draft }: { draft: WizardDraft }) {
           <p>这里只展示你的配置草稿，创建后会显示最终房间设置。</p>
         </div>
       </div>
-      <div style={css('gap')}>
+      <div className="v3-room-preview__facts">
         <strong>{draft.roomName || '未命名房间'}</strong>
         <span>{modeLabel[draft.mode]} · {draft.maxPlayers || '—'}个席位</span>
         <span>{expectedComputerSeats}个电脑席 · 至少{draft.minHumanPlayers}名真人</span>
         <span>规则版本：{draft.rulesetVersion || '尚未选择'}</span>
         <span>补位：{strategyLabel[draft.aiFillPolicy]}</span>
       </div>
-      <div style={{ ...row, borderTop: '1.5px solid var(--ww-border-default)', paddingTop: 'var(--ww-space-4)' }}>
+      <div className="v3-room-preview__badges">
         <Badge tone="info">总席位 {draft.maxPlayers || '—'}</Badge>
         <Badge tone="warning">预计电脑 {expectedComputerSeats}</Badge>
         <Badge tone="success">最低真人 {draft.minHumanPlayers}</Badge>
@@ -216,12 +216,12 @@ function SeatPreview({ draft }: { draft: WizardDraft }) {
     : draft.computerSeats;
   const humanSeats = Math.max(0, draft.maxPlayers - expectedComputerSeats);
   return (
-    <div style={{ ...css('gap'), marginTop: 'var(--ww-space-4)' }}>
-      <div style={row}>
+    <div className="v3-seat-preview">
+      <div className="v3-seat-preview__heading">
         <strong>席位投影</strong>
         <span style={{ color: 'var(--ww-text-muted)' }}>预计 {humanSeats} 真人席 · {expectedComputerSeats} 电脑席</span>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 'var(--ww-space-2)' }}>
+      <div className="v3-seat-preview__grid">
         {Array.from({ length: Math.max(0, draft.maxPlayers) }, (_, index) => {
           const isComputer = index >= humanSeats;
           return (
@@ -381,7 +381,7 @@ function PlayersStep({
           </label>
           <div>
             <span className="v3-field__label">村民徽章</span>
-            <div style={row} aria-label="选择村民徽章">
+      <div className="v3-wizard-avatar-options" aria-label="选择村民徽章">
               {avatarOptions.map(({ id: avatarId, asset, label }) => (
                 <button key={avatarId} type="button" aria-label={label} aria-pressed={draft.creator.avatarId === avatarId} onClick={() => update({ creator: { ...draft.creator, avatarId } })} style={{ ...choiceStyle(draft.creator.avatarId === avatarId), flex: '0 0 52px', alignItems: 'center', padding: 'var(--ww-space-2)' }}>
                   <img className="v3-avatar-option" src={asset.src} alt="" aria-hidden="true" />
@@ -421,7 +421,7 @@ function PlayersStep({
 
       <Card data-wizard-block="players" tabIndex={-1}>
         <div className="v3-card-heading"><Users size={20} /><div><h2>总人数</h2><p>未启用的档位仍会展示，但不能创建。</p></div></div>
-        <div style={row} role="group" aria-label="总人数">
+        <div className="v3-wizard-choice-grid v3-wizard-choice-grid--counts" role="group" aria-label="总人数">
           {catalog.playerCounts.map((count) => {
             const enabled = countEnabled(catalog, count);
             const preset = catalog.rolePresets.find((candidate) => candidate.playerCount === count);
@@ -436,7 +436,7 @@ function PlayersStep({
         {draft.mode === 'human' ? <p>朋友房：最低真人锁定为{draft.maxPlayers}人，电脑席锁定为0。</p> : null}
         {draft.mode === 'quick_computer' ? <p>快速电脑局：最低真人锁定为0，创建时会自动补满{draft.maxPlayers}个电脑席。</p> : null}
         {draft.mode === 'mixed' ? <div style={css('gap')}>
-          <div style={row}>
+          <div className="v3-wizard-choice-grid" role="group" aria-label="电脑席补位方式">
             <button type="button" aria-pressed={draft.aiFillPolicy === 'fixed'} onClick={() => {
               const computerSeats = Math.max(1, Math.min(draft.maxPlayers - 1, draft.computerSeats || Math.floor(draft.maxPlayers / 3)));
               const minHumanPlayers = Math.min(Math.max(1, draft.minHumanPlayers), draft.maxPlayers - computerSeats);
@@ -445,7 +445,7 @@ function PlayersStep({
             <button type="button" aria-pressed={draft.aiFillPolicy === 'fill_to_max'} onClick={() => update({ aiFillPolicy: 'fill_to_max', computerSeats: 0 })} style={choiceStyle(draft.aiFillPolicy === 'fill_to_max')}><strong>开局时补满</strong><span>电脑数量按开局时的真人席位实时估算。</span></button>
           </div>
           {draft.aiFillPolicy === 'fixed' ? (
-            <div style={{ ...row, alignItems: 'flex-start' }}>
+            <div className="v3-seat-steppers">
               <SeatStepper
                 label="最低真人数"
                 value={draft.minHumanPlayers}
@@ -464,6 +464,7 @@ function PlayersStep({
               />
             </div>
           ) : (
+            <div className="v3-seat-steppers">
             <SeatStepper
               label="最低真人数"
               value={draft.minHumanPlayers}
@@ -472,6 +473,7 @@ function PlayersStep({
               issue={issueFor('minHumanPlayers')}
               onChange={(value) => update({ minHumanPlayers: value })}
             />
+            </div>
           )}
           {draft.aiFillPolicy === 'fixed' ? <p style={{ margin: 0, color: 'var(--ww-text-muted)' }}>最低真人数 + 电脑席数量不能超过{draft.maxPlayers}个总席位。</p> : null}
         </div> : null}
@@ -599,7 +601,7 @@ function RulesStep({
           <div style={css('gap')}>
             <fieldset style={{ border: 0, margin: 0, padding: 0 }}>
               <legend className="v3-field__label">房间可见性</legend>
-              <div style={row}>
+              <div className="v3-wizard-choice-grid">
                 <button type="button" aria-pressed={draft.visibility === 'invite_only'} onClick={() => update({ visibility: 'invite_only' })} style={choiceStyle(draft.visibility === 'invite_only')}><strong>仅凭邀请</strong><span>需要房间码与邀请口令。</span></button>
                 <button type="button" aria-pressed={draft.visibility === 'listed'} onClick={() => update({ visibility: 'listed' })} style={choiceStyle(draft.visibility === 'listed')}><strong>大厅可见</strong><span>可以在大厅看到房间摘要。</span></button>
               </div>

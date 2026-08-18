@@ -659,6 +659,130 @@ select {
 
 .v3-wizard-settings-summary strong { color: var(--ww-text-strong); }
 
+.v3-room-preview {
+  display: grid;
+  gap: var(--ww-space-4);
+}
+
+.v3-room-preview__facts {
+  min-width: 0;
+  display: grid;
+  gap: var(--ww-space-2);
+  padding: var(--ww-space-3) var(--ww-space-4);
+  border: 1.5px solid var(--ww-border-default);
+  border-radius: var(--ww-radius-control);
+  background: var(--ww-bg-subtle);
+}
+
+.v3-room-preview__facts > * {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ww-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v3-room-preview__facts > strong {
+  color: var(--ww-text-strong);
+}
+
+.v3-room-preview__badges {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--ww-space-2);
+  padding-top: var(--ww-space-4);
+  border-top: 1.5px solid var(--ww-border-default);
+}
+
+.v3-room-preview__badges .v3-badge {
+  min-width: 0;
+  justify-content: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v3-seat-preview {
+  min-width: 0;
+  display: grid;
+  gap: var(--ww-space-3);
+  margin-top: var(--ww-space-4);
+}
+
+.v3-seat-preview__heading {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ww-space-3);
+}
+
+.v3-seat-preview__heading > * {
+  min-width: 0;
+}
+
+.v3-seat-preview__heading > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v3-seat-preview__grid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--ww-space-2);
+}
+
+.v3-seat-preview__grid .ww-seat {
+  min-height: 132px;
+  height: 132px;
+}
+
+.v3-wizard-choice-grid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ww-space-3);
+}
+
+.v3-wizard-choice-grid--counts {
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+}
+
+.v3-wizard-choice-grid > button {
+  min-width: 0;
+  width: 100%;
+  min-height: 92px;
+}
+
+.v3-wizard-avatar-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(52px, 52px));
+  gap: var(--ww-space-3);
+}
+
+.v3-wizard-avatar-options > button {
+  width: 52px;
+  min-height: 64px;
+  display: grid;
+  place-items: center;
+  margin: 0;
+}
+
+.v3-seat-steppers {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--ww-space-4);
+}
+
+.v3-seat-steppers > .v3-field {
+  min-width: 0 !important;
+  width: 100%;
+}
+
 .v3-wizard-advanced {
   margin-top: var(--ww-space-3);
   border-top: 1px solid var(--ww-border-default);
