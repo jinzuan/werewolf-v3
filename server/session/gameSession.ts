@@ -932,6 +932,7 @@ export class GameSession {
     const flow = this.state.dayFlow;
     const isLastWords = flow.stage === 'last_words';
     const isDiscussion = flow.stage === 'discussion';
+    const speechRound = isLastWords ? 3 - flow.lastWordsRemaining : 1;
     if (
       (flow.stage !== 'speech' && !isDiscussion && !isLastWords) ||
       this.state.gameState.currentSpeaker !== actor.id
@@ -946,13 +947,20 @@ export class GameSession {
         command.type === 'game.speak'
           ? {
               actorId: actor.id,
+              day: this.state.gameState.day,
+              round: speechRound,
               content: command.payload.content,
               lastWords: isLastWords,
-              ...(isDiscussion ? { discussion: true } : {}),
+              ...(isDiscussion ? { discussion: true, discussionRound: speechRound } : {}),
+              ...(isLastWords ? { lastWordsRound: speechRound } : {}),
             }
           : {
               actorId: actor.id,
+              day: this.state.gameState.day,
+              round: speechRound,
               lastWords: isLastWords,
+              ...(isDiscussion ? { discussion: true, discussionRound: speechRound } : {}),
+              ...(isLastWords ? { lastWordsRound: speechRound } : {}),
               ...(isLastWords && command.payload.reason?.trim()
                 ? { reason: command.payload.reason.trim() }
                 : {}),

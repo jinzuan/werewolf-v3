@@ -110,11 +110,51 @@ const latestOvernightPublicEvent = (
 };
 
 const eventDay = (
-  _event: DomainEvent,
+  event: DomainEvent,
   item: Record<string, unknown>,
   fallback: number,
+  days?: ReadonlyMap<string, number>,
 ): number =>
-  typeof item.day === 'number' ? item.day : fallback;
+  days?.get(event.eventId) ?? (typeof item.day === 'number' ? item.day : fallback);
+
+const eventDays = (
+  events: readonly DomainEvent[],
+  fallback: number,
+): ReadonlyMap<string, number> => {
+  const hasExplicitDay = events.some((event) => typeof payload(event).day === 'number');
+  if (!hasExplicitDay) {
+    return new Map(events.map((event) => [event.eventId, fallback]));
+  }
+  let currentDay = 1;
+  const days = new Map<string, number>();
+  for (const event of events) {
+    const item = payload(event);
+    if (typeof item.day === 'number') currentDay = item.day;
+    days.set(event.eventId, currentDay);
+  }
+  return days;
+};
+
+const eventStage = (event: DomainEvent): string =>
+  event.stage ?? String(payload(event).stage ?? event.phase);
+
+const eventRound = (event: DomainEvent): number => {
+  const item = payload(event);
+  if (typeof item.lastWordsRound === 'number') return item.lastWordsRound;
+  if (typeof item.discussionRound === 'number') return item.discussionRound;
+  return typeof item.round === 'number' ? item.round : 1;
+};
+
+const eventTimeLabel = (
+  event: DomainEvent,
+  fallbackDay: number,
+  days?: ReadonlyMap<string, number>,
+): string => {
+  const day = eventDay(event, payload(event), fallbackDay, days);
+  const period = event.phase === 'night' ? '晚' : '天';
+  const round = eventRound(event);
+  return `【第${day}${period}·${eventStage(event)}·第${round}轮】`;
+};
 
 const voteHistoryFromPayload = (
   value: unknown,
@@ -146,7 +186,7 @@ const visibleDeathHistory = (
   for (const event of input.visibleEvents) {
     if (event.visibility !== 'public_timeline') continue;
     const item = payload(event);
-    const day = eventDay(event, item, input.dayNumber);
+    const day = eventDay(event, item, input.dayNumber, eventDays(input.visibleEvents, input.dayNumber));
     if (event.eventType === 'night.resolved') {
       const deaths = Array.isArray(item.deaths)
         ? item.deaths.filter((id): id is string => typeof id === 'string')
@@ -181,9 +221,10 @@ const visibleActionHistory = (
   input: AIRuntimeContextInput,
 ): string[] => {
   const history: string[] = [];
+  const days = eventDays(input.visibleEvents, input.dayNumber);
   for (const event of input.visibleEvents) {
     const item = payload(event);
-    const day = eventDay(event, item, input.dayNumber);
+    const day = eventDay(event, item, input.dayNumber, days);
     if (event.eventType === 'day.exiled' || event.eventType === 'day.no_exile') {
       const votes = voteHistoryFromPayload(item.voteHistory, input.players);
       if (votes.length > 0) history.push(`第${day}天已公开票型：${votes.join('、')}`);
@@ -327,30 +368,53 @@ const buildPrivateFacts = (
 const buildPublicFacts = (
   input: AIRuntimeContextInput,
 ): Pick<AIPromptContext, 'publicSpeeches' | 'currentRoundSpeeches' | 'publicVoteHistory' | 'ownPreviousSpeeches'> => {
+  const days = eventDays(input.visibleEvents, input.dayNumber);
   const speechEvents = publicSpeechEvents(input.visibleEvents);
   const publicSpeeches = speechEvents.map((event) => {
     const item = payload(event);
-    return `${playerName(input.players, item.actorId ?? event.actorId)}：${String(item.content ?? '')}`;
+    return `${eventTimeLabel(event, input.dayNumber, days)} ${playerName(input.players, item.actorId ?? event.actorId)}：${String(item.content ?? '')}`;
   });
   const publicVoteHistory = publicVoteEvents(input.visibleEvents).flatMap((event) => {
     const item = payload(event);
     if (typeof item.targetId !== 'string') return [];
-    return [`${playerName(input.players, item.actorId ?? event.actorId)} 投票给 ${playerName(input.players, item.targetId)}`];
+    return [`${eventTimeLabel(event, input.dayNumber, days)} ${playerName(input.players, item.actorId ?? event.actorId)} 投票给 ${playerName(input.players, item.targetId)}`];
   });
   for (const event of input.visibleEvents) {
     if (event.visibility !== 'public_timeline') continue;
     if (event.eventType !== 'day.exiled' && event.eventType !== 'day.no_exile') continue;
     publicVoteHistory.push(...voteHistoryFromPayload(payload(event).voteHistory, input.players));
   }
+  const currentRoundSpeeches = speechEvents
+    .filter((event) => {
+      const item = payload(event);
+      return (
+        eventDay(event, item, input.dayNumber, days) === input.dayNumber &&
+        eventStage(event) === input.stage &&
+        eventRound(event) === input.roundNumber
+      );
+    })
+    .map((event) => {
+      const item = payload(event);
+      return `${eventTimeLabel(event, input.dayNumber, days)} ${playerName(input.players, item.actorId ?? event.actorId)}：${String(item.content ?? '')}`;
+    });
   const ownPreviousSpeeches = speechEvents
     .filter((event) => {
       const item = payload(event);
-      return item.actorId === input.actorId || event.actorId === input.actorId;
+      const sameDay = eventDay(event, item, input.dayNumber, days) === input.dayNumber;
+      const stage = eventStage(event);
+      const sameCurrentSpeechWindow =
+        stage === input.stage ||
+        (input.stage !== 'night' && ['speech', 'discussion', 'last_words'].includes(stage));
+      return sameDay && sameCurrentSpeechWindow && eventRound(event) <= input.roundNumber &&
+        (item.actorId === input.actorId || event.actorId === input.actorId);
     })
-    .map((event) => String(payload(event).content ?? ''));
+    .map((event) => {
+      const item = payload(event);
+      return `${eventTimeLabel(event, input.dayNumber, days)} ${playerName(input.players, item.actorId ?? event.actorId)}：${String(item.content ?? '')}`;
+    });
   return {
     publicSpeeches,
-    currentRoundSpeeches: publicSpeeches,
+    currentRoundSpeeches,
     publicVoteHistory,
     ownPreviousSpeeches,
   };

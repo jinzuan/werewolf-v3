@@ -1,9 +1,40 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { DomainEvent } from '../../shared/events';
 import type { Player } from '../../shared/types';
 import { buildAIPrompt } from '../ai/promptBuilder';
 import { buildAIRuntimeContext } from '../ai/runtimeContext';
 import type { AIActorStatus, AIRequestContext } from '../ai/types';
+
+const speechEvent = (
+  sequence: number,
+  day: number,
+  stage: 'speech' | 'discussion',
+  actorId: string,
+  content: string,
+  round = 1,
+): DomainEvent => ({
+  eventId: `speech-${sequence}`,
+  roomId: 'room-speech-status',
+  gameId: 'game-speech-status',
+  sequence,
+  occurredAt: sequence,
+  phase: 'day',
+  stage,
+  actorId,
+  eventType: 'day.speech',
+  payload: {
+    actorId,
+    day,
+    round,
+    discussion: stage === 'discussion',
+    ...(stage === 'discussion' ? { discussionRound: round } : {}),
+    content,
+  },
+  visibility: 'public_timeline',
+  correlationId: `speech-${sequence}`,
+  schemaVersion: 1,
+});
 
 const players: Player[] = [
   {
@@ -84,4 +115,33 @@ test('dead hunter action is a distinct server-authorized turn', () => {
   assert.match(prompt.system, /独立猎人开枪阶段/);
   assert.match(prompt.user, /独立猎人开枪阶段/);
   assert.doesNotMatch(prompt.user, /普通白天回合/);
+});
+
+test('current round speeches are bounded by day, stage, and discussion round', () => {
+  const visibleEvents = [
+    speechEvent(1, 1, 'speech', 'alive-villager', '前一天旧发言'),
+    speechEvent(2, 2, 'speech', 'dead-villager', '今天首轮发言'),
+    speechEvent(3, 2, 'discussion', 'alive-villager', '今天讨论首轮'),
+    speechEvent(4, 2, 'discussion', 'alive-villager', '今天讨论第二轮', 2),
+  ];
+  const runtime = buildAIRuntimeContext({
+    actorId: 'dead-villager',
+    role: 'villager',
+    phase: 'day',
+    stage: 'discussion',
+    dayNumber: 2,
+    roundNumber: 1,
+    players,
+    visibleEvents,
+    allowedActions: ['speak'],
+  });
+
+  assert.deepEqual(runtime.currentRoundSpeeches, [
+    '【第2天·discussion·第1轮】 好运来：今天讨论首轮',
+  ]);
+  assert.match(runtime.publicSpeeches?.[0] ?? '', /第1天·speech/);
+  assert.match(runtime.publicSpeeches?.[3] ?? '', /第2天·discussion·第2轮/);
+  assert.deepEqual(runtime.ownPreviousSpeeches, [
+    '【第2天·speech·第1轮】 赵六：今天首轮发言',
+  ]);
 });

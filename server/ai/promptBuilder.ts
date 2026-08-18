@@ -383,29 +383,55 @@ const loadRoleTask = (context: AIRequestContext): string => {
   return '';
 };
 
+const eventTimeLabel = (
+  event: DomainEvent,
+  payload: Record<string, unknown>,
+  fallbackDay: number,
+): string => {
+  const day = typeof payload.day === 'number' ? payload.day : fallbackDay;
+  const period = event.phase === 'night' ? '晚' : '天';
+  const stage = event.stage ?? event.phase;
+  const round = typeof payload.lastWordsRound === 'number'
+    ? payload.lastWordsRound
+    : typeof payload.discussionRound === 'number'
+      ? payload.discussionRound
+      : typeof payload.round === 'number'
+        ? payload.round
+        : 1;
+  return `【第${day}${period}·${stage ?? '未知阶段'}·第${round}轮】`;
+};
+
 const formatPublicEvent = (
   event: DomainEvent,
   players: readonly Player[],
+  fallbackDay = 1,
 ): string | null => {
   const payload = event.payload as Record<string, unknown>;
   const actor = playerName(players, typeof payload.actorId === 'string' ? payload.actorId : event.actorId);
+  let detail: string | null;
   switch (event.eventType) {
     case 'day.speech':
-      return `${actor}：${String(payload.content ?? '')}`;
+      detail = `${actor}：${String(payload.content ?? '')}`;
+      break;
     case 'day.speech_skipped':
-      return payload.lastWords === true
+      detail = payload.lastWords === true
         ? `${actor}：放弃遗言（理由：${String(payload.reason ?? '未提供')}）`
         : `${actor}：跳过发言`;
+      break;
     case 'day.vote_cast':
-      return typeof payload.targetId === 'string'
+      detail = typeof payload.targetId === 'string'
         ? `${actor} 投票给 ${playerName(players, payload.targetId)}`
         : `${actor} 已投票（票型尚未公开）`;
+      break;
     case 'day.exiled':
-      return `放逐：${playerName(players, typeof payload.playerId === 'string' ? payload.playerId : undefined)}`;
+      detail = `放逐：${playerName(players, typeof payload.playerId === 'string' ? payload.playerId : undefined)}`;
+      break;
     case 'hunter.shot':
-      return `猎人开枪：${playerName(players, typeof payload.targetId === 'string' ? payload.targetId : undefined)}`;
+      detail = `猎人开枪：${playerName(players, typeof payload.targetId === 'string' ? payload.targetId : undefined)}`;
+      break;
     case 'hunter.shot_skipped':
-      return '猎人跳过开枪';
+      detail = '猎人跳过开枪';
+      break;
     case 'night.resolved': {
       const deaths = Array.isArray(payload.deaths)
         ? payload.deaths
@@ -413,33 +439,42 @@ const formatPublicEvent = (
             .map((id) => playerName(players, id))
             .join('、')
         : '';
-      if (deaths) return `夜间公开死亡：${deaths}`;
-      if (payload.peacefulNight === true) return '平安夜';
-      return '夜间公开死亡信息缺失（服务端事件异常）';
+      detail = deaths
+        ? `夜间公开死亡：${deaths}`
+        : payload.peacefulNight === true
+          ? '平安夜'
+          : '夜间公开死亡信息缺失（服务端事件异常）';
+      break;
     }
     case 'day.started':
-      return `第 ${String(payload.day ?? event.sequence)} 天开始`;
+      detail = `第 ${String(payload.day ?? fallbackDay)} 天开始`;
+      break;
     case 'night.started':
-      return `第 ${String(payload.day ?? event.sequence)} 晚开始`;
+      detail = `第 ${String(payload.day ?? fallbackDay)} 晚开始`;
+      break;
     case 'day.no_exile':
-      return '本轮无人被放逐';
+      detail = '本轮无人被放逐';
+      break;
     default:
-      return null;
+      detail = null;
   }
+  return detail ? `${eventTimeLabel(event, payload, fallbackDay)} ${detail}` : null;
 };
 
 const formatProjectedEvents = (
   events: readonly DomainEvent[] | undefined,
   players: readonly Player[],
+  fallbackDay = 1,
 ): string[] =>
   (events ?? [])
     .filter((event) => event.visibility === 'public_timeline')
-    .map((event) => formatPublicEvent(event, players))
+    .map((event) => formatPublicEvent(event, players, fallbackDay))
     .filter((event): event is string => Boolean(event));
 
 const formatLatestOvernightEvent = (
   events: readonly DomainEvent[] | undefined,
   players: readonly Player[],
+  fallbackDay = 1,
 ): string[] => {
   const event = [...(events ?? [])]
     .reverse()
@@ -448,7 +483,7 @@ const formatLatestOvernightEvent = (
         candidate.visibility === 'public_timeline' &&
         candidate.eventType === 'night.resolved',
     );
-  const formatted = event ? formatPublicEvent(event, players) : null;
+  const formatted = event ? formatPublicEvent(event, players, fallbackDay) : null;
   return formatted ? [formatted] : [];
 };
 
@@ -457,10 +492,10 @@ const formatRuntimeFacts = (
   promptContext: AIPromptContext,
 ): string => {
   const projectedEvents =
-    promptContext.publicEvents ?? formatProjectedEvents(promptContext.visibleEvents, context.players);
+    promptContext.publicEvents ?? formatProjectedEvents(promptContext.visibleEvents, context.players, promptContext.dayNumber ?? 1);
   const overnightPublicEvents =
     promptContext.overnightPublicEvents ??
-    formatLatestOvernightEvent(promptContext.visibleEvents, context.players);
+    formatLatestOvernightEvent(promptContext.visibleEvents, context.players, promptContext.dayNumber ?? 1);
   const alivePlayers = context.players
     .filter((player) => player.isAlive)
     .map((player) => player.name);
@@ -508,15 +543,15 @@ const placeholderValues = (
   outputContract: string,
 ): Record<string, string> => {
   const publicEvents =
-    promptContext.publicEvents ?? formatProjectedEvents(promptContext.visibleEvents, context.players);
+    promptContext.publicEvents ?? formatProjectedEvents(promptContext.visibleEvents, context.players, promptContext.dayNumber ?? 1);
   const overnightPublicEvents =
     promptContext.overnightPublicEvents ??
-    formatLatestOvernightEvent(promptContext.visibleEvents, context.players);
+    formatLatestOvernightEvent(promptContext.visibleEvents, context.players, promptContext.dayNumber ?? 1);
   const publicSpeeches =
     promptContext.publicSpeeches ??
     (promptContext.visibleEvents ?? [])
       .filter((event) => event.eventType === 'day.speech')
-      .map((event) => formatPublicEvent(event, context.players))
+      .map((event) => formatPublicEvent(event, context.players, promptContext.dayNumber ?? 1))
       .filter((event): event is string => Boolean(event));
   const legalActions = promptContext.legalActions ?? [];
   const targetNames = names(promptContext.legalTargets);
