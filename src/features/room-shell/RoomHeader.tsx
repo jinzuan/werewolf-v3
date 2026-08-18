@@ -50,7 +50,7 @@ export function RoomHeader({ children, ...status }: RoomHeaderProps) {
           : 'waiting';
 
   return (
-    <div className="v3-room-header">
+    <div className="v3-room-header" data-room-view={segment}>
       <TopStatusBar
         {...status}
         scene={status.scene ?? roomScene}

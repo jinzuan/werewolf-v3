@@ -13,6 +13,7 @@ import type { GameAction, GameState } from '../../../shared/types';
 import { AppShell } from '../../components/shell/AppShell';
 import { PlayerSeatCard } from '../../components/match/PlayerSeatCard';
 import { MatchShell } from '../../components/shell/MatchShell';
+import { MobileRoomMeta } from '../../components/shell/MobileRoomMeta';
 import { MobileMatchNav, type MobileMatchNavItem } from '../../components/shell/MobileMatchNav';
 import { useMobileMatchUnread } from '../../components/shell/useMobileMatchUnread';
 import { useV3Store } from '../../stores/v3Store';
@@ -775,6 +776,7 @@ export function GamePage() {
               <div><span>当前玩家视角</span><h2>查看</h2></div>
               <Eye size={18} />
             </div>
+            <MobileRoomMeta />
             <div className="v3-setting-row">
               <div><strong>当前阶段</strong><span>服务端实时状态</span></div>
               <strong>{phaseLabel(state)}</strong>

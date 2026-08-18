@@ -468,6 +468,8 @@ select {
   letter-spacing: .08em;
 }
 
+.v3-mobile-room-meta { display: none; }
+
 .v3-topbar__identity,
 .v3-topbar__actions,
 .v3-phase-track__meta,
@@ -2045,6 +2047,12 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
 @media (max-width: 767px) {
   :root { --page-gutter: var(--ww-page-gutter-mobile); --ww-text-display-size: 28px; --ww-text-display-line: 38px; --ww-text-page-title-size: 22px; --ww-text-page-title-line: 32px; }
 
+  .v3-room-header[data-room-view='play'] .v3-room-header__meta,
+  .v3-room-header[data-room-view='watch'] .v3-room-header__meta,
+  .v3-room-header[data-room-view='monitor'] .v3-room-header__meta {
+    display: none;
+  }
+
   .v3-page--match {
     height: 100%;
     min-height: 0;
@@ -2244,6 +2252,28 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
   }
 
   .v3-mobile-private-result strong { color: var(--ww-text-strong); }
+  .v3-mobile-room-meta { display: grid; gap: var(--ww-space-2); margin-bottom: var(--ww-space-4); }
+  .v3-mobile-room-meta > div,
+  .v3-mobile-room-meta__code {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--ww-space-3);
+    padding: var(--ww-space-3);
+    border: 1.5px solid var(--ww-border-default);
+    border-radius: var(--ww-radius-control);
+    background: var(--ww-bg-subtle);
+    color: var(--ww-text-muted);
+    text-align: left;
+  }
+  .v3-mobile-room-meta__code { width: 100%; cursor: pointer; }
+  .v3-mobile-room-meta__code:hover { border-color: var(--ww-action-primary); }
+  .v3-mobile-room-meta__code > span:first-child,
+  .v3-mobile-room-meta > div > span { display: grid; gap: 2px; }
+  .v3-mobile-room-meta__code strong,
+  .v3-mobile-room-meta > div strong { color: var(--ww-text-strong); }
+  .v3-mobile-room-meta__copy-state { display: inline-flex; align-items: center; gap: 5px; color: var(--ww-action-primary); font-size: var(--ww-text-caption-size); white-space: nowrap; }
   .v3-event-count--desktop,
   .v3-event-list--desktop { display: none; }
   .v3-event-count--mobile,

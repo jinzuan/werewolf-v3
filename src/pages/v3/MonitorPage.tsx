@@ -2,6 +2,7 @@ import { Bot, Eye, EyeOff, List, MessageSquare, Radio, UsersRound } from 'lucide
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '../../components/shell/AppShell';
 import { MatchShell } from '../../components/shell/MatchShell';
+import { MobileRoomMeta } from '../../components/shell/MobileRoomMeta';
 import { MobileMatchNav, type MobileMatchNavItem } from '../../components/shell/MobileMatchNav';
 import { useMobileMatchUnread } from '../../components/shell/useMobileMatchUnread';
 import { useV3Store } from '../../stores/v3Store';
@@ -307,6 +308,7 @@ export function MonitorPage() {
         right={
           <Card>
             <div className="v3-panel-heading"><div><span>对局信息</span><h2>运行摘要</h2></div><Bot size={18} /></div>
+            <MobileRoomMeta />
             <div className="v3-setting-row">
               <div><strong>房间</strong><span>{room?.code ?? snapshot.roomId}</span></div>
               <Badge tone="success">{room ? roomStatusLabel(room.status) : '对局中'}</Badge>

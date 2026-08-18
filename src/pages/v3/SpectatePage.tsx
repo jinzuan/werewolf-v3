@@ -3,6 +3,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '../../components/shell/AppShell';
 import { PlayerSeatCard } from '../../components/match/PlayerSeatCard';
 import { MatchShell } from '../../components/shell/MatchShell';
+import { MobileRoomMeta } from '../../components/shell/MobileRoomMeta';
 import { MobileMatchNav, type MobileMatchNavItem } from '../../components/shell/MobileMatchNav';
 import { useMobileMatchUnread } from '../../components/shell/useMobileMatchUnread';
 import { useV3Store } from '../../stores/v3Store';
@@ -206,6 +207,7 @@ export function SpectatePage() {
             <div className="v3-panel-heading">
               <div><span>投影状态</span><h2>观战权限</h2></div>
             </div>
+            <MobileRoomMeta />
             <div className="v3-setting-row">
               <div><strong>观看模式</strong><span>当前身份只能查看公开信息。</span></div>
               <Badge tone="success">公开</Badge>
