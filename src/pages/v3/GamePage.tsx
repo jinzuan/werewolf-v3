@@ -171,7 +171,11 @@ export function GamePage() {
   useEffect(() => {
     if (actionTransitionKey === mobileActionKeyRef.current) return;
     mobileActionKeyRef.current = actionTransitionKey;
-    setMobileSection(speechActionAvailable ? 'chat' : actionKey ? 'action' : 'chat');
+    // `allowedActions` is projected for this player only. An empty list means
+    // that a state revision belongs to somebody else (for example, another
+    // wolf speaking), so preserve the player's current tab in that case.
+    if (!actionKey) return;
+    setMobileSection(speechActionAvailable ? 'chat' : 'action');
   }, [actionKey, actionTransitionKey, speechActionAvailable]);
   const mobileUnreadCounts = useMobileMatchUnread(
     events,

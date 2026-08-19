@@ -2240,6 +2240,16 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
     font: 700 10px/13px var(--ww-font-family-number);
   }
 
+  @keyframes v3-mobile-match-tab-flash {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    45% { opacity: .48; transform: scale(1.16); }
+  }
+
+  .v3-mobile-match-nav button.is-unread .v3-mobile-match-nav__icon > svg,
+  .v3-mobile-match-nav button.is-unread .v3-mobile-match-nav__badge {
+    animation: v3-mobile-match-tab-flash 1.15s ease-in-out infinite;
+  }
+
   .v3-mobile-only { display: none; }
 
   .v3-mobile-private-result {

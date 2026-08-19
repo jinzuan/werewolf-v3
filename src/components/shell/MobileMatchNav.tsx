@@ -32,7 +32,10 @@ export function MobileMatchNav({
           <button
             key={id}
             type="button"
-            className={active === id ? 'is-active' : undefined}
+            className={[
+              active === id ? 'is-active' : '',
+              unread > 0 ? 'is-unread' : '',
+            ].filter(Boolean).join(' ') || undefined}
             aria-current={active === id ? 'page' : undefined}
             aria-label={unread > 0 ? `${label}，${unread}条未读` : undefined}
             onClick={() => onChange(id)}
