@@ -53,7 +53,8 @@ export function AppRouter() {
       {/* M8 owns the four deep-linkable creation steps. */}
       <Route path="/rooms/join" element={<JoinRoomPage />} />
       <Route path="/rooms/new">
-        <Route index element={<Navigate to="/rooms/new/players" replace />} />
+        <Route index element={<Navigate to="/rooms/new/settings" replace />} />
+        <Route path="settings" element={<RoomWizardPage />} />
         <Route path=":step" element={<RoomWizardPage />} />
       </Route>
 

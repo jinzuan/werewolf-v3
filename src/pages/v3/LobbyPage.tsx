@@ -46,7 +46,7 @@ export function LobbyPage() {
           <h1 id="lobby-hero-title">邀请朋友，点亮一局狼人杀</h1>
           <p>先选人数和角色，再把房间码发给同伴。房间会在开局前同步最新设置。</p>
           <div className="v3-lobby-hero__actions">
-            <Button size="action" onClick={() => navigate('/rooms/new/players')}>
+            <Button size="action" onClick={() => navigate('/rooms/new/settings')}>
               创建房间<ArrowRight size={17} />
             </Button>
             <Button variant="secondary" onClick={() => navigate('/rooms/join')}>
@@ -80,7 +80,7 @@ export function LobbyPage() {
               <strong>村口还没有亮灯的房间</strong>
               <span>创建一间朋友房，邀请同伴入座。</span>
               <div className="v3-empty-state__actions">
-                <Button onClick={() => navigate('/rooms/new/players')}>创建第一个房间</Button>
+                <Button onClick={() => navigate('/rooms/new/settings')}>创建第一个房间</Button>
                 <Button variant="quiet" onClick={() => navigate('/rooms/join')}>输入房间码</Button>
               </div>
             </Card>

@@ -723,7 +723,6 @@ function WizardActions({ onBack, onNext, nextLabel }: { onBack?: () => void; onN
 export function RoomWizardPage() {
   const navigate = useNavigate();
   const { step: rawStep } = useParams<{ step: string }>();
-  const currentStep = normalizeWizardStep(rawStep) ?? 'players';
   const catalog = useV3Store((state) => state.catalog);
   const catalogStatus = useV3Store((state) => state.catalogStatus);
   const catalogError = useV3Store((state) => state.catalogError);
@@ -749,13 +748,16 @@ export function RoomWizardPage() {
     writeWizardDraft(storageTarget(), next);
   }, [catalog, draft]);
 
+  // Old /players, /roles, /rules and /confirm links intentionally resolve to
+  // this single settings surface. The route remains deep-linkable, but the
+  // user no longer has to walk through separate wizard pages.
   useEffect(() => {
-    const normalized = normalizeWizardStep(rawStep);
-    if (!normalized) {
-      navigate(WIZARD_STEP_PATHS.players, { replace: true });
-    } else if (rawStep?.toLowerCase() !== normalized) {
-      navigate(WIZARD_STEP_PATHS[normalized], { replace: true });
+    if (!rawStep || rawStep.toLowerCase() === 'settings') return;
+    if (normalizeWizardStep(rawStep)) {
+      navigate('/rooms/new/settings', { replace: true });
+      return;
     }
+    navigate('/rooms/new/settings', { replace: true });
   }, [navigate, rawStep]);
 
   const update = (patch: Partial<WizardDraft>) => {
@@ -768,70 +770,14 @@ export function RoomWizardPage() {
     });
   };
 
-  const localIssues = useMemo(() => {
-    if (!draft || !catalog) return [];
-    return issuesForStep(draft, currentStep, catalog);
-  }, [catalog, currentStep, draft]);
-
-  const issueBelongsToCurrentStep = (issue: WizardIssue): boolean =>
-    (issue.step === 'players' || issue.step === 'rules')
-      ? currentStep === 'players'
-      : currentStep === 'roles';
-
-  const visibleIssues = useMemo(
-    () => [...localIssues, ...serverIssues.filter(issueBelongsToCurrentStep)],
-    [currentStep, localIssues, serverIssues],
-  );
-
-  const visibleIssueKey = visibleIssues
-    .map((item) => `${item.path}:${item.errorCode ?? ''}:${item.message}`)
-    .join('|');
-
-  useEffect(() => {
-    if (visibleIssues.length === 0 || typeof document === 'undefined') return;
-    const block = document.querySelector<HTMLElement>(`[data-wizard-block="${issueBlock(visibleIssues[0].path)}"]`);
-    block?.focus({ preventScroll: true });
-    block?.scrollIntoView({ block: 'nearest' });
-  }, [currentStep, visibleIssueKey]);
-
-  useEffect(() => {
-    if (!draft || !catalog || currentStep === 'players') return;
-    const prior = WIZARD_STEPS.slice(0, stepIndex(currentStep));
-    const firstInvalid = prior.find((item) => validateWizardStep(draft, item.id, catalog).length > 0);
-    if (firstInvalid) navigate(wizardPathForStep(firstInvalid.id), { replace: true });
-  }, [catalog, currentStep, draft, navigate]);
-
-  const navigateStep = (target: WizardStep) => {
-    if (!draft || !catalog) return;
-    if (stepIndex(target) > stepIndex(currentStep)) {
-      const firstInvalid = WIZARD_STEPS.slice(0, stepIndex(target)).find((item) => validateWizardStep(draft, item.id, catalog).length > 0);
-      if (firstInvalid) {
-        navigate(wizardPathForStep(firstInvalid.id));
-        return;
-      }
-    }
-    navigate(wizardPathForStep(target));
-  };
-
-  const continueStep = () => {
-    if (!draft || !catalog) return;
-    const issues = validateWizardStep(draft, currentStep === 'players' ? 'rules' : 'confirm', catalog);
-    setServerIssues([]);
-    if (issues.length > 0) {
-      const first = issues[0];
-      navigate(wizardPathForStep(first.step));
-      return;
-    }
-    const next = WIZARD_STEPS[stepIndex(currentStep) + 1];
-    if (next) navigate(WIZARD_STEP_PATHS[next.id]);
-  };
-
   const create = async () => {
     if (!draft || !catalog || busy) return;
     const issues = validateWizardStep(draft, 'confirm', catalog);
     if (issues.length > 0) {
       setServerIssues([]);
-      navigate(wizardPathForStep(issues[0].step));
+      const block = document.querySelector<HTMLElement>(`[data-wizard-block="${issueBlock(issues[0].path)}"]`);
+      block?.focus({ preventScroll: true });
+      block?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;
     }
     writePlayerNickname(draft.creator.name);
@@ -846,7 +792,7 @@ export function RoomWizardPage() {
       return;
     }
     clearWizardDraft(storageTarget());
-    navigate(`/rooms/${encodeURIComponent(response.room.code)}`, { replace: true });
+    navigate(`/rooms/${encodeURIComponent(response.room.code)}/waiting`, { replace: true });
   };
 
   if (!catalog || !draft) {
@@ -863,25 +809,49 @@ export function RoomWizardPage() {
     </AppShell>;
   }
 
-  const pageTitle = WIZARD_STEPS.find((item) => item.id === currentStep)?.title ?? WIZARD_STEPS[0].title;
+  const allIssues = useMemo(
+    () => issuesForStep(draft, 'roles', catalog),
+    [catalog, draft],
+  );
+  const issuesFor = (step: WizardStep): WizardIssue[] => [
+    ...allIssues.filter((issue) => (step === 'players'
+      ? issue.step === 'players' || issue.step === 'rules'
+      : issue.step === 'roles')),
+    ...serverIssues.filter((issue) => step === 'players'
+      ? issue.step === 'players' || issue.step === 'rules'
+      : issue.step === 'roles'),
+  ];
+
   return (
-    <AppShell title="开房向导" eyebrow="狼人杀·月光森林" connected={connected}>
-      <div className="v3-page-heading"><div><span>两步创建 · {draft.roomName || '未命名房间'}</span><h1>{pageTitle}</h1></div><Badge tone="info">创建设置</Badge></div>
-      <WizardStepper current={currentStep} draft={draft} catalog={catalog} serverIssues={serverIssues} onNavigate={navigateStep} />
-      {serverIssues.length > 0 ? <div className="v3-alert v3-alert--error" role="alert">创建未完成，请按提示修改；你的全部草稿已保留。</div> : null}
+    <AppShell title="房间设置" eyebrow="狼人杀·月光森林" connected={connected}>
+      <div className="v3-page-heading">
+        <div><span>创建房间 · 设置完成后直接入座</span><h1>{draft.roomName || '未命名房间'}</h1></div>
+        <Badge tone="info">房间设置</Badge>
+      </div>
+      {serverIssues.length > 0 ? <div className="v3-alert v3-alert--error" role="alert">创建未完成，请按提示修改；你的设置已保留。</div> : null}
       {error && serverIssues.length === 0 ? <div className="v3-alert v3-alert--error" role="alert">{error}</div> : null}
-      <div className="v3-wizard-grid" style={grid}>
-        <section className="v3-wizard-main" aria-label={`第${stepIndex(currentStep) + 1}步`}>
-          {currentStep === 'players' ? <PlayersAndRulesStep draft={draft} catalog={catalog} issues={visibleIssues} update={update} onNext={continueStep} /> : null}
-          {currentStep === 'roles' ? <RolesAndConfirmStep draft={draft} catalog={catalog} issues={visibleIssues} busy={busy} update={update} onBack={() => navigateStep('players')} onCreate={() => void create()} /> : null}
+      <div className="v3-wizard-grid v3-room-settings-grid" style={grid}>
+        <section className="v3-wizard-main" aria-label="房间设置">
+          <PlayersStep draft={draft} catalog={catalog} issues={issuesFor('players')} update={update} onNext={() => undefined} showActions={false} />
+          <RolesStep draft={draft} catalog={catalog} issues={issuesFor('roles')} update={update} onBack={() => undefined} onNext={() => undefined} showActions={false} />
+          <RulesStep draft={draft} issues={issuesFor('players')} update={update} onBack={() => undefined} onNext={() => undefined} showActions={false} />
+          <Card tone="raised" className="v3-room-settings-submit">
+            <div>
+              <strong>设置完成？</strong>
+              <p>创建后直接进入统一等待房，房主可以继续调整开局前设置。</p>
+            </div>
+            <div className="v3-wizard-confirm-actions" style={{ ...row, justifyContent: 'space-between' }}>
+              <Button variant="secondary" onClick={() => { clearWizardDraft(storageTarget()); navigate('/lobby'); }} disabled={busy}>退出</Button>
+              <Button size="action" onClick={() => void create()} disabled={busy || allIssues.length > 0}>
+                {busy ? '正在创建……' : draft.mode === 'quick_computer' ? '创建并开始电脑局' : '创建并进入等待房'}<ArrowRight size={17} />
+              </Button>
+            </div>
+          </Card>
         </section>
-        <details className="v3-wizard-preview" open>
-          <summary>查看本局预览</summary>
-          <div className="v3-wizard-preview__content">
-            <RoomPreview draft={draft} />
-            <Button variant="quiet" onClick={() => { clearWizardDraft(storageTarget()); navigate('/lobby'); }} style={{ marginTop: 'var(--ww-space-3)', width: '100%' }}>退出并清除草稿</Button>
-          </div>
-        </details>
+        <aside className="v3-wizard-preview" aria-label="本局预览">
+          <RoomPreview draft={draft} />
+          <Button variant="quiet" onClick={() => { clearWizardDraft(storageTarget()); navigate('/lobby'); }} style={{ marginTop: 'var(--ww-space-3)', width: '100%' }}>退出并清除草稿</Button>
+        </aside>
       </div>
     </AppShell>
   );
