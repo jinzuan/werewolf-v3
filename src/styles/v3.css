@@ -776,8 +776,38 @@ select {
 }
 
 .v3-seat-preview__grid .ww-seat {
-  min-height: 132px;
-  height: 132px;
+  min-height: 118px;
+  height: auto;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--ww-space-2);
+  padding: var(--ww-space-3) 10px;
+}
+
+.v3-seat-preview__grid .ww-seat__avatar {
+  width: 40px;
+  height: 40px;
+}
+
+.v3-seat-preview__grid .ww-seat__body {
+  align-self: center;
+  gap: 4px;
+}
+
+.v3-seat-preview__grid .ww-seat__tags {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.v3-seat-preview__grid .ww-status {
+  min-width: 0;
+  flex-wrap: wrap;
+  line-height: 18px;
+}
+
+.v3-seat-preview__grid .ww-status__detail {
+  flex: 1 1 100%;
+  margin-left: 14px;
 }
 
 .v3-wizard-choice-grid {
@@ -2156,6 +2186,12 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
     border-top: 1.5px solid var(--ww-border-default);
     background: color-mix(in srgb, var(--ww-bg-surface) 94%, transparent);
     backdrop-filter: blur(10px);
+  }
+}
+
+@media (max-width: 560px) {
+  .v3-seat-preview__grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
