@@ -1,6 +1,6 @@
 import { Bot, Info, Maximize2, Minimize2, UserRound, UserRoundPlus, Users, X } from 'lucide-react';
 import { useState } from 'react';
-import type { RoomViewV31 } from '../../../../shared/roomContract';
+import type { RoomMemberViewV31, RoomViewV31 } from '../../../../shared/roomContract';
 import { Button } from '../../../ui/Button';
 import { Modal } from '../../../ui/Modal';
 import { Seat } from '../../../ui/Seat';
@@ -36,6 +36,7 @@ export function PlayerSeatGrid({
   const unassigned = selectUnassignedPlayers(room);
   const occupied = seats.filter((seat) => seat.member).length;
   const [selectedSeat, setSelectedSeat] = useState<number | null>(null);
+  const [playerFullOpen, setPlayerFullOpen] = useState(false);
   const [compact, setCompact] = useState(false);
   const selectedMember = selectedSeat === null
     ? undefined
@@ -54,10 +55,14 @@ export function PlayerSeatGrid({
   const canKick = isHost && selectedMember?.kind === 'player' && !selectedMember.isAI && !selectedMember.isHost && isActionAllowed(room, 'kick_player');
   const canAddAI = isHost && isActionAllowed(room, 'add_ai') && room.config.mode !== 'human';
   const autoFillEnabled = room.config.aiFillPolicy !== 'none';
-  const openSeat = (seatIndex: number, hasMember: boolean) => {
+  const openSeat = (seatIndex: number, member: RoomMemberViewV31 | null | undefined) => {
+    if (member?.isAI && canClaim && !autoFillEnabled) {
+      setPlayerFullOpen(true);
+      return;
+    }
     // A spectator clicking an empty seat is the quick-join affordance. Hosts
     // still get the menu so an accidental click cannot consume a seat.
-    if (!hasMember && !isHost && canClaim) {
+    if (!member && !isHost && canClaim) {
       run(() => onClaimSeat?.(seatIndex));
       return;
     }
@@ -98,7 +103,7 @@ export function PlayerSeatGrid({
                 presence="idle"
                 selected={selectedSeat === seatIndex}
                 disabled={false}
-                onClick={() => openSeat(seatIndex, false)}
+                onClick={() => openSeat(seatIndex, null)}
               />
             );
           }
@@ -120,7 +125,7 @@ export function PlayerSeatGrid({
               avatarAsset={member.isAI ? avatarAssetMap.computer : avatarAssetMap.player}
               selected={selectedSeat === seatIndex}
               disabled={false}
-              onClick={() => openSeat(seatIndex, true)}
+              onClick={() => openSeat(seatIndex, member)}
             />
           );
         })}
@@ -165,12 +170,8 @@ export function PlayerSeatGrid({
             </div>
           ) : null}
 
-          {selectedMember?.isAI && canClaim ? (
-            autoFillEnabled ? (
-              <Button size="action" onClick={() => run(() => onClaimSeat?.(selectedSeat!))}><UserRoundPlus size={17} />进入玩家席<span className="waiting-room__seat-action-hint">自动顶替这名电脑玩家</span></Button>
-            ) : (
-              <div className="v3-alert v3-alert--warning" role="alert">玩家已满。当前未开启 AI 自动补位。</div>
-            )
+          {selectedMember?.isAI && canClaim && autoFillEnabled ? (
+            <Button size="action" onClick={() => run(() => onClaimSeat?.(selectedSeat!))}><UserRoundPlus size={17} />进入玩家席<span className="waiting-room__seat-action-hint">自动顶替这名电脑玩家</span></Button>
           ) : null}
           {!selectedMember && canClaim ? <Button size="action" onClick={() => run(() => onClaimSeat?.(selectedSeat!))}><UserRoundPlus size={17} />进入玩家席</Button> : null}
           {selectedMember && !selectedMember.isAI && selectedMember.id !== viewerId && canApply ? <Button variant="secondary" onClick={() => run(onRequestSeat)}><UserRoundPlus size={17} />申请玩家位置</Button> : null}
@@ -178,6 +179,18 @@ export function PlayerSeatGrid({
           {canKick ? <Button variant="quiet" onClick={() => run(() => onKickPlayer?.(selectedMember!.id))}><X size={17} />房主移出玩家席</Button> : null}
           {!selectedMember && canAddAI ? <Button variant="secondary" onClick={() => run(() => onAddAI?.(selectedSeat!))}><Bot size={17} />添加 AI 玩家</Button> : null}
           <p className="waiting-room__seat-menu-note">观战席不占用玩家席位。</p>
+        </div>
+      </Modal>
+
+      <Modal
+        open={playerFullOpen}
+        title="玩家已满"
+        context="当前电脑补位没有打开，不能把电脑席改成人类玩家。"
+        onClose={() => setPlayerFullOpen(false)}
+      >
+        <div className="v3-action-stack">
+          <div className="v3-alert v3-alert--warning" role="alert">玩家席已满；请联系房主移出一名真人玩家，或打开 AI 补位。</div>
+          <Button variant="quiet" onClick={() => setPlayerFullOpen(false)}>知道了</Button>
         </div>
       </Modal>
     </section>

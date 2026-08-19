@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { joinInviteUrl } from '../../app/routes/roomRouting';
 import type {
   AllowedRoomAction,
   RoomConfigView,
   RoomAIConfigPatch,
+  RoomSeatRequestView,
   StartCheckItem,
 } from '../../../shared/protocol';
 import { AppShell } from '../../components/shell/AppShell';
@@ -103,6 +105,7 @@ export function WaitingRoomPage() {
   const [configEditorOpen, setConfigEditorOpen] = useState(false);
   const [aiEditorOpen, setAIEditorOpen] = useState(false);
   const [seatRequestOpen, setSeatRequestOpen] = useState(false);
+  const [approvedSeatRequest, setApprovedSeatRequest] = useState<RoomSeatRequestView | null>(null);
   const [copied, setCopied] = useState(false);
   const copyTimer = useRef<number | null>(null);
 
@@ -208,6 +211,11 @@ export function WaitingRoomPage() {
     setPageError(null);
     void operation();
   };
+  const approveSeatRequest = async (request: RoomSeatRequestView) => {
+    setPageError(null);
+    setSeatRequestOpen(false);
+    if (await respondSeatRequest(request.id, true)) setApprovedSeatRequest(request);
+  };
 
   return (
     <AppShell
@@ -292,11 +300,38 @@ export function WaitingRoomPage() {
                 <div><strong>{request.requesterName}</strong><span>正在申请玩家位置</span></div>
                 <div className="waiting-room__action-list">
                   <Button variant="secondary" onClick={() => { setSeatRequestOpen(false); runSeatMutation(() => respondSeatRequest(request.id, false)); }}>拒绝</Button>
-                  <Button onClick={() => { setSeatRequestOpen(false); runSeatMutation(() => respondSeatRequest(request.id, true)); }}>同意申请</Button>
+                  <Button onClick={() => void approveSeatRequest(request)}>同意申请并选择移出玩家</Button>
                 </div>
               </div>
             ))}
             {(room.seatRequests ?? []).every((request) => request.status !== 'pending') ? <p className="waiting-room__empty-copy">暂无待处理申请。</p> : null}
+          </div>
+        </Modal>
+
+        <Modal
+          open={approvedSeatRequest !== null}
+          title="腾出玩家位置"
+          context={approvedSeatRequest ? `${approvedSeatRequest.requesterName} 的位置申请已同意，请选择一名真人玩家移出玩家席。` : undefined}
+          onClose={() => setApprovedSeatRequest(null)}
+        >
+          <div className="waiting-room__seat-request-list">
+            {room.members
+              .filter((member) => member.kind === 'player' && !member.isAI && !member.isHost)
+              .map((member) => (
+                <Button
+                  key={member.id}
+                  variant="secondary"
+                  onClick={() => {
+                    setApprovedSeatRequest(null);
+                    runSeatMutation(() => kickPlayer(member.id));
+                  }}
+                >
+                  <X size={17} aria-hidden="true" />移出 {member.name}
+                </Button>
+              ))}
+            {!room.members.some((member) => member.kind === 'player' && !member.isAI && !member.isHost) ? (
+              <p className="waiting-room__empty-copy">当前没有可移出的真人玩家；申请人可直接使用空位或 AI 位置。</p>
+            ) : null}
           </div>
         </Modal>
 

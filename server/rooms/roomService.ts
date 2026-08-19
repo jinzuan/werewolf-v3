@@ -1680,7 +1680,10 @@ export class RoomService {
   ): Promise<RoomView> {
     await this.mutateRoom(identity, expectedRoomRevision, 'respond_seat_request', (room) => {
       const request = (room.seatRequests ?? []).find((candidate) => candidate.id === requestId);
-      if (!request || request.status !== 'pending') {
+      const requester = request
+        ? room.members.find((member) => member.id === request.requesterId)
+        : undefined;
+      if (!request || request.status !== 'pending' || !requester || requester.kind !== 'spectator') {
         throw this.error('MEMBER_NOT_FOUND', 'room.error.seat_request_not_found');
       }
       request.status = approved ? 'approved' : 'denied';
