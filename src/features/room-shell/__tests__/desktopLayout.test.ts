@@ -16,7 +16,11 @@ test('桌面房间工作区有独立三栏契约，窄屏规则仍由旧断点�
   assert.match(game, /<MatchShell[\s\S]*desktop/);
   assert.match(game, /v3-desktop-room-panel/);
   assert.match(styles, /@media \(min-width: 1280px\)/);
-  assert.match(styles, /grid-template-columns: minmax\(248px, \.84fr\) minmax\(480px, 1\.55fr\) minmax\(340px, \.96fr\)/);
+  assert.match(styles, /grid-template-columns:[\s\S]*clamp\(224px, 18vw, 330px\)[\s\S]*clamp\(380px, 36vw, 720px\)/);
+  assert.match(styles, /min-aspect-ratio: 16\/9/);
+  assert.match(styles, /--v3-workspace-height: clamp\(380px, calc\(100dvh - 170px\), 620px\)/);
   assert.match(waitingStyles, /grid-template-areas: 'players side info'/);
+  assert.match(waitingStyles, /min-aspect-ratio: 16\/9/);
+  assert.match(waitingStyles, /--waiting-workspace-height: clamp\(360px, calc\(100dvh - 210px\), 560px\)/);
   assert.match(waitingStyles, /@media \(max-width: 767px\)/);
 });

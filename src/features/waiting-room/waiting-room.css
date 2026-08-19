@@ -963,3 +963,96 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Fluid waiting-room workspace: the seat projection and its operational
+   columns share the same sizing language as the in-game desktop shell. */
+@media (min-width: 1024px) {
+  .waiting-room {
+    gap: clamp(var(--ww-space-4), 1.35vw, var(--ww-space-5));
+  }
+
+  .waiting-room__board {
+    grid-template-columns:
+      minmax(clamp(360px, 52vw, 680px), 1.5fr)
+      minmax(clamp(260px, 26vw, 380px), .9fr);
+    gap: clamp(var(--ww-space-4), 1.35vw, var(--ww-space-5));
+  }
+
+  .waiting-room__players {
+    padding: clamp(var(--ww-space-4), 1.6vw, var(--ww-space-5));
+  }
+
+  .waiting-room__seat-grid {
+    grid-template-columns: repeat(auto-fit, minmax(clamp(148px, 12vw, 190px), 1fr));
+    gap: clamp(var(--ww-space-2), .8vw, var(--ww-space-3));
+  }
+}
+
+/* A wide landscape tablet can align the waiting-room's three concerns before
+   the width breakpoint. A tall or ordinary tablet keeps the two-column flow
+   above, so the seat cards retain a safe minimum width. */
+@media (min-width: 1024px) and (max-width: 1279px) and (min-aspect-ratio: 16/9),
+       (min-width: 1280px) {
+  .waiting-room {
+    --waiting-workspace-height: clamp(430px, calc(100dvh - 250px), 680px);
+  }
+
+  .waiting-room__board {
+    grid-template-columns:
+      minmax(clamp(360px, 34vw, 560px), 1.34fr)
+      minmax(clamp(250px, 22vw, 360px), .88fr)
+      minmax(clamp(250px, 22vw, 360px), .88fr);
+    grid-template-areas: 'players side info';
+    align-items: stretch;
+    gap: clamp(var(--ww-space-4), 1.35vw, var(--ww-space-5));
+  }
+
+  .waiting-room__players,
+  .waiting-room__side,
+  .waiting-room__desktop-info {
+    height: var(--waiting-workspace-height);
+    min-height: 0;
+  }
+
+  .waiting-room__players {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .waiting-room__seat-scroll {
+    max-height: none;
+    flex: 1 1 auto;
+  }
+
+  .waiting-room__side,
+  .waiting-room__desktop-info {
+    overflow-y: auto;
+    padding-right: var(--ww-space-1);
+    scrollbar-gutter: stable;
+  }
+
+  .waiting-room__desktop-info {
+    align-content: start;
+  }
+
+  .waiting-room__participant-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .waiting-room__config-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* On short desktop windows, reserve less vertical space for the header and
+   let each column scroll independently. No waiting-room action is removed. */
+@media (min-width: 1024px) and (max-height: 760px) {
+  .waiting-room {
+    --waiting-workspace-height: clamp(360px, calc(100dvh - 210px), 560px);
+  }
+
+  .waiting-room__header-card {
+    min-height: 0;
+    padding-block: clamp(var(--ww-space-4), 2vh, var(--ww-space-5));
+  }
+}

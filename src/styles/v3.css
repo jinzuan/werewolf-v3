@@ -2680,8 +2680,11 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
    information/action rail without collapsing any of those concerns. */
 @media (min-width: 1280px) {
   .v3-desktop-match-layout {
-    grid-template-columns: minmax(248px, .84fr) minmax(480px, 1.55fr) minmax(340px, .96fr);
-    gap: var(--ww-space-5);
+    grid-template-columns:
+      minmax(clamp(224px, 18vw, 330px), .84fr)
+      minmax(clamp(380px, 36vw, 720px), 1.55fr)
+      minmax(clamp(280px, 24vw, 420px), .96fr);
+    gap: clamp(var(--ww-space-3), 1.35vw, var(--ww-space-5));
   }
 
   .v3-desktop-match-layout .v3-match-layout__left,
@@ -2701,7 +2704,7 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
   }
 
   .v3-desktop-match-layout .v3-player-seat {
-    min-height: 112px;
+    min-height: clamp(96px, 8vh, 112px);
   }
 
   .v3-desktop-match-layout .v3-chat-panel,
@@ -3178,5 +3181,96 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
 
   .v3-room-header__meta > strong {
     letter-spacing: .08em;
+  }
+}
+
+/* Fluid match workspace: the layout changes only when a column can no longer
+   keep a useful reading width. Inside each state, rails and gaps breathe with
+   the viewport instead of jumping between fixed desktop sizes. */
+@media (min-width: 1024px) {
+  :root { --page-gutter: clamp(18px, 2.4vw, 40px); }
+
+  .v3-page {
+    padding-inline: clamp(18px, 2.4vw, 40px);
+  }
+}
+
+/* Medium desktop: keep the seat rail and primary stream side by side, with
+   the secondary rail folded below into a bounded, scrollable drawer-like
+   surface. It remains in the document so actions and events are preserved. */
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .v3-desktop-match-layout {
+    grid-template-columns:
+      minmax(clamp(216px, 24vw, 296px), .78fr)
+      minmax(0, 1.22fr);
+    grid-template-areas: 'left center' 'right right' 'footer footer';
+    gap: clamp(var(--ww-space-3), 1.35vw, var(--ww-space-5));
+  }
+
+  .v3-desktop-match-layout .v3-match-layout__left,
+  .v3-desktop-match-layout .v3-match-layout__center,
+  .v3-desktop-match-layout .v3-match-layout__right {
+    min-width: 0;
+  }
+
+  .v3-desktop-match-layout .v3-match-layout__right > .v3-match-side {
+    max-height: min(38dvh, 360px);
+    overflow-y: auto;
+    padding-right: var(--ww-space-1);
+    scrollbar-gutter: stable;
+  }
+
+  .v3-desktop-match-layout .v3-desktop-room-panel {
+    display: none;
+  }
+
+  .v3-desktop-match-layout .v3-player-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(6px, .65vw, var(--ww-space-2));
+  }
+}
+
+/* A wide landscape tablet can expose all three rails without making the
+   center unreadable. This aspect-ratio escape hatch also covers split-screen
+   desktop windows between 1024px and 1279px. */
+@media (min-width: 1024px) and (max-width: 1279px) and (min-aspect-ratio: 16/9),
+       (min-width: 1280px) {
+  .v3-desktop-match-layout {
+    grid-template-columns:
+      minmax(clamp(224px, 18vw, 330px), .84fr)
+      minmax(clamp(380px, 36vw, 720px), 1.55fr)
+      minmax(clamp(280px, 24vw, 420px), .96fr);
+    grid-template-areas: 'left center right' 'footer footer footer';
+  }
+
+  .v3-desktop-match-layout .v3-desktop-room-panel {
+    display: block;
+  }
+}
+
+/* Short viewports use the available height as a budget. Dense projections
+   scroll inside their own rail, while the page still scrolls for controls and
+   footers that cannot be compressed safely. */
+@media (min-width: 900px) and (max-height: 760px) {
+  .v3-desktop-match-layout {
+    --v3-workspace-height: clamp(380px, calc(100dvh - 170px), 620px);
+  }
+
+  .v3-desktop-match-layout .v3-player-seat {
+    min-height: clamp(84px, 10vh, 104px);
+    grid-template-rows: clamp(40px, 6vh, 52px) 22px 16px;
+  }
+
+  .v3-desktop-match-layout .v3-chat-panel {
+    height: var(--v3-workspace-height);
+  }
+
+  .v3-desktop-match-layout .v3-monitor-stream {
+    height: var(--v3-workspace-height);
+    grid-template-rows: minmax(0, 1fr) minmax(220px, 1fr);
+  }
+
+  .v3-desktop-match-layout .v3-monitor-chat {
+    min-height: 260px;
   }
 }
