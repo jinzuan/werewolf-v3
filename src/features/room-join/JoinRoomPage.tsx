@@ -104,17 +104,17 @@ export function JoinRoomPage() {
                   <Eye size={17} />改为观战
                 </Button>
               ) : (
-                <Button type="button" variant="secondary" disabled={loading || !name.trim() || !roomCode || !joinPassword} onClick={() => void enter('play')}>
+                <Button type="button" variant="secondary" disabled={loading || !name.trim() || !roomCode} onClick={() => void enter('play')}>
                   <KeyRound size={17} />改为加入
                 </Button>
               )}
             </div>
           </form>
         </Card>
-        <Button variant="quiet" onClick={() => navigate('/lobby')}><ArrowLeft size={17} />返回大厅</Button>
+        <Button variant="quiet" aria-label="退出加入房间" onClick={() => navigate('/lobby')}><ArrowLeft size={17} />退出</Button>
         <Modal
           open={playerSeatFull}
-          title="玩家席已满"
+          title="玩家已满"
           context="这间房间暂时没有可用的玩家位置。观战不占用玩家席，房主也可以从席位菜单移出玩家。"
           onClose={clearError}
         >
