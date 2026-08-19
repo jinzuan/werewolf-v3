@@ -221,7 +221,7 @@ export class ProviderQueue {
     this.cleanupItem(item);
     if (bucket) {
       bucket.active = Math.max(0, bucket.active - 1);
-      if (this.closed && bucket.active === 0 && bucket.items.length === 0) {
+      if (bucket.active === 0 && bucket.items.length === 0) {
         this.buckets.delete(item.key);
       }
     }
@@ -254,20 +254,30 @@ export class AICircuitBreaker {
     failures: number;
     openedAt: number | null;
     halfOpenInFlight: boolean;
+    lastUsed: number;
   }>();
   private readonly failureThreshold: number;
   private readonly openMs: number;
+  private readonly maxEntries: number;
   private readonly now: () => number;
+  private useCounter = 0;
 
-  constructor(options: { failureThreshold?: number; openMs?: number; now?: () => number } = {}) {
+  constructor(options: {
+    failureThreshold?: number;
+    openMs?: number;
+    maxEntries?: number;
+    now?: () => number;
+  } = {}) {
     this.failureThreshold = positiveInteger(options.failureThreshold, 3);
     this.openMs = positiveInteger(options.openMs, 10_000);
+    this.maxEntries = positiveInteger(options.maxEntries, 1_024);
     this.now = options.now ?? Date.now;
   }
 
   allow(key: string): boolean {
     const entry = this.entries.get(key);
     if (!entry || entry.openedAt === null) return true;
+    entry.lastUsed = ++this.useCounter;
     if (this.now() - entry.openedAt < this.openMs) return false;
     if (entry.halfOpenInFlight) return false;
     entry.halfOpenInFlight = true;
@@ -282,6 +292,7 @@ export class AICircuitBreaker {
   release(key: string): void {
     const entry = this.entries.get(key);
     if (entry?.halfOpenInFlight) entry.halfOpenInFlight = false;
+    if (entry) entry.lastUsed = ++this.useCounter;
   }
 
   recordFailure(key: string): void {
@@ -289,10 +300,23 @@ export class AICircuitBreaker {
       failures: 0,
       openedAt: null,
       halfOpenInFlight: false,
+      lastUsed: 0,
     };
     entry.failures += 1;
     entry.halfOpenInFlight = false;
+    entry.lastUsed = ++this.useCounter;
     if (entry.failures >= this.failureThreshold) entry.openedAt = this.now();
+    if (!this.entries.has(key) && this.entries.size >= this.maxEntries) {
+      let oldestKey: string | undefined;
+      let oldestUse = Number.POSITIVE_INFINITY;
+      for (const [candidateKey, candidate] of this.entries) {
+        if (candidate.lastUsed < oldestUse) {
+          oldestKey = candidateKey;
+          oldestUse = candidate.lastUsed;
+        }
+      }
+      if (oldestKey !== undefined) this.entries.delete(oldestKey);
+    }
     this.entries.set(key, entry);
   }
 

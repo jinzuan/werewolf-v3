@@ -54,6 +54,26 @@ test('provider queue bounds waiting work and removes cancelled stages', async ()
   assert.equal(queue.stats().active, 0);
 });
 
+test('provider queue and circuit breaker release unique-key state', async () => {
+  const queue = new ProviderQueue({ concurrency: 1 });
+  for (let index = 0; index < 32; index += 1) {
+    await queue.run(`endpoint-${index}:model`, async () => undefined);
+  }
+  assert.equal(
+    (queue as unknown as { buckets: Map<string, unknown> }).buckets.size,
+    0,
+  );
+
+  const breaker = new AICircuitBreaker({ maxEntries: 8 });
+  for (let index = 0; index < 32; index += 1) {
+    breaker.recordFailure(`provider-${index}`);
+  }
+  assert.equal(
+    (breaker as unknown as { entries: Map<string, unknown> }).entries.size,
+    8,
+  );
+});
+
 test('an active HTTP request receives orchestrator cancellation', async () => {
   const players = createPlayers();
   const guardian = players.find((player) => player.role === 'guardian')!;
