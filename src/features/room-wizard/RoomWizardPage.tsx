@@ -781,6 +781,14 @@ export function RoomWizardPage() {
     navigate('/rooms/new/settings', { replace: true });
   }, [navigate, rawStep]);
 
+  // Keep the hook order stable while the catalog and draft are loading. The
+  // first render intentionally shows a loading/error state, but the next
+  // render must not introduce a new hook after that conditional branch.
+  const allIssues = useMemo(
+    () => !catalog || !draft ? [] : issuesForStep(draft, 'roles', catalog),
+    [catalog, draft],
+  );
+
   const update = (patch: Partial<WizardDraft>) => {
     setDraft((current) => {
       if (!current) return current;
@@ -830,10 +838,6 @@ export function RoomWizardPage() {
     </AppShell>;
   }
 
-  const allIssues = useMemo(
-    () => issuesForStep(draft, 'roles', catalog),
-    [catalog, draft],
-  );
   const issuesFor = (step: WizardStep): WizardIssue[] => [
     ...allIssues.filter((issue) => (step === 'players'
       ? issue.step === 'players' || issue.step === 'rules'

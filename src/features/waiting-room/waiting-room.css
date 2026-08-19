@@ -131,6 +131,10 @@
   border-bottom: 1.5px solid var(--ww-border-default);
 }
 
+.waiting-room__players .waiting-room__section-heading {
+  grid-template-columns: 40px minmax(0, 1fr) auto auto;
+}
+
 .waiting-room__section-heading h2 {
   margin: 0;
   color: var(--ww-text-strong);
@@ -857,6 +861,7 @@
   .waiting-room__meta-item { padding-right: var(--ww-space-3); }
   .waiting-room__header-meta .ww-status { flex: 1 0 100%; }
   .waiting-room__header-meta .v3-button { width: 100%; }
+  .waiting-room__players .waiting-room__section-heading { grid-template-columns: 36px minmax(0, 1fr) auto auto; }
   .waiting-room__self-ready-body { align-items: stretch; flex-direction: column; }
   .waiting-room__self-ready-body .v3-button { width: 100%; }
   .waiting-room__muted-action { margin-left: 0; }

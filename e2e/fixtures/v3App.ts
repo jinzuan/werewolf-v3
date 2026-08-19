@@ -114,6 +114,7 @@ const startV3Server = async (
   canary: string,
   controlToken: string,
   secretKey: string,
+  publicOrigin: string,
 ): Promise<ChildURLs> => {
   const child = spawn(process.execPath, ['--import', 'tsx/esm', 'e2e/support/v3TestServer.ts'], {
     cwd: process.cwd(),
@@ -127,6 +128,11 @@ const startV3Server = async (
       WW_TEST_CONTROL_TOKEN: controlToken,
       WW_TEST_ARTIFACT_CANARY: canary,
       WW_SECRET_KEY: secretKey,
+      // Vite preview selects a worker port dynamically. Keep the E2E server's
+      // exact CORS allowlist aligned with that origin instead of falling back
+      // to the development default :3001.
+      WW_PUBLIC_ORIGIN: publicOrigin,
+      WW_CORS_ORIGINS: publicOrigin,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -169,7 +175,7 @@ export const test = base.extend<V3Fixtures, V3WorkerFixtures>({
     const canary = newArtifactCanary(namespace);
     const controlToken = randomUUID();
     const secretKey = randomBytes(32).toString('base64');
-    let server = await startV3Server(dataDir, namespace, canary, controlToken, secretKey);
+    let server = await startV3Server(dataDir, namespace, canary, controlToken, secretKey, new URL(_appURL).origin);
     const initialChecksum = await computeFixtureChecksum(process.cwd());
     const environment: V3Environment = {
       appURL: _appURL,
@@ -181,7 +187,7 @@ export const test = base.extend<V3Fixtures, V3WorkerFixtures>({
       stop: async () => stopChild(server.child),
       restart: async () => {
         await stopChild(server.child);
-        server = await startV3Server(dataDir, namespace, canary, controlToken, secretKey);
+        server = await startV3Server(dataDir, namespace, canary, controlToken, secretKey, new URL(_appURL).origin);
       },
       advanceClock: async (milliseconds) => {
         await controlRequest({ controlURL: server.controlURL, controlToken }, '/clock/advance', { ms: milliseconds });

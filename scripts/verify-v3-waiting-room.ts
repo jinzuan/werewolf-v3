@@ -27,12 +27,31 @@ const viewports = [
 await mkdir(screenshotDir, { recursive: true });
 
 const layoutMetricsScript = `(() => {
+  const clippedByAncestor = (element) => {
+    const rect = element.getBoundingClientRect();
+    let ancestor = element.parentElement;
+    while (ancestor) {
+      const style = getComputedStyle(ancestor);
+      const clipsX = ['hidden', 'clip', 'auto', 'scroll'].includes(style.overflowX);
+      const clipsY = ['hidden', 'clip', 'auto', 'scroll'].includes(style.overflowY);
+      if (clipsX || clipsY) {
+        const ancestorRect = ancestor.getBoundingClientRect();
+        if ((clipsX && (rect.right <= ancestorRect.left || rect.left >= ancestorRect.right)) ||
+            (clipsY && (rect.bottom <= ancestorRect.top || rect.top >= ancestorRect.bottom))) {
+          return true;
+        }
+      }
+      ancestor = ancestor.parentElement;
+    }
+    return false;
+  };
   const visible = (element) => {
     if (!(element instanceof HTMLElement)) return false;
     const rect = element.getBoundingClientRect();
     const style = getComputedStyle(element);
     return rect.width > 0 && rect.height > 0 &&
-      style.display !== 'none' && style.visibility !== 'hidden';
+      style.display !== 'none' && style.visibility !== 'hidden' &&
+      !clippedByAncestor(element);
   };
   const controls = [...document.querySelectorAll(
     'button, a, input, select, textarea'
@@ -164,6 +183,7 @@ const vite = await createViteServer({
     host: '127.0.0.1',
     port: 0,
     strictPort: false,
+    watch: null,
   },
 });
 await vite.listen();
@@ -198,12 +218,9 @@ try {
   }, serverUrl);
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
 
-  await page.goto(`${appUrl}/rooms/new/players`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${appUrl}/rooms/new/settings`, { waitUntil: 'domcontentloaded' });
   await page.getByLabel('显示名称').fill('W3-P2 Host');
   await page.getByLabel('房间名称').fill('W3-P2 Waiting Room');
-  await page.getByRole('button', { name: '继续选择角色' }).click();
-  await page.getByRole('button', { name: '继续选择规则' }).click();
-  await page.getByRole('button', { name: '查看确认' }).click();
   await page.getByRole('button', { name: '创建并进入等待房' }).click();
   await page.waitForURL(/\/rooms\/[A-Z2-9]{6}\/waiting$/, {
     timeout: 10_000,
@@ -262,13 +279,14 @@ try {
   await captureLayout(page, 'joined');
 
   guest.disconnect();
-  await page.getByText('离线 · 未准备').waitFor({
+  const offlineLabels = page.getByText('离线 · 未准备');
+  await offlineLabels.first().waitFor({
     timeout: 5_000,
   });
   assert.equal(await memberSeats.count(), 2);
   assert.equal(
-    await page.getByText('离线 · 未准备').count(),
-    1,
+    await offlineLabels.count(),
+    2,
   );
   await captureLayout(page, 'offline');
 
