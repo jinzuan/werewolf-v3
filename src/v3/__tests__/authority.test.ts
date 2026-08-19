@@ -319,6 +319,20 @@ test('legacy join-token session shapes are rejected', () => {
     }),
   );
   assert.equal(readV3Session(storage), null);
+  assert.equal(storage.getItem(V3_SESSION_KEY), null);
+});
+
+test('malformed session cleanup remains safe when storage removal fails', () => {
+  let removeCalls = 0;
+  const storage = {
+    getItem: () => '{broken',
+    removeItem: () => {
+      removeCalls += 1;
+      throw new Error('storage unavailable');
+    },
+  };
+  assert.doesNotThrow(() => readV3Session(storage));
+  assert.equal(removeCalls, 1);
 });
 
 test('the shared sensitive-key scanner catches nested and suffix aliases', () => {

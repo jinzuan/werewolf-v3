@@ -111,13 +111,19 @@ export const createV3Session = (
 });
 
 export const readV3Session = (
-  storage: Pick<Storage, 'getItem'>,
+  storage: Pick<Storage, 'getItem'> & Partial<Pick<Storage, 'removeItem'>>,
 ): V3Session | null => {
+  const discard = (): void => {
+    try { storage.removeItem?.(V3_SESSION_KEY); } catch { /* stale cache is non-fatal */ }
+  };
   try {
     const raw = storage.getItem(V3_SESSION_KEY);
     if (!raw) return null;
     const value = JSON.parse(raw) as unknown;
-    if (containsForbiddenSessionSecrets(value)) return null;
+    if (containsForbiddenSessionSecrets(value)) {
+      discard();
+      return null;
+    }
     if (
       !isRecord(value) ||
       value.version !== V3_SESSION_VERSION ||
@@ -130,10 +136,12 @@ export const readV3Session = (
       (value.mode !== 'player' && value.mode !== 'spectator') ||
       typeof value.lastSeenSeq !== 'number'
     ) {
+      discard();
       return null;
     }
     return value as unknown as V3Session;
   } catch {
+    discard();
     return null;
   }
 };
