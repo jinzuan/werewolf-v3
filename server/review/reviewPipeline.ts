@@ -224,6 +224,14 @@ export class ReviewPipeline {
     return this.repository.get(gameId);
   }
 
+  /** Remove terminal review data after the owning room leaves retention. */
+  async remove(gameId: string): Promise<void> {
+    const active = this.active.get(gameId);
+    if (active) await Promise.allSettled([active]);
+    this.active.delete(gameId);
+    await this.repository.remove?.(gameId);
+  }
+
   /** Explicit operator retry; result-page reads do not invoke this method. */
   async retry(gameId: string): Promise<ReviewJobRecord | undefined> {
     const job = await this.repository.get(gameId);

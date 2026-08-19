@@ -396,6 +396,11 @@ export class RoomService {
       },
       onCleanup: async (room, intent) => {
         if (!intent.terminal) return;
+        const gameId = room?.gameId ?? room?.session?.state.gameId;
+        if (gameId) {
+          await this.eventStore.remove?.(`game:${gameId}`);
+          await this.reviewPipeline?.remove(gameId);
+        }
         const session = this.sessions.get(intent.roomCode.toUpperCase());
         session?.dispose();
         this.sessions.delete(intent.roomCode.toUpperCase());

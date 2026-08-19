@@ -42,6 +42,16 @@ export class FileReviewRepository implements ReviewRepository {
     }));
   }
 
+  remove(gameId: string): Promise<void> {
+    return this.enqueue(() => withFileLock(this.filePath, async () => {
+      const jobs = await this.load();
+      const next = jobs.filter((job) => job.gameId !== gameId);
+      if (next.length === jobs.length) return;
+      await this.write(next);
+      this.jobs = next;
+    }));
+  }
+
   createPending(
     input: Parameters<ReviewRepository['createPending']>[0],
   ): Promise<{ job: ReviewJobRecord; created: boolean }> {

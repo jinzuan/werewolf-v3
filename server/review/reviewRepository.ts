@@ -44,6 +44,8 @@ export interface ReviewJobRecord {
 export interface ReviewRepository {
   list(): Promise<ReviewJobRecord[]>;
   get(gameId: string): Promise<ReviewJobRecord | undefined>;
+  /** Optional retention hook; old adapters may keep archives indefinitely. */
+  remove?(gameId: string): Promise<void>;
   /** Atomic by gameId; retries return the original durable job. */
   createPending(
     job: Omit<ReviewJobRecord, 'status' | 'messages' | 'insights' | 'attempts' | 'createdAt' | 'updatedAt' | 'generationMode' | 'operationId'> &
@@ -65,6 +67,10 @@ export class InMemoryReviewRepository implements ReviewRepository {
   async get(gameId: string): Promise<ReviewJobRecord | undefined> {
     const job = this.jobs.get(gameId);
     return job ? clone(job) : undefined;
+  }
+
+  async remove(gameId: string): Promise<void> {
+    this.jobs.delete(gameId);
   }
 
   async createPending(

@@ -44,6 +44,10 @@ export class InMemoryEventStore implements EventStore {
     );
   }
 
+  async remove(streamId: string): Promise<void> {
+    this.streams.delete(streamId);
+  }
+
   exportStreams(): Record<string, StoredEvent[]> {
     return Object.fromEntries(
       [...this.streams.entries()].map(([streamId, events]) => [

@@ -84,3 +84,16 @@ test('file event store rejects failed persistence and does not advance the strea
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('file event store removes a terminal stream during retention cleanup', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'v3-events-retention-'));
+  const filePath = path.join(directory, 'events.json');
+  try {
+    const store = new FileEventStore(filePath);
+    await store.append({ streamId: 'game:ended', expectedVersion: 0, events: [event(1)] });
+    await store.remove('game:ended');
+    assert.deepEqual(await store.read('game:ended'), []);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

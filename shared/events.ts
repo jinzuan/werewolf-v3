@@ -101,6 +101,8 @@ export interface EventAppendRequest<TEvent extends DomainEvent = DomainEvent> {
 export interface EventStore {
   append(request: EventAppendRequest): Promise<StoredEvent[]>;
   read(streamId: string, afterSequence?: number): Promise<StoredEvent[]>;
+  /** Optional retention hook; old adapters may omit it. */
+  remove?(streamId: string): Promise<void>;
 }
 
 export type ViewerContext =

@@ -135,6 +135,21 @@ export class FileEventStore implements EventStore {
     return run;
   }
 
+  remove(streamId: string): Promise<void> {
+    const run = this.queue.then(() =>
+      withFileLock(this.filePath, async () => {
+        const streams = await this.load();
+        if (!(streamId in streams)) return;
+        const next = { ...streams };
+        delete next[streamId];
+        await this.write(next);
+        this.streams = next;
+      }),
+    );
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
   private async load(): Promise<PersistedStreams> {
     const revision = await fileRevision(this.filePath, this.dataRoot);
     if (this.streams && revision === this.diskRevision) return this.streams;

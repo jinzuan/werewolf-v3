@@ -121,6 +121,55 @@ test('public listing filters namespace, visibility, lifecycle and TTL', async ()
   void inviteOnly;
 });
 
+test('terminal room retention removes its event stream', async () => {
+  let now = 1_000;
+  const repository = new InMemoryRoomRepository();
+  const eventStore = new InMemoryEventStore();
+  const rooms = new RoomService(repository, eventStore, {
+    environment: 'test',
+    deploymentNamespace: 'retention-test',
+    endedRoomTtlMs: 10,
+    roomSweepIntervalMs: 0,
+    clock: () => now,
+  });
+  const ended = await rooms.create({
+    actorId: 'ended-host',
+    createRequestId: 'retention-ended',
+    options: optionsFor(rooms, 'ended'),
+  });
+  await repository.mutate(ended.room.code, (room) => {
+    room.status = 'ended';
+    room.gameId = 'retention-game';
+    room.closedAt = 0;
+    room.lastActivityAt = 0;
+  });
+  await eventStore.append({
+    streamId: 'game:retention-game',
+    expectedVersion: 0,
+    events: [{
+      eventId: 'retention-event',
+      roomId: ended.room.id,
+      gameId: 'retention-game',
+      sequence: 1,
+      occurredAt: 1,
+      phase: 'night',
+      stage: 'guard_seer',
+      eventType: 'game.state_updated',
+      payload: {},
+      visibility: 'public_timeline',
+      correlationId: 'retention-event',
+      schemaVersion: 1,
+    }],
+  });
+  now = 11;
+
+  assert.equal((await eventStore.read('game:retention-game')).length, 1);
+  await rooms.sweepExpiredRooms();
+  assert.equal(await repository.get(ended.room.code), undefined);
+  assert.equal((await eventStore.read('game:retention-game')).length, 0);
+  await rooms.close();
+});
+
 test('online waiting and playing rooms are never swept by waiting TTL', async () => {
   let now = 1_000;
   const repository = new InMemoryRoomRepository();
