@@ -70,7 +70,7 @@ export function PlayerSeatGrid({
   };
 
   return (
-    <section className="waiting-room__players" aria-labelledby="player-seats-title">
+    <section className="waiting-room__players" data-seat-density={compact ? 'compact' : 'full'} aria-labelledby="player-seats-title">
       <div className="waiting-room__section-heading">
         <div className="waiting-room__section-icon" aria-hidden="true">
           <UserRound size={20} />
@@ -83,6 +83,7 @@ export function PlayerSeatGrid({
         <Button
           variant="quiet"
           className="waiting-room__seat-density-toggle"
+          aria-label={compact ? '展开完整席位显示' : '压缩席位显示'}
           onClick={() => setCompact((value) => !value)}
           aria-pressed={compact}
         >
@@ -91,7 +92,7 @@ export function PlayerSeatGrid({
         </Button>
       </div>
 
-      <div className="waiting-room__seat-scroll" onFocus={onSeatListFocus}>
+      <div className="waiting-room__seat-scroll" role="region" aria-label="可滚动玩家席位列表" tabIndex={0} onFocus={onSeatListFocus}>
         <div className={`waiting-room__seat-grid${compact ? ' waiting-room__seat-grid--compact' : ''}`}>
         {seats.map(({ seatIndex, member }) => {
           if (!member) {

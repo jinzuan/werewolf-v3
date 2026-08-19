@@ -19,6 +19,7 @@ import { RoomConfigEditor } from './components/RoomConfigEditor';
 import { RoomConfigSummary } from './components/RoomConfigSummary';
 import { RoomAIConfigEditor } from './components/RoomAIConfigEditor';
 import { PlayerSeatGrid } from './components/PlayerSeatGrid';
+import { ParticipantInfoPanel } from './components/ParticipantInfoPanel';
 import { WaitingRoomQuickSettings } from './components/WaitingRoomQuickSettings';
 import { SpectatorList } from './components/SpectatorList';
 import { StartCheckPanel } from './components/StartCheckPanel';
@@ -281,6 +282,8 @@ export function WaitingRoomPage() {
             />
           </aside>
         </div>
+
+        <ParticipantInfoPanel room={room} />
 
         <RoomConfigSummary
           room={room}

@@ -94,6 +94,7 @@
 
 .waiting-room__players,
 .waiting-room__quick-settings,
+.waiting-room__participants,
 .waiting-room__checks,
 .waiting-room__spectators,
 .waiting-room__config,
@@ -198,6 +199,12 @@
   overflow: auto;
   padding: 2px;
   scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
+.waiting-room__seat-scroll:focus-visible {
+  outline: 2px solid var(--ww-focus-ring);
+  outline-offset: 3px;
 }
 
 .waiting-room__seat-grid--compact {
@@ -304,6 +311,72 @@
   gap: var(--ww-space-4);
   padding-top: var(--ww-space-3);
   border-top: 1.5px solid var(--ww-border-default);
+}
+
+.waiting-room__participants {
+  display: grid;
+  gap: var(--ww-space-4);
+}
+
+.waiting-room__participants .waiting-room__section-heading {
+  margin-bottom: 0;
+}
+
+.waiting-room__participant-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--ww-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.waiting-room__participant {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--ww-space-3);
+  padding: var(--ww-space-3);
+  border: 1.5px solid var(--ww-border-default);
+  border-radius: var(--ww-radius-control);
+  background: var(--ww-bg-raised);
+}
+
+.waiting-room__participant-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1.5px solid var(--ww-border-strong);
+  border-radius: 50%;
+  color: var(--ww-action-primary);
+}
+
+.waiting-room__participant-main {
+  min-width: 0;
+  display: grid;
+  flex: 1;
+  gap: 2px;
+}
+
+.waiting-room__participant-main strong {
+  overflow: hidden;
+  color: var(--ww-text-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.waiting-room__participant-main > span {
+  color: var(--ww-text-muted);
+  font-size: var(--ww-text-caption-size);
+}
+
+.waiting-room__participant-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
 }
 
 .waiting-room__seat-grid .ww-seat {
@@ -678,9 +751,10 @@
   .waiting-room__error { order: 2; margin: 0; }
   .waiting-room__quick-settings { order: 3; }
   .waiting-room__board { order: 4; }
-  .waiting-room__config { order: 5; }
-  .waiting-room__secondary-details { order: 6; }
-  .waiting-room__footer-note { order: 7; }
+  .waiting-room__participants { order: 5; }
+  .waiting-room__config { order: 6; }
+  .waiting-room__secondary-details { order: 7; }
+  .waiting-room__footer-note { order: 8; }
   .waiting-room__header-main { align-items: flex-start; }
   .waiting-room__header-main h1 { font-size: var(--ww-text-page-title-size); line-height: var(--ww-text-page-title-line); }
   .waiting-room__header-main p { max-width: 230px; }
