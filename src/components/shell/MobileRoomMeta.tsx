@@ -2,28 +2,11 @@ import { Check, Copy } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useV3Store } from '../../stores/v3Store';
 import { roomStatusLabel } from '../../app/routes/roomRouting';
+import { copyText } from '../../lib/copyText';
 
 const viewerLabel = (kind: 'player' | 'spectator', omniscient: boolean): string => {
   if (kind === 'player') return '玩家视角';
   return omniscient ? '全知观战' : '公开观战';
-};
-
-const copyText = async (value: string): Promise<void> => {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(value);
-    return;
-  }
-
-  const fallback = document.createElement('textarea');
-  fallback.value = value;
-  fallback.setAttribute('readonly', '');
-  fallback.style.position = 'fixed';
-  fallback.style.opacity = '0';
-  document.body.appendChild(fallback);
-  fallback.select();
-  const copied = document.execCommand('copy');
-  fallback.remove();
-  if (!copied) throw new Error('copy failed');
 };
 
 /** Room identity that is available from the phone's View tab. */

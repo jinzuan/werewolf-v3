@@ -483,6 +483,25 @@
   font-size: var(--ww-text-caption-size);
 }
 
+.waiting-room__invite-fallback {
+  display: grid;
+  gap: var(--ww-space-2);
+  color: var(--ww-text-muted);
+  font-size: var(--ww-text-caption-size);
+}
+
+.waiting-room__invite-fallback textarea {
+  width: 100%;
+  min-height: 132px;
+  resize: vertical;
+  padding: var(--ww-space-3);
+  border: 1.5px solid var(--ww-border-default);
+  border-radius: var(--ww-radius-control);
+  background: var(--ww-bg-subtle);
+  color: var(--ww-text-strong);
+  line-height: var(--ww-text-body-line);
+}
+
 @media (max-width: 680px) {
   .waiting-room__seat-request,
   .waiting-room__editor-ai-link {

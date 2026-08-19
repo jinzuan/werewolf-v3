@@ -23,6 +23,7 @@ import { ParticipantInfoPanel } from './components/ParticipantInfoPanel';
 import { WaitingRoomQuickSettings } from './components/WaitingRoomQuickSettings';
 import { StartCheckPanel } from './components/StartCheckPanel';
 import { WaitingRoomHeader } from './components/WaitingRoomHeader';
+import { copyText } from '../../lib/copyText';
 import {
   isActionAllowed,
   isWaitingRoomStatus,
@@ -108,6 +109,7 @@ export function WaitingRoomPage() {
   const [seatRequestOpen, setSeatRequestOpen] = useState(false);
   const [approvedSeatRequest, setApprovedSeatRequest] = useState<RoomSeatRequestView | null>(null);
   const [copied, setCopied] = useState(false);
+  const [inviteFallback, setInviteFallback] = useState<string | null>(null);
   const copyTimer = useRef<number | null>(null);
 
   useEffect(() => () => {
@@ -141,20 +143,18 @@ export function WaitingRoomPage() {
   const onCopyInvite = useCallback(async () => {
     if (!room || !session || !isActionAllowed(room, 'invite')) return;
     const joinToken = session.credentials.joinToken;
-    if (!joinToken || !navigator.clipboard?.writeText) {
-      setPageError('当前浏览器暂不支持复制邀请信息。');
-      return;
-    }
+    const invite = `${joinInviteUrl(window.location.origin, room.code, 'play')}\n\n房间码：${room.code}\n邀请口令：${joinToken}`;
     try {
-      await navigator.clipboard.writeText(
-        `${joinInviteUrl(window.location.origin, room.code, 'play')}\n\n房间码：${room.code}\n邀请口令：${joinToken}`,
-      );
+      await copyText(invite);
       setCopied(true);
+      setInviteFallback(null);
       setPageError(null);
       if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
       copyTimer.current = window.setTimeout(() => setCopied(false), 2_400);
     } catch {
-      setPageError('复制邀请信息失败，请稍后重试。');
+      setCopied(false);
+      setInviteFallback(invite);
+      setPageError('自动复制失败，已打开邀请信息；请手动复制后发送给朋友。');
     }
   }, [room, session]);
 
@@ -367,6 +367,18 @@ export function WaitingRoomPage() {
           onClose={() => setAIEditorOpen(false)}
           onSubmit={updateAI}
         />
+
+        <Modal
+          open={inviteFallback !== null}
+          title="邀请信息"
+          context="浏览器未允许自动复制，请选中文本后手动复制。"
+          onClose={() => setInviteFallback(null)}
+        >
+          <label className="waiting-room__invite-fallback">
+            <span>邀请链接、房间码和邀请口令</span>
+            <textarea readOnly value={inviteFallback ?? ''} onFocus={(event) => event.currentTarget.select()} />
+          </label>
+        </Modal>
 
         <Card className="waiting-room__footer-note">
           <span>房间状态会自动同步</span>
