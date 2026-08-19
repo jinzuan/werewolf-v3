@@ -6,7 +6,7 @@ import { createPlayers, dispatch, initializeSession } from './fixtures';
 
 const serialized = (value: unknown) => JSON.stringify(value);
 
-test('private night facts never leak to villagers or public spectators', async () => {
+test('public spectators receive roles and day-safe content, never private night facts', async () => {
   const players = createPlayers();
   const session = new GameSession(
     'room-1',
@@ -83,11 +83,16 @@ test('private night facts never leak to villagers or public spectators', async (
   const villagerSnapshot = await session.snapshotFor(villagerView);
   const publicSnapshot = await session.snapshotFor(publicSpectator);
 
+  assert.doesNotMatch(villagerPayload, /SECRET_WOLF_CHAT/);
+  assert.doesNotMatch(villagerPayload, /"role":"wolf"/);
+  assert.doesNotMatch(villagerPayload, /guardian\.completed/);
+  assert.doesNotMatch(villagerPayload, /seer\.result/);
+
+  assert.match(publicPayload, /"role":"wolf"/);
   for (const payload of [villagerPayload, publicPayload]) {
     assert.doesNotMatch(payload, /SECRET_WOLF_CHAT/);
     assert.doesNotMatch(payload, /guardian\.completed/);
     assert.doesNotMatch(payload, /seer\.result/);
-    assert.doesNotMatch(payload, /"role":"wolf"/);
     assert.doesNotMatch(payload, /"nightActions":\[\{/);
     assert.doesNotMatch(payload, /"votes":\{/);
     assert.doesNotMatch(payload, new RegExp(`"playerId":"${guardian.id}"`));

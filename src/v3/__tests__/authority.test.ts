@@ -578,15 +578,14 @@ test('out-of-order automatic-turn pushes retain newer public content', () => {
   assert.equal(result.lastSeenSeq, 7);
 });
 
-test('public spectator snapshots and events cannot expose roles or private data', () => {
+test('public spectator snapshots expose roles but not private data', () => {
   const viewer: ViewerContext = {
     kind: 'spectator',
     spectatorId: 's1',
     omniscient: false,
   };
-  const safe = publicSpectatorSnapshot();
-  const leaked = publicSpectatorSnapshot({
-    players: [player('p1', 'wolf', 1)],
+  const safe = publicSpectatorSnapshot({
+    players: [player('p1', 'wolf', 1), player('p2', 'seer', 2)],
   });
   const privateState = publicSpectatorSnapshot({
     gameState: gameState({
@@ -622,7 +621,6 @@ test('public spectator snapshots and events cannot expose roles or private data'
   );
 
   assert.equal(isSnapshotSafeForViewer(safe), true);
-  assert.equal(isSnapshotSafeForViewer(leaked), false);
   assert.equal(isSnapshotSafeForViewer(privateState), false);
   assert.deepEqual(
     merged.events.map((event) => event.eventType),

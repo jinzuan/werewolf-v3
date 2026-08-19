@@ -89,7 +89,7 @@ const projectPlayers = (
   if (isOmniscient(viewer)) return structuredClone([...players]);
   return players.map((player) => {
     const canSeeRole =
-      viewer.kind === 'player' &&
+      viewer.kind === 'spectator' ||
       (player.id === viewer.playerId ||
         (viewer.isAlive !== false && viewer.role === 'wolf' && player.role === 'wolf'));
     const projected = {

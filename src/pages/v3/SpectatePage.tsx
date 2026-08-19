@@ -1,7 +1,6 @@
-import { Eye, List, Radio, UsersRound } from 'lucide-react';
+import { Eye, List, MessageSquare, Radio, UsersRound } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '../../components/shell/AppShell';
-import { PlayerSeatCard } from '../../components/match/PlayerSeatCard';
 import { MatchShell } from '../../components/shell/MatchShell';
 import { MobileRoomMeta } from '../../components/shell/MobileRoomMeta';
 import { MobileMatchNav, type MobileMatchNavItem } from '../../components/shell/MobileMatchNav';
@@ -9,13 +8,15 @@ import { useMobileMatchUnread } from '../../components/shell/useMobileMatchUnrea
 import { useV3Store } from '../../stores/v3Store';
 import { Badge } from '../../ui/Badge';
 import { Card } from '../../ui/Card';
+import { ChatBubble } from '../../ui/ChatBubble';
 import { DayDivider } from '../../ui/DayDivider';
-import { avatarAssetMap } from '../../ui/assetRegistry';
+import { avatarAssetMap, getAvatarAsset, roleAssetMap } from '../../ui/assetRegistry';
 import {
   createPlayerNameResolver,
   describeEvent,
   formatEventTime,
   phaseLabel,
+  ROLE_LABELS,
   VISIBILITY_LABELS,
 } from '../../v3/presentation';
 import { publicSpectatorEvents } from '../../v3/visibility';
@@ -27,13 +28,14 @@ import {
 } from '../../v3/serverClock';
 import { MAX_EVENT_WINDOW } from '../../v3/eventStream';
 import { formatCountdown } from '../../v3/countdown';
-import { isSpeechEvent } from '../../v3/visibility';
+import { chatEventsForViewer, isSpeechEvent } from '../../v3/visibility';
 
-type SpectateMobileSection = 'events' | 'identity' | 'view';
+type SpectateMobileSection = 'events' | 'chat' | 'identity' | 'view';
 type SpectateSeatStatus = 'alive' | 'exiled' | 'night-death';
 
 const SPECTATE_MOBILE_NAV_ITEMS: readonly MobileMatchNavItem[] = [
   { id: 'events', label: '时间线', icon: List },
+  { id: 'chat', label: '聊天', icon: MessageSquare },
   { id: 'identity', label: '身份座位', icon: UsersRound },
   { id: 'view', label: '查看', icon: Eye },
 ];
@@ -45,6 +47,7 @@ export function SpectatePage() {
   const snapshot = useV3Store((state) => state.snapshot);
   const events = useV3Store((state) => state.events);
   const [mobileSection, setMobileSection] = useState<SpectateMobileSection>('events');
+  const [flippedPlayers, setFlippedPlayers] = useState<Set<string>>(() => new Set());
   const clockRef = useRef<ServerClockSample | null>(null);
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
@@ -65,17 +68,44 @@ export function SpectatePage() {
     () => publicSpectatorEvents(events).slice(-MAX_EVENT_WINDOW),
     [events],
   );
+  const chatMessages = useMemo(
+    () => chatEventsForViewer(events, snapshot?.viewer ?? null)
+      .filter((event) => event.eventType === 'day.speech')
+      .slice(-MAX_EVENT_WINDOW),
+    [events, snapshot?.viewer],
+  );
   const mobileUnreadCounts = useMobileMatchUnread(
     publicStreamEvents,
     snapshot?.gameId,
     mobileSection,
-    { chatTab: null },
   );
   const players = useMemo(() => snapshot?.players ?? [], [snapshot?.players]);
   const playerName = useMemo(
     () => createPlayerNameResolver(players, room?.members ?? []),
     [players, room?.members],
   );
+  const playerById = useMemo(
+    () => new Map(players.map((player) => [player.id, player])),
+    [players],
+  );
+
+  useEffect(() => {
+    setFlippedPlayers(new Set());
+  }, [snapshot?.gameId]);
+
+  const togglePlayerIdentity = (playerId: string): void => {
+    setFlippedPlayers((current) => {
+      const next = new Set(current);
+      if (next.has(playerId)) next.delete(playerId);
+      else next.add(playerId);
+      return next;
+    });
+  };
+
+  const eventActorId = (event: (typeof chatMessages)[number]): string | null => {
+    const actorId = event.payload?.actorId;
+    return typeof actorId === 'string' ? actorId : event.actorId ?? null;
+  };
   const seatStatuses = useMemo(() => {
     const statuses = new Map<string, SpectateSeatStatus>(
       players.map((player) => [player.id, player.isAlive ? 'alive' : 'exiled']),
@@ -164,43 +194,95 @@ export function SpectatePage() {
               </div>
               <Badge tone="info"><Eye size={13} />公开视角</Badge>
             </div>
-            <div className="v3-spectate-player-grid">
+            <div className="v3-spectate-identity-list">
               {players.map((player) => (
-                <PlayerSeatCard
+                <div
                   key={player.id}
-                  player={player}
-                  label={playerName(player.id)}
-                  status={seatStatuses.get(player.id) ?? 'alive'}
-                />
+                  className={`v3-spectate-identity v3-spectate-identity--${seatStatuses.get(player.id) ?? 'alive'}`}
+                >
+                  <button
+                    type="button"
+                    className={`v3-spectate-identity__flip${flippedPlayers.has(player.id) ? ' is-flipped' : ''}`}
+                    aria-label={`${playerName(player.id)}，${flippedPlayers.has(player.id) ? '收起角色牌' : '翻看角色牌'}`}
+                    aria-pressed={flippedPlayers.has(player.id)}
+                    onClick={() => togglePlayerIdentity(player.id)}
+                  >
+                    <span className="v3-spectate-identity__flip-inner">
+                      <span className="v3-spectate-identity__face v3-spectate-identity__face--front">
+                        <img src={getAvatarAsset(player.isAI ? 'computer' : 'player').src} alt="" />
+                      </span>
+                      <span className="v3-spectate-identity__face v3-spectate-identity__face--back">
+                        {player.role ? <img src={roleAssetMap[player.role].src} alt="" /> : <span>?</span>}
+                      </span>
+                    </span>
+                    <span className="v3-spectate-identity__status" aria-label={player.isAlive ? '存活' : '已出局'} />
+                  </button>
+                  <div className="v3-spectate-identity__copy">
+                    <strong>{playerName(player.id)}{player.isAI ? <span className="v3-ai-label">AI</span> : null}</strong>
+                    <Badge tone={player.isAlive ? 'success' : 'danger'}>{player.isAlive ? '存活' : '已出局'}</Badge>
+                    <span>{flippedPlayers.has(player.id) ? (player.role ? ROLE_LABELS[player.role] : '角色待公开') : '点击头像翻看角色'}</span>
+                  </div>
+                </div>
               ))}
             </div>
-            <p className="v3-inline-note">身份字段、狼聊、查验、守护和用药详情不会进入本页。</p>
+            <p className="v3-inline-note">角色牌与白天公开发言可查看；狼人夜间频道、查验、守护和用药详情不会进入本页。</p>
           </Card>
         }
         center={
-          <Card>
-            <div className="v3-panel-heading v3-timeline-heading">
-              <div><span>按时间顺序</span><h2>公开事件时间线</h2></div>
-              <span className="v3-numeric">最近 {publicEvents.length} 条</span>
-            </div>
-            <div className="v3-timeline">
-              {publicEvents.length === 0 ? (
-                <div className="v3-inline-note">当前还没有公开事件。</div>
-              ) : publicEvents.map((event, index) => (
-                <Fragment key={event.eventId}>
-                  <DayDivider event={event} previous={publicEvents[index - 1] ?? null} fallbackDay={snapshot.gameState.day} />
-                  <div>
-                    <time>{formatEventTime(event.occurredAt).slice(0, 5)}</time>
-                    <span className="v3-timeline__dot v3-timeline__dot--gold" />
+          <div className="v3-spectate-stream">
+            <Card className="v3-spectate-timeline">
+              <div className="v3-panel-heading v3-timeline-heading">
+                <div><span>按时间顺序</span><h2>公开事件时间线</h2></div>
+                <span className="v3-numeric">最近 {publicEvents.length} 条</span>
+              </div>
+              <div className="v3-timeline">
+                {publicEvents.length === 0 ? (
+                  <div className="v3-inline-note">当前还没有公开事件。</div>
+                ) : publicEvents.map((event, index) => (
+                  <Fragment key={event.eventId}>
+                    <DayDivider event={event} previous={publicEvents[index - 1] ?? null} fallbackDay={snapshot.gameState.day} />
                     <div>
-                      <strong>{describeEvent(event, playerName, { viewer: snapshot.viewer })}</strong>
-                      <span>{VISIBILITY_LABELS[event.visibility]}</span>
+                      <time>{formatEventTime(event.occurredAt).slice(0, 5)}</time>
+                      <span className="v3-timeline__dot v3-timeline__dot--gold" />
+                      <div>
+                        <strong>{describeEvent(event, playerName, { viewer: snapshot.viewer })}</strong>
+                        <span>{VISIBILITY_LABELS[event.visibility]}</span>
+                      </div>
                     </div>
-                  </div>
-                </Fragment>
-              ))}
-            </div>
-          </Card>
+                  </Fragment>
+                ))}
+              </div>
+            </Card>
+            <Card className="v3-chat-panel v3-spectate-chat">
+              <div className="v3-panel-heading">
+                <div><span>仅显示公开发言</span><h2>聊天流</h2></div>
+                <MessageSquare size={18} />
+              </div>
+              <div className="v3-chat-list">
+                {chatMessages.length === 0 ? (
+                  <div className="v3-inline-note">当前还没有公开发言。</div>
+                ) : chatMessages.map((event, index) => {
+                  const actorId = eventActorId(event);
+                  const player = actorId ? playerById.get(actorId) : undefined;
+                  return (
+                    <Fragment key={event.eventId}>
+                      <DayDivider event={event} previous={chatMessages[index - 1] ?? null} fallbackDay={snapshot.gameState.day} />
+                      <ChatBubble
+                        author={playerName(actorId)}
+                        authorRole={player?.role ? ROLE_LABELS[player.role] : undefined}
+                        time={formatEventTime(event.occurredAt)}
+                        variant="other"
+                        visibility={event.visibility}
+                        avatarAsset={player ? getAvatarAsset(player.isAI ? 'computer' : 'player') : avatarAssetMap.spectator}
+                      >
+                        {describeEvent(event, playerName, { viewer: snapshot.viewer })}
+                      </ChatBubble>
+                    </Fragment>
+                  );
+                })}
+              </div>
+            </Card>
+          </div>
         }
         right={
           <Card>
@@ -209,11 +291,15 @@ export function SpectatePage() {
             </div>
             <MobileRoomMeta />
             <div className="v3-setting-row">
-              <div><strong>观看模式</strong><span>当前身份只能查看公开信息。</span></div>
+              <div><strong>观看模式</strong><span>可查看角色牌、白天聊天、投票和出局结果。</span></div>
               <Badge tone="success">公开</Badge>
             </div>
             <div className="v3-setting-row">
-              <div><strong>私密信息</strong><span>身份、狼人讨论和特殊行动不会显示。</span></div>
+              <div><strong>角色信息</strong><span>每个玩家的角色牌可在左侧点击翻看。</span></div>
+              <Badge tone="info">可查看</Badge>
+            </div>
+            <div className="v3-setting-row">
+              <div><strong>私密信息</strong><span>狼人夜间频道、夜间行动、查验、守护和用药详情不会显示。</span></div>
               <Badge tone="danger">未授权</Badge>
             </div>
             <div className="v3-setting-row">

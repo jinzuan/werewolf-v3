@@ -202,10 +202,9 @@ export const isSnapshotSafeForViewer = (
   if (containsSensitiveKeys(snapshot)) return false;
   if (snapshot.viewer.kind === 'spectator') {
     if (snapshot.viewer.omniscient) return true;
-    return snapshot.players.every((player) => player.role === null) &&
-      PUBLIC_SPECTATOR_PRIVATE_STATE_KEYS.every(
-        (key) => !hasOwn(snapshot.gameState, key),
-      );
+    return PUBLIC_SPECTATOR_PRIVATE_STATE_KEYS.every(
+      (key) => !hasOwn(snapshot.gameState, key),
+    );
   }
 
   const viewer = snapshot.viewer;
