@@ -279,15 +279,15 @@ export function WaitingRoomPage() {
               onLocate={scrollToCheckTarget}
             />
           </aside>
+          <div className="waiting-room__desktop-info" aria-label="参与者与房间设置">
+            <ParticipantInfoPanel room={room} />
+            <RoomConfigSummary
+              room={room}
+              onUpdateConfig={() => setConfigEditorOpen(true)}
+              aiSummary={aiSummary}
+            />
+          </div>
         </div>
-
-        <ParticipantInfoPanel room={room} />
-
-        <RoomConfigSummary
-          room={room}
-          onUpdateConfig={() => setConfigEditorOpen(true)}
-          aiSummary={aiSummary}
-        />
 
         {isHost && room.seatRequests?.some((request) => request.status === 'pending') ? (
           <Card className="waiting-room__seat-requests" aria-labelledby="seat-requests-title">

@@ -491,6 +491,39 @@ export function GamePage() {
     </Card>
   ) : null;
 
+  const desktopRoomPanel = room ? (
+    <Card className="v3-desktop-room-panel">
+      <div className="v3-panel-heading">
+        <div>
+          <span>桌面信息条</span>
+          <h2>房间信息</h2>
+        </div>
+        <Badge tone={connected ? 'success' : 'warning'}>
+          {connected ? '已连接' : '连接中'}
+        </Badge>
+      </div>
+      <dl className="v3-desktop-room-facts">
+        <div>
+          <dt>房间码</dt>
+          <dd className="v3-numeric">{room.code}</dd>
+        </div>
+        <div>
+          <dt>当前阶段</dt>
+          <dd>{phaseLabel(state)}</dd>
+        </div>
+        <div>
+          <dt>存活席位</dt>
+          <dd>{players.filter((player) => player.isAlive).length} / {players.length}</dd>
+        </div>
+        <div>
+          <dt>参与玩家</dt>
+          <dd>{room.members.filter((member) => member.kind === 'player').length} 人</dd>
+        </div>
+      </dl>
+      <p className="v3-inline-note">行动卡、身份卡和私密结果都固定在右侧信息条；席位点击仍可直接选择行动目标。</p>
+    </Card>
+  ) : null;
+
   if (!room || !session) {
     return (
       <AppShell title="玩家对局" connected={connected}>
@@ -567,9 +600,10 @@ export function GamePage() {
           />
           <MatchShell
           className="v3-game-layout"
+          desktop
           mobileSection={mobileSection}
           centerAriaLabel="聊天与发言"
-          rightAriaLabel="行动与事件"
+          rightAriaLabel="房间信息、身份与行动"
           left={
             <details className="v3-card v3-player-panel" open>
               <summary className="v3-panel-heading v3-collapsible-heading">
@@ -612,7 +646,8 @@ export function GamePage() {
             </details>
           }
           right={
-            <div className="v3-match-side">
+            <div className="v3-match-side v3-desktop-info-rail">
+            {desktopRoomPanel}
             {identityPanel}
             {isEliminated && !isLastWordsTurn ? (
             <Card className="v3-action-panel v3-spectator-panel v3-mobile-pane-action">

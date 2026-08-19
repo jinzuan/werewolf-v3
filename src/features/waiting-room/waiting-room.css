@@ -79,7 +79,7 @@
   min-width: 0;
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(292px, .9fr);
-  grid-template-areas: 'players side';
+  grid-template-areas: 'players side' 'info info';
   align-items: start;
   gap: var(--ww-space-5);
 }
@@ -90,6 +90,13 @@
   align-content: start;
   gap: var(--ww-space-4);
   grid-area: side;
+}
+
+.waiting-room__desktop-info {
+  min-width: 0;
+  display: grid;
+  grid-area: info;
+  gap: var(--ww-space-5);
 }
 
 .waiting-room__players,
@@ -891,4 +898,68 @@
 
 @media (prefers-reduced-motion: reduce) {
   .waiting-room__spin { animation: none; }
+}
+
+/* Wide desktop waiting room: the seat projection gets a dedicated column,
+   while operations/checks and participant/config information stay visible
+   beside it. The narrower rules above intentionally remain unchanged. */
+@media (min-width: 1280px) {
+  .waiting-room {
+    --waiting-workspace-height: clamp(560px, calc(100dvh - 286px), 720px);
+    gap: var(--ww-space-5);
+  }
+
+  .waiting-room__header-card {
+    min-height: 164px;
+    padding: var(--ww-space-5) var(--ww-space-6);
+  }
+
+  .waiting-room__board {
+    grid-template-columns: minmax(420px, 1.34fr) minmax(300px, .88fr) minmax(300px, .88fr);
+    grid-template-areas: 'players side info';
+    align-items: stretch;
+    gap: var(--ww-space-5);
+  }
+
+  .waiting-room__players {
+    height: var(--waiting-workspace-height);
+    display: flex;
+    flex-direction: column;
+    padding: var(--ww-space-5);
+  }
+
+  .waiting-room__seat-scroll {
+    max-height: none;
+    flex: 1 1 auto;
+  }
+
+  .waiting-room__seat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .waiting-room__side,
+  .waiting-room__desktop-info {
+    height: var(--waiting-workspace-height);
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: var(--ww-space-1);
+    scrollbar-gutter: stable;
+  }
+
+  .waiting-room__desktop-info {
+    align-content: start;
+  }
+
+  .waiting-room__desktop-info > .waiting-room__participants,
+  .waiting-room__desktop-info > .waiting-room__config {
+    min-width: 0;
+  }
+
+  .waiting-room__participant-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .waiting-room__config-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

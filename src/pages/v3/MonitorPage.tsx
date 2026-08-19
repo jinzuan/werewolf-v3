@@ -202,6 +202,7 @@ export function MonitorPage() {
       />
       <MatchShell
         className="v3-monitor-layout"
+        desktop
         mobileSection={mobileSection}
         left={
           <Card>

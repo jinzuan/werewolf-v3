@@ -1666,6 +1666,12 @@ select {
 .v3-event-item time { color: var(--ww-text-muted); font: 600 var(--ww-text-caption-size)/20px var(--ww-font-family-number); }
 .v3-event-item p { min-width: 0; margin: 0; color: var(--ww-text-default); font-size: var(--ww-text-caption-size); overflow-wrap: anywhere; }
 
+.v3-desktop-room-panel { display: none; }
+.v3-desktop-room-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--ww-space-2); margin: 0 0 var(--ww-space-3); }
+.v3-desktop-room-facts > div { min-width: 0; padding: var(--ww-space-3); border-radius: var(--ww-radius-control); background: var(--ww-bg-subtle); }
+.v3-desktop-room-facts dt { color: var(--ww-text-muted); font-size: var(--ww-text-caption-size); }
+.v3-desktop-room-facts dd { min-width: 0; margin: 2px 0 0; overflow-wrap: anywhere; color: var(--ww-text-strong); font-weight: 600; }
+
 .v3-self-status { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--ww-space-4); }
 .v3-self-status > div { min-width: 0; justify-content: space-between; gap: var(--ww-space-2); padding-right: var(--ww-space-4); border-right: 1.5px solid var(--ww-border-default); }
 .v3-self-status > div:last-child { border-right: 0; }
@@ -2667,6 +2673,54 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
 
   .v3-wizard-preview > summary { display: none; }
   .v3-wizard-preview__content { padding-top: 0; }
+}
+
+/* Dedicated desktop workspace. Tablet keeps the two-column fallback above;
+   the wide layout has enough room for a persistent seat rail, stream, and
+   information/action rail without collapsing any of those concerns. */
+@media (min-width: 1280px) {
+  .v3-desktop-match-layout {
+    grid-template-columns: minmax(248px, .84fr) minmax(480px, 1.55fr) minmax(340px, .96fr);
+    gap: var(--ww-space-5);
+  }
+
+  .v3-desktop-match-layout .v3-match-layout__left,
+  .v3-desktop-match-layout .v3-match-layout__center,
+  .v3-desktop-match-layout .v3-match-layout__right {
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .v3-desktop-match-layout .v3-desktop-room-panel {
+    display: block;
+  }
+
+  .v3-desktop-match-layout .v3-player-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--ww-space-2);
+  }
+
+  .v3-desktop-match-layout .v3-player-seat {
+    min-height: 112px;
+  }
+
+  .v3-desktop-match-layout .v3-chat-panel,
+  .v3-desktop-match-layout .v3-spectate-stream,
+  .v3-desktop-match-layout .v3-monitor-stream {
+    width: 100%;
+  }
+
+  .v3-desktop-info-rail {
+    gap: var(--ww-space-4);
+  }
+
+  .v3-desktop-info-rail > .v3-desktop-room-panel {
+    order: -1;
+  }
+
+  .v3-desktop-room-panel .v3-inline-note {
+    margin: 0;
+  }
 }
 
 @media (max-width: 1023px) {

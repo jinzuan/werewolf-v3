@@ -184,6 +184,7 @@ export function SpectatePage() {
       />
       <MatchShell
         className="v3-spectate-layout"
+        desktop
         mobileSection={mobileSection}
         left={
           <Card>
