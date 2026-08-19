@@ -22,6 +22,7 @@ import {
   InMemoryCredentialStore,
   InMemoryRateLimitStore,
   isAllowedOrigin,
+  isLoopbackHost,
   isSecureRequest,
   JoinRateLimiter,
   parseRuntimeSecurityConfig,
@@ -288,6 +289,9 @@ const createModernApplication = async (
     transport,
     ...(testControl ? { testControl } : {}),
     start: async (port = Number(process.env.PORT ?? 3001), host = runtime.bindHost) => {
+      if (security.environment !== 'production' && !isLoopbackHost(host)) {
+        throw new Error('development/test bind host must be loopback');
+      }
       await new Promise<void>((resolve, reject) => {
         const onError = (error: Error) => {
           httpServer.off('listening', onListening);

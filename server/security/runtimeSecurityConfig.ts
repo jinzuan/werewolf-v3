@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import type { SecurityEnvironment } from './endpointPolicy';
 import {
   effectiveRequestProtocol as resolveTrustedRequestProtocol,
@@ -51,6 +52,16 @@ const hasValidSecretKeyShape = (value: string | undefined): boolean => {
   }
 };
 
+/** Development/test servers must remain loopback-only unless production
+ * security (HTTPS/proxy and encrypted credentials) is selected explicitly. */
+export const isLoopbackHost = (value: string): boolean => {
+  const host = value.trim().replace(/^\[|\]$/g, '').toLowerCase();
+  if (host === 'localhost') return true;
+  if (isIP(host) === 4) return host.startsWith('127.');
+  if (isIP(host) === 6) return host === '::1';
+  return false;
+};
+
 const environmentOf = (env: NodeJS.ProcessEnv): SecurityEnvironment => {
   const value = env.WW_ENV ?? (env.NODE_ENV === 'test' ? 'test' : 'development');
   if (value !== 'production' && value !== 'development' && value !== 'test') {
@@ -82,6 +93,12 @@ export const parseRuntimeSecurityConfig = (
   const trustProxyEnabled = trustProxyFlag ? bool(rawTrustProxy) : true;
   const configuredProxyValue = trustedProxyValue(env) ?? (!trustProxyFlag ? rawTrustProxy : undefined);
   const configuredBindHost = env.WW_BIND_HOST?.trim() || undefined;
+  const bindHost = configuredBindHost ?? '127.0.0.1';
+  if (environment !== 'production' && !isLoopbackHost(bindHost)) {
+    throw new RuntimeSecurityConfigError(
+      'development/test bind host must be loopback; use WW_ENV=production for a public listener',
+    );
+  }
   let trustedProxySources;
   try {
     trustedProxySources = parseTrustedProxySources(configuredProxyValue);
@@ -140,9 +157,9 @@ export const parseRuntimeSecurityConfig = (
     trustProxy: {
       enabled: trustProxyEnabled,
       sources: trustedProxySources,
-      bindHost: configuredBindHost ?? '127.0.0.1',
+      bindHost,
     },
-    bindHost: configuredBindHost ?? '127.0.0.1',
+    bindHost,
     allowPrivateAIEndpoints: bool(env.WW_ALLOW_PRIVATE_AI_ENDPOINTS),
     aiEndpointAllowlist: (env.WW_AI_ENDPOINT_ALLOWLIST ?? '')
       .split(',')

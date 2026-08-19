@@ -19,6 +19,14 @@ test('production security config requires HTTPS and exact CORS origins', () => {
   }));
 });
 
+test('development and test listeners cannot be widened to a public host', () => {
+  assert.throws(() => parseRuntimeSecurityConfig({
+    WW_ENV: 'development',
+    WW_BIND_HOST: '0.0.0.0',
+    WW_PUBLIC_ORIGIN: 'http://198.51.100.10:3001',
+  }), /bind host must be loopback/);
+});
+
 test('recursive redaction covers credential aliases and does not expose canaries', () => {
   const value = redactJson({ aiConfig: { apiKey: 'canary-api-key', token: 'canary-token' }, nested: { authorization: 'Bearer canary-auth' } });
   assert.doesNotMatch(JSON.stringify(value), /canary-api-key|canary-token|canary-auth/);

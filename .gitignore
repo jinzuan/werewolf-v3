@@ -29,6 +29,7 @@ test-ai-config.json
 
 # 联机服务运行时数据（复盘心得 / 存档，本地文件持久化）
 server/data/*
+.data/
 # 服务端 AI 行为参考资产是静态版本库内容，不属于运行时数据
 !server/data/experience_library/
 !server/data/experience_library/*
