@@ -2123,6 +2123,13 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
   .v3-lobby-list-status { align-items: stretch; flex-direction: column; }
   .v3-lobby-list-status .v3-button { width: 100%; }
   .v3-wizard-preview { position: static; order: -1; }
+  .v3-seat-steppers {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .v3-seat-steppers > .v3-field > span:first-child,
+  .waiting-room__editor-field > span:first-child {
+    white-space: nowrap;
+  }
   .v3-wizard-actions {
     position: sticky;
     bottom: 0;
