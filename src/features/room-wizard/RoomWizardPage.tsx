@@ -825,7 +825,7 @@ export function RoomWizardPage() {
   return (
     <AppShell title="房间设置" eyebrow="狼人杀·月光森林" connected={connected}>
       <div className="v3-page-heading">
-        <div><span>创建房间 · 设置完成后直接入座</span><h1>{draft.roomName || '未命名房间'}</h1></div>
+        <div><span>创建房间 · 设置完成后直接入座</span><h1>房间设置</h1><p>先决定今晚有多少人，约定怎么玩</p></div>
         <Badge tone="info">房间设置</Badge>
       </div>
       {serverIssues.length > 0 ? <div className="v3-alert v3-alert--error" role="alert">创建未完成，请按提示修改；你的设置已保留。</div> : null}

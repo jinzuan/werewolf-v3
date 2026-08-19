@@ -7,6 +7,7 @@ import { useV3Store } from '../../stores/v3Store';
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { Input } from '../../ui/Input';
+import { Modal } from '../../ui/Modal';
 import { readPlayerNickname, writePlayerNickname } from '../../runtime/playerProfile';
 import { joinActionLabel, joinIntentFromQuery, normalizeJoinCode, type JoinIntent } from './model';
 
@@ -60,6 +61,7 @@ export function JoinRoomPage() {
   };
 
   const watchIntent = intent === 'watch';
+  const playerSeatFull = Boolean(error?.includes('玩家席已满'));
   return (
     <AppShell title={watchIntent ? '进入观战' : '加入房间'} eyebrow="村口入口" connected={connected}>
       <div className="v3-join-page">
@@ -89,12 +91,12 @@ export function JoinRoomPage() {
               <Input value={roomCode} inputMode="text" autoComplete="off" placeholder="例如 ABC123" onChange={(event) => setRoomCode(normalizeJoinCode(event.target.value))} />
             </label>
             <label className="v3-field">
-              <span>邀请口令{watchIntent ? '（公开观战按房间设置决定是否需要）' : ''}</span>
-              <Input type="password" value={joinPassword} autoComplete="off" placeholder="由房主提供" onChange={(event) => setJoinPassword(event.target.value)} />
+              <span>邀请口令{watchIntent ? '（公开观战按房间设置决定是否需要）' : '（公开房间可留空）'}</span>
+              <Input type="password" value={joinPassword} autoComplete="off" placeholder="可选；仅凭邀请房需要" onChange={(event) => setJoinPassword(event.target.value)} />
             </label>
 
             <div className="v3-join-form__actions">
-              <Button type="submit" size="action" disabled={loading || !name.trim() || !roomCode || (intent === 'play' && !joinPassword)}>
+              <Button type="submit" size="action" disabled={loading || !name.trim() || !roomCode}>
                 {loading ? '正在进入……' : joinActionLabel(intent)}<ArrowRight size={17} />
               </Button>
               {intent === 'play' ? (
@@ -110,6 +112,19 @@ export function JoinRoomPage() {
           </form>
         </Card>
         <Button variant="quiet" onClick={() => navigate('/lobby')}><ArrowLeft size={17} />返回大厅</Button>
+        <Modal
+          open={playerSeatFull}
+          title="玩家席已满"
+          context="这间房间暂时没有可用的玩家位置。观战不占用玩家席，房主也可以从席位菜单移出玩家。"
+          onClose={clearError}
+        >
+          <div className="v3-action-stack">
+            <Button variant="secondary" onClick={() => { clearError(); setIntent('watch'); void enter('watch'); }}>
+              <Eye size={17} />尝试进入观战
+            </Button>
+            <Button variant="quiet" onClick={() => { clearError(); navigate('/lobby'); }}>退出</Button>
+          </div>
+        </Modal>
       </div>
     </AppShell>
   );

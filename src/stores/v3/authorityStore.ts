@@ -173,6 +173,12 @@ const roomActionForCommand = (
     case 'room.leave': return 'leave';
     case 'room.transfer_host': return 'transfer_host';
     case 'room.dissolve': return 'dissolve';
+    case 'room.claim_seat': return 'claim_seat';
+    case 'room.become_spectator': return 'become_spectator';
+    case 'room.add_ai': return 'add_ai';
+    case 'room.kick_player': return 'kick_player';
+    case 'room.request_seat': return 'request_seat';
+    case 'room.respond_seat_request': return 'respond_seat_request';
   }
 };
 
@@ -267,6 +273,12 @@ export interface V3Store {
   setReady: (ready: boolean) => Promise<boolean>;
   startGame: () => Promise<boolean>;
   updateRoomConfig: (config: RoomView['config']) => Promise<boolean>;
+  claimSeat: (seatIndex?: number) => Promise<boolean>;
+  becomeSpectator: () => Promise<boolean>;
+  addAISeat: (seatIndex?: number) => Promise<boolean>;
+  kickPlayer: (memberId: string) => Promise<boolean>;
+  requestSeat: () => Promise<boolean>;
+  respondSeatRequest: (requestId: string, approved: boolean) => Promise<boolean>;
   transferHost: (targetMemberId: string) => Promise<boolean>;
   leaveRoomMutation: () => Promise<boolean>;
   dissolveRoom: () => Promise<boolean>;
@@ -1217,6 +1229,42 @@ export const useV3Store = create<V3Store>()((set, get) => {
       runRoomMutation({
         type: 'room.update_config',
         payload: { config },
+      }),
+
+    claimSeat: (seatIndex) =>
+      runRoomMutation({
+        type: 'room.claim_seat',
+        payload: seatIndex === undefined ? {} : { seatIndex },
+      }),
+
+    becomeSpectator: () =>
+      runRoomMutation({
+        type: 'room.become_spectator',
+        payload: {},
+      }),
+
+    addAISeat: (seatIndex) =>
+      runRoomMutation({
+        type: 'room.add_ai',
+        payload: seatIndex === undefined ? {} : { seatIndex },
+      }),
+
+    kickPlayer: (memberId) =>
+      runRoomMutation({
+        type: 'room.kick_player',
+        payload: { memberId },
+      }),
+
+    requestSeat: () =>
+      runRoomMutation({
+        type: 'room.request_seat',
+        payload: {},
+      }),
+
+    respondSeatRequest: (requestId, approved) =>
+      runRoomMutation({
+        type: 'room.respond_seat_request',
+        payload: { requestId, approved },
       }),
 
     transferHost: (targetMemberId) =>

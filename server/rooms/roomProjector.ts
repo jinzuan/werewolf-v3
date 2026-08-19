@@ -3,6 +3,7 @@ import {
   type RoomConfigView,
   type RoomMemberViewV31,
   type RoomAIConfigStatus,
+  type RoomSeatRequestView,
   type RoomViewV31,
   type RoomViewerViewV31,
 } from '../../shared/roomContract';
@@ -171,6 +172,19 @@ const projectAIConfigStatus = (room: RoomRecord): RoomAIConfigStatus => {
   return 'ready';
 };
 
+const projectSeatRequests = (
+  room: RoomRecord,
+  actorId: string,
+): RoomSeatRequestView[] | undefined => {
+  const member = room.members.find((candidate) => candidate.id === actorId);
+  if (!member) return undefined;
+  const isHost = member.id === room.hostId;
+  const visible = (room.seatRequests ?? []).filter(
+    (request) => isHost || request.requesterId === actorId,
+  );
+  return visible.length > 0 ? visible.map((request) => ({ ...request })) : undefined;
+};
+
 export interface RoomProjectorOptions extends RoomPolicyOptions {
   policy?: RoomPolicy;
 }
@@ -207,6 +221,9 @@ export class RoomProjector {
       counts: roomCounts(normalized, this.policy.options.isConnected),
       computerPlayerStatus: projectAIConfigStatus(normalized),
       startCheck: this.policy.evaluateStartCheck(normalized),
+      ...(projectSeatRequests(normalized, member.id)
+        ? { seatRequests: projectSeatRequests(normalized, member.id) }
+        : {}),
       viewer: {
         actorId: member.id,
         kind: member.kind,

@@ -440,6 +440,21 @@ export class RoomPolicy {
       if (canTransfer(room, this.options.isConnected)) actions.add('transfer_host');
     }
     if (isHumanPlayer && status === 'ready_check') actions.add('set_ready');
+    if ((status === 'waiting' || status === 'ready_check') && member.kind === 'spectator') {
+      actions.add('claim_seat');
+    }
+    if ((status === 'waiting' || status === 'ready_check') && isHumanPlayer) {
+      actions.add('become_spectator');
+      actions.add('request_seat');
+    }
+    if ((status === 'waiting' || status === 'ready_check') && member.kind === 'spectator') {
+      actions.add('request_seat');
+    }
+    if (isHost && (status === 'waiting' || status === 'ready_check')) {
+      actions.add('add_ai');
+      actions.add('kick_player');
+      actions.add('respond_seat_request');
+    }
     if (isHost && (status === 'waiting' || status === 'ready_check')) {
       actions.add('dissolve');
     }
@@ -491,7 +506,7 @@ export class RoomPolicy {
     if (!this.isAllowed(room, actor, action)) {
       throw new RoomPolicyError({
         code: member.id !== room.hostId &&
-          ['update_config', 'update_ai_config', 'begin_ready_check', 'cancel_ready_check', 'start_game', 'transfer_host', 'dissolve'].includes(action)
+          ['update_config', 'update_ai_config', 'begin_ready_check', 'cancel_ready_check', 'start_game', 'transfer_host', 'dissolve', 'add_ai', 'kick_player', 'respond_seat_request'].includes(action)
           ? 'HOST_REQUIRED'
           : 'ACTION_NOT_ALLOWED',
         messageKey: `room.error.${action}_not_allowed`,

@@ -35,6 +35,7 @@ interface RoomConfigEditorProps {
   pending: boolean;
   onClose: () => void;
   onSubmit: (config: RoomConfigView) => void;
+  onOpenAIConfig?: () => void;
 }
 
 export function RoomConfigEditor({
@@ -43,6 +44,7 @@ export function RoomConfigEditor({
   pending,
   onClose,
   onSubmit,
+  onOpenAIConfig,
 }: RoomConfigEditorProps) {
   const [draft, setDraft] = useState<RoomConfigView>(room.config);
 
@@ -50,7 +52,7 @@ export function RoomConfigEditor({
     if (open) setDraft(room.config);
   }, [open, room.config]);
 
-  const setNumber = (key: 'minHumanPlayers' | 'computerSeats', value: string) => {
+  const setNumber = (key: 'maxPlayers' | 'minHumanPlayers' | 'computerSeats', value: string) => {
     const number = Number.parseInt(value, 10);
     setDraft((current) => ({
       ...current,
@@ -91,6 +93,16 @@ export function RoomConfigEditor({
     >
       <div className="waiting-room__editor">
         <div className="waiting-room__editor-grid">
+          <label className="waiting-room__editor-field">
+            <span>对局人数</span>
+            <Input
+              type="number"
+              min={1}
+              max={24}
+              value={draft.maxPlayers}
+              onChange={(event) => setNumber('maxPlayers', event.target.value)}
+            />
+          </label>
           <label className="waiting-room__editor-field">
             <span>最低真人人数</span>
             <Input
@@ -144,6 +156,13 @@ export function RoomConfigEditor({
             ))}
           </div>
         </fieldset>
+
+        {draft.mode !== 'human' && onOpenAIConfig ? (
+          <div className="waiting-room__editor-ai-link">
+            <div><strong>电脑玩家</strong><span>模型、接口、凭据和行动风格使用同一房间设置入口。</span></div>
+            <Button variant="secondary" onClick={onOpenAIConfig}>打开电脑玩家详细设置</Button>
+          </div>
+        ) : null}
 
         <label className="waiting-room__editor-check">
           <input

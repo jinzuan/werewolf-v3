@@ -193,6 +193,16 @@ export interface RoomCounts {
   spectators: number;
 }
 
+export type RoomSeatRequestStatus = 'pending' | 'approved' | 'denied';
+
+export interface RoomSeatRequestView {
+  id: string;
+  requesterId: string;
+  requesterName: string;
+  status: RoomSeatRequestStatus;
+  createdAt: number;
+}
+
 export const START_CHECK_KEYS = [
   'config_valid',
   'role_count',
@@ -230,6 +240,12 @@ export const ALLOWED_ROOM_ACTIONS = [
   'invite',
   'transfer_host',
   'dissolve',
+  'claim_seat',
+  'become_spectator',
+  'add_ai',
+  'kick_player',
+  'request_seat',
+  'respond_seat_request',
 ] as const;
 
 export type AllowedRoomAction = (typeof ALLOWED_ROOM_ACTIONS)[number];
@@ -254,6 +270,8 @@ export interface RoomViewV31 {
   members: RoomMemberViewV31[];
   counts: RoomCounts;
   startCheck: StartCheck;
+  /** Pending seat applications are visible to the requester and host only. */
+  seatRequests?: RoomSeatRequestView[];
   /** Public readiness only; never reveals credential presence or references. */
   computerPlayerStatus?: RoomAIConfigStatus;
   computerPlayerMode?: RoomAIProviderMode;
@@ -323,6 +341,12 @@ export type RoomMutationCommand =
       payload: { targetMemberId: string };
     }
   | { type: 'room.dissolve'; payload: { confirm: boolean } }
+  | { type: 'room.claim_seat'; payload: { seatIndex?: number } }
+  | { type: 'room.become_spectator'; payload: EmptyRoomCommandPayload }
+  | { type: 'room.add_ai'; payload: { seatIndex?: number } }
+  | { type: 'room.kick_player'; payload: { memberId: string } }
+  | { type: 'room.request_seat'; payload: EmptyRoomCommandPayload }
+  | { type: 'room.respond_seat_request'; payload: { requestId: string; approved: boolean } }
   | { type: 'review.insights.clear'; payload: { role?: Role } };
 
 export type RoomCommand = RoomReadCommand | RoomMutationCommand;

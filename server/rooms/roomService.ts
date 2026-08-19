@@ -624,7 +624,10 @@ export class RoomService {
   async join(request: JoinRoomRequest): Promise<RoomAccess> {
     const room = await this.requireRoom(request.roomCode);
     const spectator = request.spectator === true;
+    const listedWaitingRoom = room.config?.visibility === 'listed' &&
+      (room.status === 'waiting' || room.status === 'ready_check');
     if (room.joinToken !== request.joinToken &&
+      !(listedWaitingRoom && !spectator) &&
       !(spectator && room.config?.allowPublicSpectators === true)) {
       throw this.error('ROOM_TOKEN_INVALID', 'room.error.invalid_join_token');
     }
@@ -643,9 +646,6 @@ export class RoomService {
           throw this.error('IDENTITY_ALREADY_EXISTS', 'room.error.identity_exists');
         }
         if (spectator) {
-          if (roomCounts(draft).spectators >= this.catalog.getCatalog().limits.maxSpectators) {
-            throw this.error('ROOM_FULL', 'room.error.spectator_limit');
-          }
           if (config.allowPublicSpectators !== true && draft.joinToken !== request.joinToken) {
             throw this.error('ROOM_TOKEN_INVALID', 'room.error.invalid_join_token');
           }
@@ -853,6 +853,18 @@ export class RoomService {
           const tombstone = await this.dissolve(identity, command.payload.confirm, expectedRoomRevision, commandId);
           return { tombstone, receipt: await this.requireReceipt(identity.roomCode, commandId) };
         }
+        case 'room.claim_seat':
+          return { room: await this.claimSeat(identity, command.payload.seatIndex, expectedRoomRevision, commandId), receipt: await this.requireReceipt(identity.roomCode, commandId) };
+        case 'room.become_spectator':
+          return { room: await this.becomeSpectator(identity, expectedRoomRevision, commandId), receipt: await this.requireReceipt(identity.roomCode, commandId) };
+        case 'room.add_ai':
+          return { room: await this.addAISeat(identity, command.payload.seatIndex, expectedRoomRevision, commandId), receipt: await this.requireReceipt(identity.roomCode, commandId) };
+        case 'room.kick_player':
+          return { room: await this.kickPlayer(identity, command.payload.memberId, expectedRoomRevision, commandId), receipt: await this.requireReceipt(identity.roomCode, commandId) };
+        case 'room.request_seat':
+          return { room: await this.requestSeat(identity, expectedRoomRevision, commandId), receipt: await this.requireReceipt(identity.roomCode, commandId) };
+        case 'room.respond_seat_request':
+          return { room: await this.respondSeatRequest(identity, command.payload.requestId, command.payload.approved, expectedRoomRevision, commandId), receipt: await this.requireReceipt(identity.roomCode, commandId) };
       }
     } catch (error) {
       const mapped = this.mapError(error) as RoomServiceError;
@@ -1510,6 +1522,163 @@ export class RoomService {
       return undefined;
     }
     return this.projectRoom(current, current.hostId);
+  }
+
+  async claimSeat(
+    identity: SocketIdentity,
+    requestedSeatIndex: number | undefined,
+    expectedRoomRevision: number,
+    commandId: string = randomUUID(),
+  ): Promise<RoomView> {
+    await this.mutateRoom(identity, expectedRoomRevision, 'claim_seat', (room) => {
+      const member = room.members.find((candidate) => candidate.id === identity.actorId);
+      const config = room.config;
+      if (!member || member.kind !== 'spectator' || !config) {
+        throw this.error('ACTION_NOT_ALLOWED', 'room.error.claim_seat_not_allowed');
+      }
+      if (requestedSeatIndex !== undefined &&
+        (!Number.isInteger(requestedSeatIndex) || requestedSeatIndex < 0 || requestedSeatIndex >= config.maxPlayers)) {
+        throw this.error('INVALID_TARGET', 'room.error.invalid_seat');
+      }
+      const aiSeats = room.members
+        .filter((candidate) => candidate.kind === 'player' && candidate.isAI)
+        .sort((left, right) => (left.seatIndex ?? 0) - (right.seatIndex ?? 0));
+      const targetSeat = requestedSeatIndex ??
+        (config.aiFillPolicy !== 'none' ? aiSeats[0]?.seatIndex : undefined) ??
+        randomFreeSeatIndex(room.members, config.maxPlayers, this.seatRandomIndex);
+      const target = room.members.find(
+        (candidate) => candidate.kind === 'player' && candidate.seatIndex === targetSeat,
+      );
+      if (target && !target.isAI) throw this.error('ROOM_FULL', 'room.error.room_full');
+      if (target?.isAI) {
+        if (config.aiFillPolicy === 'none') throw this.error('ROOM_FULL', 'room.error.room_full');
+        room.members = room.members.filter((candidate) => candidate.id !== target.id);
+        room.players = room.players.filter((player) => player.id !== target.id);
+      }
+      member.kind = 'player';
+      member.seatIndex = targetSeat;
+      member.ready = false;
+      member.omniscient = false;
+      room.players.push(makePlayer(room.id, member, room.hostId));
+    }, commandId);
+    return this.get(identity.roomCode, identity.actorId);
+  }
+
+  async becomeSpectator(
+    identity: SocketIdentity,
+    expectedRoomRevision: number,
+    commandId: string = randomUUID(),
+  ): Promise<RoomView> {
+    await this.mutateRoom(identity, expectedRoomRevision, 'become_spectator', (room) => {
+      const member = room.members.find((candidate) => candidate.id === identity.actorId);
+      if (!member || member.kind !== 'player' || member.isAI) {
+        throw this.error('ACTION_NOT_ALLOWED', 'room.error.become_spectator_not_allowed');
+      }
+      member.kind = 'spectator';
+      member.seatIndex = null;
+      member.ready = null;
+      member.omniscient = false;
+      room.players = room.players.filter((player) => player.id !== member.id);
+    }, commandId);
+    return this.get(identity.roomCode, identity.actorId);
+  }
+
+  async addAISeat(
+    identity: SocketIdentity,
+    requestedSeatIndex: number | undefined,
+    expectedRoomRevision: number,
+    commandId: string = randomUUID(),
+  ): Promise<RoomView> {
+    await this.mutateRoom(identity, expectedRoomRevision, 'add_ai', (room) => {
+      const config = room.config;
+      if (!config || config.mode === 'human') {
+        throw this.error('ACTION_NOT_ALLOWED', 'room.error.add_ai_not_allowed');
+      }
+      const existingAI = room.members.filter((member) => member.kind === 'player' && member.isAI).length;
+      if (config.aiFillPolicy === 'fixed' && existingAI >= config.computerSeats) {
+        throw this.error('ROOM_FULL', 'room.error.ai_seats_full');
+      }
+      const freeSeats = Array.from({ length: config.maxPlayers }, (_, index) => index)
+        .filter((index) => !room.members.some((member) => member.kind === 'player' && member.seatIndex === index));
+      const seatIndex = requestedSeatIndex ?? freeSeats[0];
+      if (seatIndex === undefined || !freeSeats.includes(seatIndex)) {
+        throw this.error('ROOM_FULL', 'room.error.room_full');
+      }
+      const ai: RoomMember = {
+        id: `ai-${randomUUID()}`,
+        name: `电脑席 ${seatIndex + 1}`,
+        kind: 'player',
+        omniscient: false,
+        resumeToken: token(),
+        seatIndex,
+        isAI: true,
+        ready: true,
+        avatarId: 'avatar-computer',
+      };
+      room.members.push(ai);
+      room.players.push(makePlayer(room.id, ai, room.hostId));
+    }, commandId);
+    return this.get(identity.roomCode, identity.actorId);
+  }
+
+  async kickPlayer(
+    identity: SocketIdentity,
+    targetMemberId: string,
+    expectedRoomRevision: number,
+    commandId: string = randomUUID(),
+  ): Promise<RoomView> {
+    await this.mutateRoom(identity, expectedRoomRevision, 'kick_player', (room) => {
+      const target = room.members.find((candidate) => candidate.id === targetMemberId);
+      if (!target || target.kind !== 'player' || target.id === room.hostId) {
+        throw this.error('MEMBER_NOT_FOUND', 'room.error.host_target_not_found');
+      }
+      room.members = room.members.filter((candidate) => candidate.id !== target.id);
+      room.players = room.players.filter((player) => player.id !== target.id);
+      this.connectionRegistry.unbind(room.code, target.id);
+    }, commandId);
+    return this.get(identity.roomCode, identity.actorId);
+  }
+
+  async requestSeat(
+    identity: SocketIdentity,
+    expectedRoomRevision: number,
+    commandId: string = randomUUID(),
+  ): Promise<RoomView> {
+    await this.mutateRoom(identity, expectedRoomRevision, 'request_seat', (room) => {
+      const member = room.members.find((candidate) => candidate.id === identity.actorId);
+      if (!member || member.id === room.hostId) {
+        throw this.error('ACTION_NOT_ALLOWED', 'room.error.request_seat_not_allowed');
+      }
+      const requests = room.seatRequests ?? [];
+      const existing = requests.find((request) => request.requesterId === member.id && request.status === 'pending');
+      if (existing) return;
+      requests.push({
+        id: `seat-request-${randomUUID()}`,
+        requesterId: member.id,
+        requesterName: member.name,
+        status: 'pending',
+        createdAt: this.now(),
+      });
+      room.seatRequests = requests.slice(-32);
+    }, commandId);
+    return this.get(identity.roomCode, identity.actorId);
+  }
+
+  async respondSeatRequest(
+    identity: SocketIdentity,
+    requestId: string,
+    approved: boolean,
+    expectedRoomRevision: number,
+    commandId: string = randomUUID(),
+  ): Promise<RoomView> {
+    await this.mutateRoom(identity, expectedRoomRevision, 'respond_seat_request', (room) => {
+      const request = (room.seatRequests ?? []).find((candidate) => candidate.id === requestId);
+      if (!request || request.status !== 'pending') {
+        throw this.error('MEMBER_NOT_FOUND', 'room.error.seat_request_not_found');
+      }
+      request.status = approved ? 'approved' : 'denied';
+    }, commandId);
+    return this.get(identity.roomCode, identity.actorId);
   }
 
   async transferHost(

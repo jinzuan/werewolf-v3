@@ -71,6 +71,12 @@ export const ROOM_ACTION_LABELS = {
   invite: '复制邀请',
   transfer_host: '转让房主',
   dissolve: '解散房间',
+  claim_seat: '进入玩家席',
+  become_spectator: '加入观战席',
+  add_ai: '添加 AI 玩家',
+  kick_player: '移出玩家席',
+  request_seat: '申请玩家位置',
+  respond_seat_request: '处理位置申请',
 } satisfies Record<RoomAction, string>;
 
 export const MEMBER_KIND_LABELS = {

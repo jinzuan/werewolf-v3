@@ -17,6 +17,7 @@ interface RoomActionsProps {
   currentMember: RoomMemberViewV31 | undefined;
   pendingAction: AllowedRoomAction | null;
   onSetReady: (ready: boolean) => void;
+  onBeginReadyCheck: () => void;
   onCancelReadyCheck: () => void;
   onStartGame: () => void;
   onInvite: () => void;
@@ -31,6 +32,7 @@ export function RoomActions({
   currentMember,
   pendingAction,
   onSetReady,
+  onBeginReadyCheck,
   onCancelReadyCheck,
   onStartGame,
   onInvite,
@@ -111,6 +113,18 @@ export function RoomActions({
               </p>
             ) : null}
           </>
+        ) : null}
+
+        {isHost && room.status === 'waiting' && can('begin_ready_check') ? (
+          <Button
+            variant="primary"
+            size="action"
+            disabled={locked || busy('begin_ready_check')}
+            onClick={onBeginReadyCheck}
+          >
+            <CheckCircle size={17} aria-hidden="true" />
+            {busy('begin_ready_check') ? '正在进入准备…' : '开始准备'}
+          </Button>
         ) : null}
         </div>
       </div>

@@ -31,10 +31,9 @@ interface RoomConfigSummaryProps {
   room: RoomViewV31;
   onUpdateConfig: () => void;
   aiSummary: RoomAIConfigSummary | null;
-  onUpdateAIConfig: () => void;
 }
 
-export function RoomConfigSummary({ room, onUpdateConfig, aiSummary, onUpdateAIConfig }: RoomConfigSummaryProps) {
+export function RoomConfigSummary({ room, onUpdateConfig, aiSummary }: RoomConfigSummaryProps) {
   const { config } = room;
   const roleEntries = (Object.keys(ROLE_LABELS) as Role[])
     .map((role) => ({ role, count: config.roleSetup[role] ?? 0 }))
@@ -90,16 +89,6 @@ export function RoomConfigSummary({ room, onUpdateConfig, aiSummary, onUpdateAIC
               {aiSummary ? ` · ${aiSummary.endpointOrigin}` : ''}
             </span>
           </div>
-          {isHost && isActionAllowed(room, 'update_ai_config') ? (
-            <Button
-              variant="secondary"
-              disabled={room.configLocked || room.status === 'starting'}
-              onClick={onUpdateAIConfig}
-            >
-              <Settings2 size={16} aria-hidden="true" />
-              修改电脑玩家设置
-            </Button>
-          ) : null}
         </div>
       ) : (
         <p className="waiting-room__empty-copy">当前为纯真人房，没有电脑玩家设置。</p>
@@ -112,7 +101,7 @@ export function RoomConfigSummary({ room, onUpdateConfig, aiSummary, onUpdateAIC
           onClick={onUpdateConfig}
         >
           <Settings2 size={16} aria-hidden="true" />
-          修改房间设置
+          编辑房间设置（含电脑玩家）
         </Button>
       ) : null}
     </Card>

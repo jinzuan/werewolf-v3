@@ -10,6 +10,8 @@ import type {
 import { AppShell } from '../../components/shell/AppShell';
 import { useV3Store } from '../../stores/v3Store';
 import { Card } from '../../ui/Card';
+import { Button } from '../../ui/Button';
+import { Modal } from '../../ui/Modal';
 import { RoomActions } from './components/RoomActions';
 import { RoomConfigEditor } from './components/RoomConfigEditor';
 import { RoomConfigSummary } from './components/RoomConfigSummary';
@@ -35,6 +37,8 @@ const pendingActionForCommand = (
   command: string | null,
 ): AllowedRoomAction | null => {
   switch (command) {
+    case 'room.begin_ready_check':
+      return 'begin_ready_check';
     case 'room.cancel_ready_check':
       return 'cancel_ready_check';
     case 'room.ready':
@@ -75,10 +79,17 @@ export function WaitingRoomPage() {
   const pendingRoomCommand = useV3Store((state) => state.pendingRoomCommand);
   const room = useV3Store((state) => state.room);
   const session = useV3Store((state) => state.session);
+  const beginReadyCheck = useV3Store((state) => state.beginReadyCheck);
   const cancelReadyCheck = useV3Store((state) => state.cancelReadyCheck);
   const setReady = useV3Store((state) => state.setReady);
   const startGame = useV3Store((state) => state.startGame);
   const updateRoomConfig = useV3Store((state) => state.updateRoomConfig);
+  const claimSeat = useV3Store((state) => state.claimSeat);
+  const addAISeat = useV3Store((state) => state.addAISeat);
+  const becomeSpectator = useV3Store((state) => state.becomeSpectator);
+  const requestSeat = useV3Store((state) => state.requestSeat);
+  const kickPlayer = useV3Store((state) => state.kickPlayer);
+  const respondSeatRequest = useV3Store((state) => state.respondSeatRequest);
   const transferHostAction = useV3Store((state) => state.transferHost);
   const leaveRoomMutation = useV3Store((state) => state.leaveRoomMutation);
   const dissolveRoom = useV3Store((state) => state.dissolveRoom);
@@ -91,6 +102,7 @@ export function WaitingRoomPage() {
   const [pageError, setPageError] = useState<string | null>(null);
   const [configEditorOpen, setConfigEditorOpen] = useState(false);
   const [aiEditorOpen, setAIEditorOpen] = useState(false);
+  const [seatRequestOpen, setSeatRequestOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const copyTimer = useRef<number | null>(null);
 
@@ -192,6 +204,11 @@ export function WaitingRoomPage() {
     else setConfigEditorOpen(true);
   };
 
+  const runSeatMutation = (operation: () => Promise<boolean>) => {
+    setPageError(null);
+    void operation();
+  };
+
   return (
     <AppShell
       title="等待房"
@@ -215,13 +232,21 @@ export function WaitingRoomPage() {
         ) : null}
 
         <div className="waiting-room__board">
-          <PlayerSeatGrid room={room} />
+          <PlayerSeatGrid
+            room={room}
+            onClaimSeat={(seatIndex) => runSeatMutation(() => claimSeat(seatIndex))}
+            onAddAI={(seatIndex) => runSeatMutation(() => addAISeat(seatIndex))}
+            onBecomeSpectator={() => runSeatMutation(becomeSpectator)}
+            onRequestSeat={() => runSeatMutation(requestSeat)}
+            onKickPlayer={(memberId) => runSeatMutation(() => kickPlayer(memberId))}
+          />
           <aside className="waiting-room__side" aria-label="等待房辅助信息">
             <RoomActions
               room={room}
               currentMember={currentMember}
               pendingAction={pendingAction}
               onSetReady={ready}
+              onBeginReadyCheck={() => runSeatMutation(beginReadyCheck)}
               onCancelReadyCheck={cancel}
               onStartGame={start}
               onInvite={() => void onCopyInvite()}
@@ -244,8 +269,36 @@ export function WaitingRoomPage() {
           room={room}
           onUpdateConfig={() => setConfigEditorOpen(true)}
           aiSummary={aiSummary}
-          onUpdateAIConfig={openAIConfigEditor}
         />
+
+        {isHost && room.seatRequests?.some((request) => request.status === 'pending') ? (
+          <Card className="waiting-room__seat-requests" aria-labelledby="seat-requests-title">
+            <div className="waiting-room__section-heading">
+              <div><span className="waiting-room__eyebrow">位置申请</span><h2 id="seat-requests-title">有玩家申请加入玩家席</h2></div>
+              <Button variant="secondary" onClick={() => setSeatRequestOpen(true)}>查看申请</Button>
+            </div>
+          </Card>
+        ) : null}
+
+        <Modal
+          open={seatRequestOpen}
+          title="玩家位置申请"
+          context="确认后，玩家可以继续点击空席或 AI 席加入玩家席；玩家席满时请先从席位菜单移出玩家。"
+          onClose={() => setSeatRequestOpen(false)}
+        >
+          <div className="waiting-room__seat-request-list">
+            {(room.seatRequests ?? []).filter((request) => request.status === 'pending').map((request) => (
+              <div key={request.id} className="waiting-room__seat-request">
+                <div><strong>{request.requesterName}</strong><span>正在申请玩家位置</span></div>
+                <div className="waiting-room__action-list">
+                  <Button variant="secondary" onClick={() => { setSeatRequestOpen(false); runSeatMutation(() => respondSeatRequest(request.id, false)); }}>拒绝</Button>
+                  <Button onClick={() => { setSeatRequestOpen(false); runSeatMutation(() => respondSeatRequest(request.id, true)); }}>同意申请</Button>
+                </div>
+              </div>
+            ))}
+            {(room.seatRequests ?? []).every((request) => request.status !== 'pending') ? <p className="waiting-room__empty-copy">暂无待处理申请。</p> : null}
+          </div>
+        </Modal>
 
         <details className="waiting-room__secondary-details">
           <summary>
@@ -261,6 +314,10 @@ export function WaitingRoomPage() {
           pending={pendingRoomCommand === 'room.update_config'}
           onClose={() => setConfigEditorOpen(false)}
           onSubmit={updateConfig}
+          onOpenAIConfig={() => {
+            setConfigEditorOpen(false);
+            openAIConfigEditor();
+          }}
         />
 
         <RoomAIConfigEditor

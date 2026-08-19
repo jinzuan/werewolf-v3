@@ -5,7 +5,7 @@ import type {
   RoomAccess,
   RoomView,
 } from '../../shared/protocol';
-import type { RoomAIProviderConfig, RoomReviewMode } from '../../shared/roomContract';
+import type { RoomAIProviderConfig, RoomReviewMode, RoomSeatRequestStatus } from '../../shared/roomContract';
 import type { Player, Role } from '../../shared/types';
 import type { SessionSnapshot } from '../session/types';
 import type { RuntimeEnvironment } from '../runtimeConfig';
@@ -75,6 +75,14 @@ export interface RoomMember {
   avatarId?: string;
 }
 
+export interface RoomSeatRequest {
+  id: string;
+  requesterId: string;
+  requesterName: string;
+  status: RoomSeatRequestStatus;
+  createdAt: number;
+}
+
 export interface RoomCommandIdempotency {
   commandId: string;
   roomRevision: number;
@@ -112,6 +120,7 @@ export interface RoomRecord {
   auto: boolean;
   debugMode: boolean;
   members: RoomMember[];
+  seatRequests?: RoomSeatRequest[];
 
   /**
    * Legacy GameSession storage.  During the M2-only migration this remains so

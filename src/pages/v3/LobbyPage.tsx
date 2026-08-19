@@ -1,14 +1,16 @@
 import { ArrowRight, DoorOpen, Radio } from 'lucide-react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppShell } from '../../components/shell/AppShell';
 import { sceneForRoom } from '../../features/room-shell/scene';
-import { roomJoinPath } from '../../app/routes/roomRouting';
+import { roomPath } from '../../app/routes/roomRouting';
 import { useV3Store } from '../../stores/v3Store';
+import { readPlayerNickname, writePlayerNickname } from '../../runtime/playerProfile';
 import { phaseAssetMap } from '../../ui/assetRegistry';
 import { Badge } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
-import type { RoomStatus } from '../../../shared/roomContract';
+import type { RoomStatus, RoomSummaryV31 as RoomSummary } from '../../../shared/roomContract';
 import { roomModeLabel } from '../../v3/presentation';
 import villageScene from '../../assets/v31/village-scene.svg';
 
@@ -37,6 +39,21 @@ export function LobbyPage() {
   const loadMoreRooms = useV3Store((state) => state.loadMoreRooms);
   const roomsNextCursor = useV3Store((state) => state.roomsNextCursor);
   const roomsLoading = useV3Store((state) => state.roomsLoading);
+  const loading = useV3Store((state) => state.loading);
+  const joinRoom = useV3Store((state) => state.joinRoom);
+  const spectateRoom = useV3Store((state) => state.spectateRoom);
+  const [joiningCode, setJoiningCode] = useState<string | null>(null);
+
+  const enterPublicRoom = async (room: RoomSummary) => {
+    if (joiningCode || loading) return;
+    setJoiningCode(room.roomCode);
+    const name = writePlayerNickname(readPlayerNickname());
+    const accepted = room.status === 'playing'
+      ? await spectateRoom(name, room.roomCode, '')
+      : await joinRoom(name, room.roomCode, '');
+    setJoiningCode(null);
+    if (accepted) navigate(roomPath(room.roomCode), { replace: true });
+  };
 
   return (
     <AppShell title="大厅" eyebrow="狼人杀·月光森林" connected={connected}>
@@ -103,9 +120,10 @@ export function LobbyPage() {
                   <Button
                     variant="secondary"
                     aria-label={`${isPlaying ? '进入' : '加入'}${room.roomName}`}
-                    onClick={() => navigate(`${roomJoinPath(room.roomCode)}${isPlaying ? '&intent=watch' : '&intent=play'}`)}
+                    disabled={joiningCode !== null || loading}
+                    onClick={() => void enterPublicRoom(room)}
                   >
-                    {isPlaying ? '进入观战' : '加入房间'}<ArrowRight size={17} />
+                    {joiningCode === room.roomCode ? '正在进入…' : isPlaying ? '进入观战' : '直接加入'}<ArrowRight size={17} />
                   </Button>
                 ) : null}
               </Card>
