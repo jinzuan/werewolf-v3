@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { InMemoryEventStore } from '../events/store';
 import { InMemoryRoomRepository } from '../rooms/repository';
-import { RoomService } from '../rooms/roomService';
+import { RoomService, RoomServiceError } from '../rooms/roomService';
 import { createRequest } from './fixtures';
 
 test('public listed rooms accept a player without forcing an invite token', async () => {
@@ -90,5 +90,63 @@ test('waiting-room seat actions replace AI, preserve spectators, and expose host
     'host-kick-player',
   );
   assert.equal(kicked.members.some((member) => member.id === 'spectator'), false);
+  await rooms.close();
+});
+
+test('an empty invite credential does not make private-room join impossible', async () => {
+  const repository = new InMemoryRoomRepository();
+  const rooms = new RoomService(repository, new InMemoryEventStore());
+  const created = await rooms.create({
+    ...createRequest(rooms, 'host', 'empty-invite', '无口令房'),
+  });
+  await repository.mutate(created.room.code, created.room.roomRevision, (room) => {
+    room.joinToken = '';
+  });
+
+  const joined = await rooms.join({
+    actorId: 'guest-without-token',
+    name: '无口令玩家',
+    roomCode: created.room.code,
+  });
+  assert.equal(joined.room.members.some((member) => member.id === 'guest-without-token'), true);
+  await rooms.close();
+});
+
+test('a full player roster rejects play join while still admitting an invited spectator', async () => {
+  const rooms = new RoomService(new InMemoryRoomRepository(), new InMemoryEventStore());
+  const created = await rooms.create({
+    ...createRequest(rooms, 'host', 'full-roster', '满员房', {
+      mode: 'human',
+      minHumanPlayers: 12,
+      aiFillPolicy: 'none',
+      computerSeats: 0,
+    }),
+  });
+  for (let index = 1; index < created.room.config.maxPlayers; index += 1) {
+    await rooms.join({
+      actorId: `full-player-${index}`,
+      name: `玩家${index}`,
+      roomCode: created.room.code,
+      joinToken: created.credentials.joinToken,
+    });
+  }
+
+  await assert.rejects(
+    rooms.join({
+      actorId: 'extra-player',
+      name: '超额玩家',
+      roomCode: created.room.code,
+      joinToken: created.credentials.joinToken,
+    }),
+    (error: unknown) => error instanceof RoomServiceError && error.code === 'ROOM_FULL',
+  );
+  const spectator = await rooms.join({
+    actorId: 'full-room-spectator',
+    name: '观战者',
+    roomCode: created.room.code,
+    joinToken: created.credentials.joinToken,
+    spectator: true,
+  });
+  assert.equal(spectator.room.members.find((member) => member.id === 'full-room-spectator')?.kind, 'spectator');
   await rooms.close();
 });

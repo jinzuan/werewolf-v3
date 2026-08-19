@@ -629,7 +629,10 @@ export class RoomService {
     const spectator = request.spectator === true;
     const listedWaitingRoom = room.config?.visibility === 'listed' &&
       (room.status === 'waiting' || room.status === 'ready_check');
-    if (room.joinToken !== request.joinToken &&
+    // An empty legacy/configured token means the room has no invite password.
+    // Do not turn the implementation credential into a mandatory user input.
+    const hasInviteToken = typeof room.joinToken === 'string' && room.joinToken.trim().length > 0;
+    if (hasInviteToken && room.joinToken !== request.joinToken &&
       !(listedWaitingRoom && !spectator) &&
       !(spectator && room.config?.allowPublicSpectators === true)) {
       throw this.error('ROOM_TOKEN_INVALID', 'room.error.invalid_join_token');
@@ -649,7 +652,7 @@ export class RoomService {
           throw this.error('IDENTITY_ALREADY_EXISTS', 'room.error.identity_exists');
         }
         if (spectator) {
-          if (config.allowPublicSpectators !== true && draft.joinToken !== request.joinToken) {
+          if (config.allowPublicSpectators !== true && hasInviteToken && draft.joinToken !== request.joinToken) {
             throw this.error('ROOM_TOKEN_INVALID', 'room.error.invalid_join_token');
           }
         } else {
@@ -1549,6 +1552,7 @@ export class RoomService {
       const targetSeat = requestedSeatIndex ??
         (config.aiFillPolicy !== 'none' ? aiSeats[0]?.seatIndex : undefined) ??
         randomFreeSeatIndex(room.members, config.maxPlayers, this.seatRandomIndex);
+      if (targetSeat === undefined) throw this.error('ROOM_FULL', 'room.error.room_full');
       const target = room.members.find(
         (candidate) => candidate.kind === 'player' && candidate.seatIndex === targetSeat,
       );

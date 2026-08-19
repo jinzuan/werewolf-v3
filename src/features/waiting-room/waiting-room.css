@@ -247,12 +247,23 @@
 }
 
 .waiting-room__seat-profile span,
+.waiting-room__seat-info,
 .waiting-room__seat-action-hint,
 .waiting-room__seat-menu-note,
 .waiting-room__seat-request span,
 .waiting-room__seat-request-list > p {
   color: var(--ww-text-muted);
   font-size: var(--ww-text-caption-size);
+}
+
+.waiting-room__seat-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: var(--ww-space-3);
+  border-radius: var(--ww-radius-control);
+  background: var(--ww-bg-subtle);
+  line-height: var(--ww-text-caption-line);
 }
 
 .waiting-room__seat-action-hint {

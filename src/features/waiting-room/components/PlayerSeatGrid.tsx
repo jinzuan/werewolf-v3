@@ -1,4 +1,4 @@
-import { Bot, Maximize2, Minimize2, UserRound, UserRoundPlus, Users, X } from 'lucide-react';
+import { Bot, Info, Maximize2, Minimize2, UserRound, UserRoundPlus, Users, X } from 'lucide-react';
 import { useState } from 'react';
 import type { RoomViewV31 } from '../../../../shared/roomContract';
 import { Button } from '../../../ui/Button';
@@ -44,7 +44,6 @@ export function PlayerSeatGrid({
   const currentMember = room.members.find((member) => member.id === viewerId);
   const isHost = currentMember?.isHost === true;
   const closeMenu = () => setSelectedSeat(null);
-  const openSeat = (seatIndex: number) => setSelectedSeat(seatIndex);
   const run = (action: (() => void) | undefined) => {
     closeMenu();
     action?.();
@@ -52,9 +51,18 @@ export function PlayerSeatGrid({
   const canClaim = room.viewer.kind === 'spectator' && isActionAllowed(room, 'claim_seat');
   const canApply = isActionAllowed(room, 'request_seat');
   const canBecomeSpectator = room.viewer.kind === 'player' && isActionAllowed(room, 'become_spectator');
-  const canKick = isHost && selectedMember?.kind === 'player' && !selectedMember.isHost && isActionAllowed(room, 'kick_player');
+  const canKick = isHost && selectedMember?.kind === 'player' && !selectedMember.isAI && !selectedMember.isHost && isActionAllowed(room, 'kick_player');
   const canAddAI = isHost && isActionAllowed(room, 'add_ai') && room.config.mode !== 'human';
   const autoFillEnabled = room.config.aiFillPolicy !== 'none';
+  const openSeat = (seatIndex: number, hasMember: boolean) => {
+    // A spectator clicking an empty seat is the quick-join affordance. Hosts
+    // still get the menu so an accidental click cannot consume a seat.
+    if (!hasMember && !isHost && canClaim) {
+      run(() => onClaimSeat?.(seatIndex));
+      return;
+    }
+    setSelectedSeat(seatIndex);
+  };
 
   return (
     <section className="waiting-room__players" aria-labelledby="player-seats-title">
@@ -90,7 +98,7 @@ export function PlayerSeatGrid({
                 presence="idle"
                 selected={selectedSeat === seatIndex}
                 disabled={false}
-                onClick={() => openSeat(seatIndex)}
+                onClick={() => openSeat(seatIndex, false)}
               />
             );
           }
@@ -112,7 +120,7 @@ export function PlayerSeatGrid({
               avatarAsset={member.isAI ? avatarAssetMap.computer : avatarAssetMap.player}
               selected={selectedSeat === seatIndex}
               disabled={false}
-              onClick={() => openSeat(seatIndex)}
+              onClick={() => openSeat(seatIndex, true)}
             />
           );
         })}
@@ -144,11 +152,18 @@ export function PlayerSeatGrid({
           {selectedMember ? (
             <div className="waiting-room__seat-profile">
               {selectedMember.isAI ? <Bot size={24} aria-hidden="true" /> : <Users size={24} aria-hidden="true" />}
-              <div><strong>{selectedMember.name}</strong><span>{selectedMember.isAI ? '电脑玩家 · 系统自动行动' : `玩家 · ${memberReadyLabel(selectedMember)}`}</span></div>
+              <div><strong>{selectedMember.name}</strong><span>{selectedMember.isAI ? 'AI 信息 · 系统自动行动' : `个人信息 · ${memberReadyLabel(selectedMember)}`}</span></div>
             </div>
           ) : (
             <div className="waiting-room__seat-profile"><UserRoundPlus size={24} aria-hidden="true" /><div><strong>空位</strong><span>等待玩家入座</span></div></div>
           )}
+
+          {selectedMember ? (
+            <div className="waiting-room__seat-info" role="status">
+              <Info size={16} aria-hidden="true" />
+              <span>{selectedMember.isAI ? 'AI 玩家：已加入本局席位，开局后由系统行动。' : `玩家：${selectedMember.connected ? '在线' : '离线'}，${selectedMember.isHost ? '房主' : '普通玩家'}。`}</span>
+            </div>
+          ) : null}
 
           {selectedMember?.isAI && canClaim ? (
             autoFillEnabled ? (
