@@ -1572,11 +1572,12 @@ select {
 .v3-target-grid button:hover,
 .v3-target-grid button.is-selected { border-color: var(--ww-action-primary); background: var(--ww-bg-raised); }
 .v3-target-grid button > span { width: 36px; height: 36px; display: grid; place-items: center; border: 1.5px solid var(--ww-border-strong); border-radius: 50%; color: var(--ww-text-muted); }
+.v3-target-grid button > strong { min-width: 0; overflow-wrap: anywhere; }
 .v3-target-grid__seer-check { color: var(--ww-state-info); font-size: 11px; font-weight: 700; white-space: nowrap; }
 .v3-target-grid button > svg { color: var(--ww-wolf-berry); }
 
 .v3-action-panel__footer { min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: var(--ww-space-4); margin-top: var(--ww-space-4); padding-top: var(--ww-space-4); border-top: 1.5px solid var(--ww-border-default); }
-.v3-action-panel__footer > span { color: var(--ww-text-muted); }
+.v3-action-panel__footer > span { min-width: 0; color: var(--ww-text-muted); overflow-wrap: anywhere; }
 
 .v3-segmented { width: fit-content; max-width: 100%; display: inline-grid; grid-auto-flow: column; grid-auto-columns: minmax(64px, auto); padding: 3px; border: 1.5px solid var(--ww-border-default); border-radius: var(--ww-radius-pill); background: var(--ww-bg-subtle); }
 .v3-segmented button { min-height: 38px; padding: 0 var(--ww-space-3); border: 0; border-radius: var(--ww-radius-pill); background: transparent; color: var(--ww-text-muted); cursor: pointer; }
@@ -2211,7 +2212,7 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
     position: fixed;
     inset: auto 0 0;
     z-index: 60;
-    width: 100vw;
+    width: 100%;
     max-width: none;
     box-sizing: border-box;
     height: var(--v3-mobile-nav-height);
@@ -2258,6 +2259,39 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .v3-page,
+  .v3-page > *,
+  .v3-page .v3-card,
+  .v3-page .v3-match-side,
+  .v3-page .v3-match-layout__left,
+  .v3-page .v3-match-layout__center,
+  .v3-page .v3-match-layout__right,
+  .v3-page .waiting-room {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .v3-card-heading > div,
+  .v3-panel-heading > div,
+  .v3-section__header > div,
+  .v3-page-heading > div,
+  .v3-page-heading__actions,
+  .v3-setting-row > div {
+    min-width: 0;
+  }
+
+  .v3-button {
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .v3-topbar__actions .v3-button,
+  .v3-topbar__actions .v3-topbar__settings-link,
+  .v3-mobile-match-nav button {
+    overflow-wrap: normal;
     white-space: nowrap;
   }
 
