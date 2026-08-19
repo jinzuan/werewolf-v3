@@ -1,5 +1,5 @@
 .waiting-room {
-  width: min(100%, 1180px);
+  width: 100%;
   display: grid;
   gap: var(--ww-space-5);
   padding-bottom: max(var(--ww-space-10), env(safe-area-inset-bottom));

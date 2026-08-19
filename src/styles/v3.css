@@ -567,7 +567,8 @@ select {
 }
 
 .v3-app-shell__body {
-  width: min(100%, var(--ww-content-max));
+  width: 100%;
+  max-width: var(--ww-content-max);
   min-width: 0;
   min-height: 0;
   height: 100%;
@@ -840,6 +841,7 @@ select {
 .v3-wizard-advanced > div { padding-top: var(--ww-space-3); }
 
 .v3-page {
+  width: 100%;
   min-height: 100%;
   min-width: 0;
   padding: var(--ww-space-6) var(--page-gutter) max(var(--ww-space-8), env(safe-area-inset-bottom));
