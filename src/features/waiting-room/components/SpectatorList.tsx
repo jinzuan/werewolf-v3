@@ -1,19 +1,18 @@
 import { Circle, Eye } from 'lucide-react';
 import type { RoomViewV31 } from '../../../../shared/roomContract';
 import { Badge } from '../../../ui/Badge';
-import { Card } from '../../../ui/Card';
 import { Status } from '../../../ui/Status';
 import { selectSpectators, spectatorPresenceLabel } from '../selectors';
 
 interface SpectatorListProps {
   room: RoomViewV31;
+  embedded?: boolean;
 }
 
-export function SpectatorList({ room }: SpectatorListProps) {
+export function SpectatorList({ room, embedded = false }: SpectatorListProps) {
   const spectators = selectSpectators(room);
-
-  return (
-    <Card className="waiting-room__spectators" aria-labelledby="spectator-title">
+  const content = (
+    <>
       <div className="waiting-room__section-heading">
         <div className="waiting-room__section-icon" aria-hidden="true">
           <Eye size={20} />
@@ -46,6 +45,16 @@ export function SpectatorList({ room }: SpectatorListProps) {
       ) : (
         <p className="waiting-room__empty-copy">暂时没有观战者。</p>
       )}
-    </Card>
+    </>
+  );
+
+  return embedded ? (
+    <div className="waiting-room__spectators waiting-room__spectators--embedded" aria-labelledby="spectator-title">
+      {content}
+    </div>
+  ) : (
+    <section className="v3-card waiting-room__spectators" aria-labelledby="spectator-title">
+      {content}
+    </section>
   );
 }

@@ -12,6 +12,7 @@ import {
   selectUnassignedPlayers,
 } from '../selectors';
 import { viewerPlayerId } from '../../../v3/session';
+import { SpectatorList } from './SpectatorList';
 
 interface PlayerSeatGridProps {
   room: RoomViewV31;
@@ -136,6 +137,8 @@ export function PlayerSeatGrid({
       <p className="waiting-room__seat-note">
         点击席位查看快捷操作；观战席不占用玩家席，玩家席满时不会强制挤入。
       </p>
+
+      <SpectatorList room={room} embedded />
 
       {unassigned.length ? (
         <div className="waiting-room__unassigned" aria-label="待分配席位">

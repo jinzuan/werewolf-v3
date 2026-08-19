@@ -21,7 +21,6 @@ import { RoomAIConfigEditor } from './components/RoomAIConfigEditor';
 import { PlayerSeatGrid } from './components/PlayerSeatGrid';
 import { ParticipantInfoPanel } from './components/ParticipantInfoPanel';
 import { WaitingRoomQuickSettings } from './components/WaitingRoomQuickSettings';
-import { SpectatorList } from './components/SpectatorList';
 import { StartCheckPanel } from './components/StartCheckPanel';
 import { WaitingRoomHeader } from './components/WaitingRoomHeader';
 import {
@@ -268,7 +267,6 @@ export function WaitingRoomPage() {
               onCancelReadyCheck={cancel}
               onStartGame={start}
               onInvite={() => void onCopyInvite()}
-              onUpdateConfig={() => setConfigEditorOpen(true)}
               onTransferHost={transferHost}
               onDissolve={dissolve}
               onLeave={leave}
@@ -346,14 +344,6 @@ export function WaitingRoomPage() {
             ) : null}
           </div>
         </Modal>
-
-        <details className="waiting-room__secondary-details">
-          <summary>
-            <span>观战席与房间动态</span>
-            <span className="waiting-room__secondary-hint">不占用玩家席 · 可展开查看</span>
-          </summary>
-          <SpectatorList room={room} />
-        </details>
 
         <RoomConfigEditor
           room={room}

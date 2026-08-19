@@ -551,6 +551,25 @@
 .waiting-room__config,
 .waiting-room__actions { display: grid; gap: var(--ww-space-4); }
 
+.waiting-room__spectators--embedded {
+  margin-top: var(--ww-space-5);
+  padding-top: var(--ww-space-4);
+  border-top: 1.5px solid var(--ww-border-default);
+}
+
+.waiting-room__spectators--embedded .waiting-room__section-heading {
+  margin-bottom: var(--ww-space-3);
+}
+
+.waiting-room__spectators--embedded .waiting-room__section-icon {
+  width: 34px;
+  height: 34px;
+}
+
+.waiting-room__spectators--embedded .waiting-room__spectator-list {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
 .waiting-room__secondary-details { display: grid; gap: var(--ww-space-4); }
 .waiting-room__secondary-details > summary { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: var(--ww-space-3); padding: 0 var(--ww-space-4); border: 1.5px solid var(--ww-border-default); border-radius: var(--ww-radius-control); background: var(--ww-bg-surface); color: var(--ww-text-strong); cursor: pointer; font-weight: 600; list-style-position: inside; }
 .waiting-room__secondary-details[open] > summary { border-bottom-color: transparent; border-radius: var(--ww-radius-control) var(--ww-radius-control) 0 0; }
