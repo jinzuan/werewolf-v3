@@ -251,7 +251,7 @@ export function MonitorPage() {
         center={
           <div className="v3-monitor-stream">
             <Card>
-              <div className="v3-panel-heading"><div><span>完整对局记录</span><h2>事件时间线</h2></div></div>
+              <div className="v3-panel-heading v3-timeline-heading"><div><span>完整对局记录</span><h2>事件时间线</h2></div></div>
               <div className="v3-console-events">
                 {filteredEvents.length === 0 ? (
                   <div className="v3-inline-note">当前筛选条件下没有事件。</div>

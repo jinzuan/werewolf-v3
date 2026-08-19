@@ -179,7 +179,7 @@ export function SpectatePage() {
         }
         center={
           <Card>
-            <div className="v3-panel-heading">
+            <div className="v3-panel-heading v3-timeline-heading">
               <div><span>按时间顺序</span><h2>公开事件时间线</h2></div>
               <span className="v3-numeric">最近 {publicEvents.length} 条</span>
             </div>

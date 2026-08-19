@@ -2156,6 +2156,7 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
   :root { --v3-mobile-nav-height: calc(64px + env(safe-area-inset-bottom)); }
 
   .v3-mobile-match-surface {
+    width: 100%;
     height: 100%;
     min-height: 0;
     padding-bottom: var(--v3-mobile-nav-height);
@@ -2282,7 +2283,17 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
   .v3-event-list--mobile { display: inline-flex; }
   .v3-event-list--mobile { display: grid; }
 
+  .v3-event-details__summary,
+  .v3-timeline-heading {
+    min-height: 36px;
+    margin-bottom: var(--ww-space-2);
+    padding-bottom: var(--ww-space-2);
+  }
+
+  .v3-event-details__summary { padding-inline: var(--ww-space-2); }
+
   .v3-match-layout[data-mobile-section] {
+    width: 100%;
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -2303,7 +2314,25 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
   .v3-match-layout[data-mobile-section='view'] > .v3-match-layout__right,
   .v3-monitor-layout[data-mobile-section='events'] > .v3-match-layout__center,
   .v3-spectate-layout[data-mobile-section='events'] > .v3-match-layout__center {
+    width: 100%;
     display: block;
+  }
+
+  .v3-game-workspace[data-mobile-section] .v3-match-layout__left > .v3-card,
+  .v3-game-workspace[data-mobile-section] .v3-match-layout__center > .v3-card,
+  .v3-game-workspace[data-mobile-section] .v3-match-layout__right > .v3-match-side,
+  .v3-game-workspace[data-mobile-section] .v3-match-side > .v3-card {
+    width: 100%;
+    max-width: none;
+  }
+
+  .v3-game-workspace[data-mobile-section='action'] .v3-role-confirm {
+    max-width: none;
+  }
+
+  .v3-game-workspace[data-mobile-section='action'] .v3-role-confirm .v3-button,
+  .v3-game-workspace[data-mobile-section='action'] .v3-action-panel__footer .v3-button {
+    width: 100%;
   }
 
   .v3-game-workspace[data-mobile-section] .v3-identity-panel {

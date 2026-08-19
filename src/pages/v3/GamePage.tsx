@@ -799,7 +799,7 @@ export function GamePage() {
             className="v3-event-details v3-mobile-pane-events"
             open={mobileSection === 'events'}
           >
-            <summary>
+            <summary className="v3-event-details__summary">
               <span>事件与系统通知</span>
               <span className="v3-event-counts">
                 <Badge tone="info" className="v3-event-count--desktop">{systemEvents.length}</Badge>
