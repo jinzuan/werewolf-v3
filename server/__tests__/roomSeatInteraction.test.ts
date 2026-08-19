@@ -49,11 +49,12 @@ test('waiting-room seat actions replace AI, preserve spectators, and expose host
     spectator.credentials.resumeToken,
   );
 
-  const withAI = await rooms.addAISeat(host, 3, spectator.room.roomRevision, 'add-seat-ai');
-  assert.equal(withAI.members.find((member) => member.seatIndex === 3)?.isAI, true);
-  const replaced = await rooms.claimSeat(spectatorIdentity, 3, withAI.roomRevision, 'claim-ai-seat');
+  const withAI = await rooms.addAISeat(host, undefined, spectator.room.roomRevision, 'add-seat-ai');
+  const aiSeat = withAI.members.find((member) => member.isAI)?.seatIndex;
+  assert.equal(typeof aiSeat, 'number');
+  const replaced = await rooms.claimSeat(spectatorIdentity, aiSeat, withAI.roomRevision, 'claim-ai-seat');
   assert.equal(replaced.members.find((member) => member.id === 'spectator')?.kind, 'player');
-  assert.equal(replaced.members.some((member) => member.seatIndex === 3 && member.isAI), false);
+  assert.equal(replaced.members.some((member) => member.seatIndex === aiSeat && member.isAI), false);
 
   const guestIdentity = await rooms.identity(
     created.room.code,
