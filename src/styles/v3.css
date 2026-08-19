@@ -2295,9 +2295,9 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
 
   .v3-event-details__summary,
   .v3-timeline-heading {
-    min-height: 36px;
-    margin-bottom: var(--ww-space-2);
-    padding-bottom: var(--ww-space-2);
+    min-height: 32px;
+    margin-bottom: var(--ww-space-1);
+    padding-bottom: var(--ww-space-1);
   }
 
   .v3-event-details__summary { padding-inline: var(--ww-space-2); }
