@@ -134,6 +134,63 @@ export const clearPendingCreate = (): void => {
   try { pendingCreateStorage()?.removeItem(PENDING_CREATE_KEY); } catch { /* cache only */ }
 };
 
+const PENDING_JOIN_KEY = 'werewolf-v3-pending-join';
+export const PENDING_JOIN_TTL_MS = 2 * 60 * 1000;
+export type PendingJoin = {
+  joinRequestId: string;
+  actorId: string;
+  roomCode: string;
+  actorName: string;
+  mode: 'player' | 'spectator';
+  createdAt: number;
+};
+
+const validPendingJoin = (value: Partial<PendingJoin> | null, now: number): value is PendingJoin =>
+  Boolean(
+    value &&
+    typeof value.joinRequestId === 'string' &&
+    typeof value.actorId === 'string' &&
+    typeof value.roomCode === 'string' &&
+    typeof value.actorName === 'string' &&
+    (value.mode === 'player' || value.mode === 'spectator') &&
+    Number.isSafeInteger(value.createdAt) &&
+    value.createdAt <= now &&
+    now - value.createdAt < PENDING_JOIN_TTL_MS,
+  );
+
+export const readPendingJoin = (now = Date.now()): PendingJoin | null => {
+  const target = pendingCreateStorage();
+  if (!target) return null;
+  try {
+    const parsed = JSON.parse(target.getItem(PENDING_JOIN_KEY) ?? 'null') as Partial<PendingJoin> | null;
+    if (!validPendingJoin(parsed, now)) {
+      target.removeItem(PENDING_JOIN_KEY);
+      return null;
+    }
+    return parsed;
+  } catch {
+    try { target.removeItem(PENDING_JOIN_KEY); } catch { /* cache only */ }
+    return null;
+  }
+};
+
+export const writePendingJoin = (pending: PendingJoin): void => {
+  try { pendingCreateStorage()?.setItem(PENDING_JOIN_KEY, JSON.stringify(pending)); } catch { /* cache only */ }
+};
+
+export const clearPendingJoin = (joinRequestId?: string): void => {
+  const target = pendingCreateStorage();
+  if (!target) return;
+  try {
+    if (joinRequestId) {
+      const raw = target.getItem(PENDING_JOIN_KEY);
+      const current = JSON.parse(raw ?? 'null') as Partial<PendingJoin> | null;
+      if (current?.joinRequestId !== joinRequestId) return;
+    }
+    target.removeItem(PENDING_JOIN_KEY);
+  } catch { /* cache only */ }
+};
+
 const isTransportFailure = (response: ClientAck): response is TransportFailure =>
   response.ok === false && 'kind' in response && response.kind === 'transport';
 
@@ -1104,17 +1161,36 @@ export const useV3Store = create<V3Store>()((set, get) => {
       ensureTransportSubscriptions();
       set({ loading: true, authorityStatus: 'resolving' });
       const actorName = name.trim() || '玩家';
+      const normalizedRoomCode = roomCode.trim().toUpperCase();
+      const existingPending = readPendingJoin();
+      const pending = existingPending &&
+        existingPending.roomCode === normalizedRoomCode &&
+        existingPending.actorName === actorName &&
+        existingPending.mode === 'player'
+        ? existingPending
+        : {
+            joinRequestId: newActorId(),
+            actorId: newActorId(),
+            roomCode: normalizedRoomCode,
+            actorName,
+            mode: 'player' as const,
+            createdAt: Date.now(),
+          };
+      writePendingJoin(pending);
       try {
         const response = await joinV3Room(
-          newActorId(),
+          pending.actorId,
           actorName,
-          roomCode.trim().toUpperCase(),
+          normalizedRoomCode,
           joinToken,
+          pending.joinRequestId,
         );
         if (response.ok === false) {
+          if (!isTransportFailure(response)) clearPendingJoin(pending.joinRequestId);
           set({ authorityStatus: 'error', error: responseMessage(response) });
           return false;
         }
+        clearPendingJoin(pending.joinRequestId);
         return establish(response.room, response.credentials, actorName);
       } finally {
         set({ loading: false });
@@ -1126,18 +1202,37 @@ export const useV3Store = create<V3Store>()((set, get) => {
       ensureTransportSubscriptions();
       set({ loading: true, authorityStatus: 'resolving' });
       const actorName = name.trim() || '观战者';
+      const normalizedRoomCode = roomCode.trim().toUpperCase();
+      const existingPending = readPendingJoin();
+      const pending = existingPending &&
+        existingPending.roomCode === normalizedRoomCode &&
+        existingPending.actorName === actorName &&
+        existingPending.mode === 'spectator'
+        ? existingPending
+        : {
+            joinRequestId: newActorId(),
+            actorId: newActorId(),
+            roomCode: normalizedRoomCode,
+            actorName,
+            mode: 'spectator' as const,
+            createdAt: Date.now(),
+          };
+      writePendingJoin(pending);
       try {
         const response = await spectateV3Room(
-          newActorId(),
+          pending.actorId,
           actorName,
-          roomCode.trim().toUpperCase(),
+          normalizedRoomCode,
           joinToken,
+          pending.joinRequestId,
           omniscientToken,
         );
         if (response.ok === false) {
+          if (!isTransportFailure(response)) clearPendingJoin(pending.joinRequestId);
           set({ authorityStatus: 'error', error: responseMessage(response) });
           return false;
         }
+        clearPendingJoin(pending.joinRequestId);
         const accepted = establish(response.room, response.credentials, actorName);
         if (accepted && isRoomStatusWithGame(response.room.status)) {
           await recoverGameProjection();

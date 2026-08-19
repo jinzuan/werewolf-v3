@@ -319,7 +319,7 @@ export type GameCommand =
 export type SpectatorCommand =
   | {
       type: 'spectator.join';
-      payload: { roomCode: string; omniscientToken?: string };
+      payload: { roomCode: string; omniscientToken?: string; joinRequestId?: string };
     }
   | {
       type: 'spectator.resume';

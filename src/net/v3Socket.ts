@@ -512,6 +512,7 @@ export const joinV3Room = (
   actorName: string,
   roomCode: string,
   joinToken: string,
+  joinRequestId: string,
 ): Promise<ClientAck<JoinRoomAck extends ProtocolAck<infer P> ? P : never>> =>
   emitAck(
     openRoomConnection(),
@@ -520,7 +521,7 @@ export const joinV3Room = (
       actorId,
       {
         type: 'room.join',
-        payload: { roomCode, joinToken },
+        payload: { roomCode, joinToken, joinRequestId },
       },
       actorName,
     ),
@@ -531,11 +532,12 @@ export const spectateV3Room = (
   actorName: string,
   roomCode: string,
   joinToken: string,
+  joinRequestId: string,
   omniscientToken?: string,
 ): Promise<ClientAck<JoinRoomAck extends ProtocolAck<infer P> ? P : never>> => {
   const command: SpectatorCommand = {
     type: 'spectator.join',
-    payload: { roomCode, omniscientToken },
+    payload: { roomCode, omniscientToken, joinRequestId },
   };
   const request: ClientCommand = {
     meta: commandMeta(actorId),

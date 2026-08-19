@@ -426,6 +426,7 @@ export function bindSocketTransport(
               avatarId: request.avatarId,
               roomCode: command.payload.roomCode,
               joinToken: command.payload.joinToken,
+              joinRequestId: command.payload.joinRequestId,
             });
             await bind(access, meta.actorId);
             await waitForJoinFloor(joinAttemptStartedAt);
@@ -457,6 +458,7 @@ export function bindSocketTransport(
               avatarId: request.avatarId,
               roomCode: command.payload.roomCode,
               joinToken: (socket.handshake.auth as { joinToken?: string }).joinToken,
+              joinRequestId: command.payload.joinRequestId,
               spectator: true,
               omniscientToken: command.payload.omniscientToken,
             });

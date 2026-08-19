@@ -314,7 +314,10 @@ export type EmptyRoomCommandPayload = Record<string, never>;
 export type RoomReadCommand =
   | { type: 'catalog.get'; payload: EmptyRoomCommandPayload }
   | { type: 'room.create'; payload: CreateRoomCommandPayload }
-  | { type: 'room.join'; payload: { roomCode: string; joinToken?: string } }
+  | {
+      type: 'room.join';
+      payload: { roomCode: string; joinToken?: string; joinRequestId?: string };
+    }
   | { type: 'room.resume'; payload: { roomCode: string; afterSequence?: number } }
   | { type: 'room.get'; payload: { roomCode: string } }
   | { type: 'room.ai_config.get'; payload: EmptyRoomCommandPayload }

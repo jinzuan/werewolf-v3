@@ -94,6 +94,15 @@ export interface RoomCommandIdempotency {
 
 export type IdempotencyRecord = RoomCommandIdempotency;
 
+/** Durable claim for a pre-auth join, so an ACK loss cannot create a second member. */
+export interface RoomJoinClaim {
+  joinRequestId: string;
+  actorId: string;
+  fingerprint: string;
+  resumeToken: string;
+  createdAt: number;
+}
+
 export interface RoomStartFailure {
   code: string;
   messageKey?: string;
@@ -141,6 +150,8 @@ export interface RoomRecord {
   recentRoomCommands?: IdempotencyRecord[];
   /** Compact room mutation receipts retained for command reconciliation. */
   commandReceipts?: CommandReceipt[];
+  /** Bounded pre-auth join claims retained for transport retry idempotency. */
+  joinClaims?: RoomJoinClaim[];
   /** Durable create claim. The request id is never generated again on retry. */
   createRequestId?: string;
   createActorId?: string;
@@ -192,6 +203,8 @@ export interface JoinRoomRequest {
   avatarId?: string;
   roomCode: string;
   joinToken?: string;
+  /** Stable across an ACK timeout/retry; never contains an invite secret. */
+  joinRequestId?: string;
   spectator?: boolean;
   omniscientToken?: string;
 }

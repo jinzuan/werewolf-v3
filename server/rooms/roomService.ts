@@ -81,6 +81,7 @@ import type {
   CreateRoomRequest,
   JoinRoomRequest,
   RoomConfigRecord,
+  RoomJoinClaim,
   RoomMember,
   RoomRecord,
   RoomAccess,
@@ -159,6 +160,15 @@ const createFingerprint = (options: CreateRoomOptionsV31): string => {
   }
   return JSON.stringify(stableValue(nonSecret));
 };
+
+const JOIN_CLAIM_LIMIT = 128;
+
+const joinFingerprint = (request: JoinRoomRequest): string => JSON.stringify({
+  name: request.name.trim().slice(0, 32) || '玩家',
+  avatarId: request.avatarId ?? '',
+  spectator: request.spectator === true,
+  omniscientRequested: request.spectator === true && request.omniscientToken !== undefined,
+});
 
 const makePlayer = (
   roomId: string,
@@ -627,6 +637,11 @@ export class RoomService {
   async join(request: JoinRoomRequest): Promise<RoomAccess> {
     const room = await this.requireRoom(request.roomCode);
     const spectator = request.spectator === true;
+    const joinRequestId = request.joinRequestId?.trim();
+    if (joinRequestId && joinRequestId.length > 128) {
+      throw this.error('INVALID_COMMAND', 'room.error.invalid_command');
+    }
+    const fingerprint = joinFingerprint(request);
     const listedWaitingRoom = room.config?.visibility === 'listed' &&
       (room.status === 'waiting' || room.status === 'ready_check');
     // An empty legacy/configured token means the room has no invite password.
@@ -637,7 +652,7 @@ export class RoomService {
       !(spectator && room.config?.allowPublicSpectators === true)) {
       throw this.error('ROOM_TOKEN_INVALID', 'room.error.invalid_join_token');
     }
-    const resumeToken = token();
+    let resumeToken = token();
     try {
       // The revision is part of the join claim. Every status, membership and
       // capacity decision below is made against the same RoomRecord that is
@@ -648,6 +663,22 @@ export class RoomService {
         }
         const config = draft.config;
         if (!config) throw this.error('INVALID_ROOM_CONFIG', 'room.error.config_missing');
+        if (joinRequestId) {
+          const claim = (draft.joinClaims ?? []).find(
+            (candidate) => candidate.joinRequestId === joinRequestId,
+          );
+          if (claim) {
+            if (claim.actorId !== request.actorId || claim.fingerprint !== fingerprint) {
+              throw this.error('IDEMPOTENCY_KEY_REUSED', 'room.error.idempotency_key_reused');
+            }
+            const existing = draft.members.find((member) => member.id === request.actorId);
+            if (!existing || existing.resumeToken !== claim.resumeToken) {
+              throw this.error('ROOM_JOIN_DENIED', 'room.error.join_denied');
+            }
+            resumeToken = claim.resumeToken;
+            return;
+          }
+        }
         if (draft.members.some((member) => member.id === request.actorId)) {
           throw this.error('IDENTITY_ALREADY_EXISTS', 'room.error.identity_exists');
         }
@@ -678,6 +709,19 @@ export class RoomService {
         };
         draft.members.push(member);
         if (!spectator) draft.players.push(makePlayer(draft.id, member, draft.hostId));
+        if (joinRequestId) {
+          const claim: RoomJoinClaim = {
+            joinRequestId,
+            actorId: request.actorId,
+            fingerprint,
+            resumeToken,
+            createdAt: this.now(),
+          };
+          draft.joinClaims = [
+            ...(draft.joinClaims ?? []).filter((candidate) => candidate.joinRequestId !== joinRequestId),
+            claim,
+          ].slice(-JOIN_CLAIM_LIMIT);
+        }
         this.touchActivity(draft);
       });
     } catch (error) {

@@ -6,6 +6,12 @@ import {
   readPendingCreate,
   writePendingCreate,
 } from '../../stores/v3/authorityStore';
+import {
+  PENDING_JOIN_TTL_MS,
+  clearPendingJoin,
+  readPendingJoin,
+  writePendingJoin,
+} from '../../stores/v3/authorityStore';
 
 class MemoryStorage {
   private readonly values = new Map<string, string>();
@@ -65,5 +71,42 @@ test('legacy and malformed pending create records are cleared', async () => {
     assert.equal(readPendingCreate(20_000), null);
     clearPendingCreate();
     assert.equal(storage.getItem('werewolf-v3-pending-create'), null);
+  });
+});
+
+test('pending joins preserve one actor/request across ACK retry and clear safely', async () => {
+  await withSessionStorage((storage) => {
+    const pending = {
+      joinRequestId: 'join-request-1',
+      actorId: 'join-actor-1',
+      roomCode: 'ABC123',
+      actorName: '玩家',
+      mode: 'player' as const,
+      createdAt: 10_000,
+    };
+    writePendingJoin(pending);
+    assert.deepEqual(readPendingJoin(10_000 + PENDING_JOIN_TTL_MS - 1), pending);
+    clearPendingJoin('other-request');
+    assert.notEqual(storage.getItem('werewolf-v3-pending-join'), null);
+    clearPendingJoin(pending.joinRequestId);
+    assert.equal(storage.getItem('werewolf-v3-pending-join'), null);
+  });
+});
+
+test('malformed and expired pending joins are removed', async () => {
+  await withSessionStorage((storage) => {
+    storage.setItem('werewolf-v3-pending-join', JSON.stringify({ actorId: 'old' }));
+    assert.equal(readPendingJoin(20_000), null);
+    assert.equal(storage.getItem('werewolf-v3-pending-join'), null);
+    writePendingJoin({
+      joinRequestId: 'expired',
+      actorId: 'actor',
+      roomCode: 'ABC123',
+      actorName: '玩家',
+      mode: 'spectator',
+      createdAt: 10_000,
+    });
+    assert.equal(readPendingJoin(10_000 + PENDING_JOIN_TTL_MS), null);
+    assert.equal(storage.getItem('werewolf-v3-pending-join'), null);
   });
 });

@@ -74,6 +74,40 @@ test('create request is durable and returns the same access after an ACK-loss re
   await rooms.close();
 });
 
+test('join request is durable and returns the same member after an ACK-loss retry', async () => {
+  const repository = new InMemoryRoomRepository();
+  const firstService = new RoomService(repository, new InMemoryEventStore(), { autoDrive: false });
+  const created = await firstService.create({
+    actorId: 'host',
+    createRequestId: 'join-retry-create',
+    options: optionsFor(firstService),
+  });
+  const request = {
+    actorId: 'guest',
+    name: 'Guest',
+    roomCode: created.room.code,
+    joinToken: created.credentials.joinToken,
+    joinRequestId: 'join-request-1',
+  };
+  const first = await firstService.join(request);
+  const firstRevision = first.room.roomRevision;
+  await firstService.close();
+
+  const restartedService = new RoomService(repository, new InMemoryEventStore(), { autoDrive: false });
+  const retried = await restartedService.join(request);
+  assert.equal(retried.credentials.resumeToken, first.credentials.resumeToken);
+  assert.equal(retried.room.roomRevision, firstRevision);
+  assert.equal((await restartedService.getRecord(created.room.code))?.members.filter((member) => member.id === 'guest').length, 1);
+
+  await assert.rejects(
+    restartedService.join({ ...request, name: 'Different name' }),
+    (error: unknown) =>
+      error instanceof Error &&
+      (error as { code?: string }).code === 'IDEMPOTENCY_KEY_REUSED',
+  );
+  await restartedService.close();
+});
+
 test('quick computer create retries the existing workflow instead of minting a second code', async () => {
   const repository = new InMemoryRoomRepository();
   const rooms = new RoomService(repository, new InMemoryEventStore(), { autoDrive: false });
