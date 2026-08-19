@@ -2345,6 +2345,14 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
     width: 100%;
   }
 
+  .v3-game-layout[data-mobile-section='action'] > .v3-match-layout__right,
+  .v3-game-layout[data-mobile-section='action'] .v3-match-side,
+  .v3-game-layout[data-mobile-section='action'] .v3-mobile-pane-action {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
   .v3-game-workspace[data-mobile-section] .v3-identity-panel {
     display: none;
   }

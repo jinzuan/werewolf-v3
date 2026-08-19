@@ -447,6 +447,13 @@
 @media (max-width: 767px) {
   .waiting-room { display: flex; flex-direction: column; gap: var(--ww-space-4); }
   .waiting-room__board { display: flex; flex-direction: column; gap: var(--ww-space-4); }
+  .waiting-room__side,
+  .waiting-room__actions,
+  .waiting-room__action-flow,
+  .waiting-room__action-list--flow {
+    width: 100%;
+    min-width: 0;
+  }
   .waiting-room__header-card { order: 1; padding: var(--ww-space-4); }
   .waiting-room__error { order: 2; margin: 0; }
   .waiting-room__board { order: 3; }
@@ -468,6 +475,7 @@
   .waiting-room__config-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .waiting-room__action-list { display: grid; grid-template-columns: 1fr; }
   .waiting-room__action-list--flow { grid-template-columns: 1fr; }
+  .waiting-room__action-list--flow .v3-button,
   .waiting-room__action-list .v3-button,
   .waiting-room__action-list .v3-button--action { width: 100%; min-width: 0; }
   .waiting-room__editor-grid,
