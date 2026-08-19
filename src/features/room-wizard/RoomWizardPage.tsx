@@ -416,6 +416,27 @@ function PlayersStep({
             </button>
           ))}
         </div>
+        <label
+          className="v3-wizard-ai-toggle"
+          style={{ ...row, marginTop: 'var(--ww-space-4)', justifyContent: 'space-between' }}
+        >
+          <span>
+            <strong>AI 补位</strong>
+            <small>真人不足时由电脑补齐空席；朋友房不可用，快速电脑局固定开启。</small>
+          </span>
+          <input
+            type="checkbox"
+            checked={draft.mode === 'quick_computer' || (draft.mode !== 'human' && draft.aiFillPolicy !== 'none')}
+            disabled={draft.mode === 'quick_computer'}
+            onChange={(event) => {
+              if (event.target.checked) {
+                updateMode('mixed');
+              } else {
+                updateMode('human');
+              }
+            }}
+          />
+        </label>
         {draft.mode === 'quick_computer' ? <div className="v3-alert" style={{ marginTop: 'var(--ww-space-3)' }}>确认创建后会直接开局，你将进入全知监控，不会进入普通等待房。</div> : null}
       </Card>
 
@@ -596,17 +617,17 @@ function RulesStep({
           <span><strong>{draft.visibility === 'listed' ? '大厅可见' : '仅凭邀请'}</strong> · {strategyLabel[draft.aiFillPolicy]}</span>
           <span>在线真人准备后由房主开局 · {draft.reviewEnabled ? (draft.reviewMode === 'ai' ? '开启 AI 复盘' : '开启复盘') : '关闭复盘'}</span>
         </div>
+        <fieldset style={{ border: 0, margin: 'var(--ww-space-4) 0 0', padding: 0 }}>
+          <legend className="v3-field__label">房间可见性快捷设置</legend>
+          <div className="v3-wizard-choice-grid">
+            <button type="button" aria-pressed={draft.visibility === 'invite_only'} onClick={() => update({ visibility: 'invite_only' })} style={choiceStyle(draft.visibility === 'invite_only')}><strong>仅凭邀请</strong><span>不出现在大厅，使用房间码和邀请凭据进入。</span></button>
+            <button type="button" aria-pressed={draft.visibility === 'listed'} onClick={() => update({ visibility: 'listed' })} style={choiceStyle(draft.visibility === 'listed')}><strong>大厅可见</strong><span>大厅加入玩家不强制填写邀请口令。</span></button>
+          </div>
+          <FieldError issue={issueFor('visibility')} />
+        </fieldset>
         <details className="v3-wizard-advanced">
           <summary>调整可见性、观战与复盘</summary>
           <div style={css('gap')}>
-            <fieldset style={{ border: 0, margin: 0, padding: 0 }}>
-              <legend className="v3-field__label">房间可见性</legend>
-              <div className="v3-wizard-choice-grid">
-                <button type="button" aria-pressed={draft.visibility === 'invite_only'} onClick={() => update({ visibility: 'invite_only' })} style={choiceStyle(draft.visibility === 'invite_only')}><strong>仅凭邀请</strong><span>需要房间码与邀请口令。</span></button>
-                <button type="button" aria-pressed={draft.visibility === 'listed'} onClick={() => update({ visibility: 'listed' })} style={choiceStyle(draft.visibility === 'listed')}><strong>大厅可见</strong><span>可以在大厅看到房间摘要。</span></button>
-              </div>
-              <FieldError issue={issueFor('visibility')} />
-            </fieldset>
             {draft.mode !== 'human' ? <p style={{ margin: 0, color: 'var(--ww-text-muted)' }}>创建后可在等待房的“电脑玩家设置”中配置模型与安全凭据。</p> : null}
             <label style={row}><input type="checkbox" checked={draft.allowPublicSpectators} onChange={(event) => update({ allowPublicSpectators: event.target.checked })} />允许公开观战<FieldError issue={issueFor('allowPublicSpectators')} /></label>
             <label style={row}><input type="checkbox" checked={draft.reviewEnabled} onChange={(event) => update({ reviewEnabled: event.target.checked })} />对局结束后开启复盘<FieldError issue={issueFor('reviewEnabled')} /></label>
