@@ -289,7 +289,8 @@ const createModernApplication = async (
     transport,
     ...(testControl ? { testControl } : {}),
     start: async (port = Number(process.env.PORT ?? 3001), host = runtime.bindHost) => {
-      if (security.environment !== 'production' && !isLoopbackHost(host)) {
+      if (security.environment !== 'production' && !isLoopbackHost(host) &&
+          !['1','true','yes','on'].includes((process.env.WW_DEV_ALLOW_PUBLIC || '').toLowerCase())) {
         throw new Error('development/test bind host must be loopback');
       }
       await new Promise<void>((resolve, reject) => {

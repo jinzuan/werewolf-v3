@@ -94,7 +94,8 @@ export const parseRuntimeSecurityConfig = (
   const configuredProxyValue = trustedProxyValue(env) ?? (!trustProxyFlag ? rawTrustProxy : undefined);
   const configuredBindHost = env.WW_BIND_HOST?.trim() || undefined;
   const bindHost = configuredBindHost ?? '127.0.0.1';
-  if (environment !== 'production' && !isLoopbackHost(bindHost)) {
+  const allowPublicDev = ['1','true','yes','on'].includes((env.WW_DEV_ALLOW_PUBLIC || '').toLowerCase());
+  if (environment !== 'production' && !isLoopbackHost(bindHost) && !allowPublicDev) {
     throw new RuntimeSecurityConfigError(
       'development/test bind host must be loopback; use WW_ENV=production for a public listener',
     );
