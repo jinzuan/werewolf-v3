@@ -1609,10 +1609,24 @@ export class GameSession {
 
   private setDeadline(): void {
     const stageStartedAt = this.now();
-    this.state.gameState.deadlineTs =
-      this.state.gameState.phase === 'ended' || this.humanPlayerCount() === 1
-        ? null
-        : stageStartedAt + this.stageDurationMs;
+    // Dawn is an internal hand-off between the atomic night result and the
+    // first public speech turn. A single-human room deliberately has no
+    // deadlines for player-controlled stages, but leaving this passive stage
+    // without a one-shot transition would leave it with neither an actor nor
+    // a timer after the last AI night action commits.
+    const autoAdvanceSingleHumanDawn =
+      this.state.gameState.phase === 'day' &&
+      this.state.dayFlow.stage === 'dawn' &&
+      this.humanPlayerCount() === 1;
+    if (this.state.gameState.phase === 'ended') {
+      this.state.gameState.deadlineTs = null;
+    } else if (autoAdvanceSingleHumanDawn) {
+      this.state.gameState.deadlineTs = stageStartedAt;
+    } else if (this.humanPlayerCount() === 1) {
+      this.state.gameState.deadlineTs = null;
+    } else {
+      this.state.gameState.deadlineTs = stageStartedAt + this.stageDurationMs;
+    }
     this.state.gameState.stageStartedAt = stageStartedAt;
   }
 
