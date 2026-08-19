@@ -1412,6 +1412,27 @@ select {
 .v3-match-layout__center > .v3-card,
 .v3-match-layout__right > .v3-card { height: auto; }
 .v3-match-side { min-width: 0; display: grid; align-content: start; gap: var(--ww-space-3); }
+.v3-match-side > .v3-identity-panel {
+  margin: 0;
+  padding: var(--ww-space-4);
+}
+.v3-match-side > .v3-identity-panel .v3-panel-heading {
+  min-height: 40px;
+  margin-bottom: var(--ww-space-3);
+  padding-bottom: var(--ww-space-2);
+}
+.v3-match-side > .v3-identity-panel .ww-role-card {
+  min-height: 96px;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: var(--ww-space-2);
+  padding: var(--ww-space-3);
+}
+.v3-match-side > .v3-identity-panel .ww-role-card__badge {
+  width: 40px;
+  height: 40px;
+}
+.v3-match-side > .v3-identity-panel .ww-role-card__body strong { font-size: var(--ww-text-body-size); }
+.v3-match-side > .v3-identity-panel .ww-role-card__description { white-space: normal; }
 .v3-mobile-match-surface { min-width: 0; }
 .v3-mobile-match-nav,
 .v3-mobile-only { display: none; }
@@ -2430,6 +2451,13 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
     width: 100%;
     min-width: 0;
     max-width: none;
+  }
+
+  .v3-game-layout[data-mobile-section='identity'] > .v3-match-layout__right,
+  .v3-game-layout[data-mobile-section='identity'] .v3-match-side > .v3-mobile-pane-identity,
+  .v3-game-workspace[data-role-confirmation='true'] .v3-match-side > .v3-mobile-pane-identity {
+    width: 100%;
+    display: block;
   }
 
   .v3-game-workspace[data-mobile-section] .v3-identity-panel {

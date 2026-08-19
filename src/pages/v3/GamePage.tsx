@@ -441,6 +441,56 @@ export function GamePage() {
     return getAvatarAsset(player?.isAI ? 'computer' : 'player');
   };
 
+  const identityPanel = myPlayer?.role ? (
+    <Card className="v3-identity-panel v3-mobile-pane-identity">
+      <div className="v3-panel-heading">
+        <div>
+          <span>仅你可见</span>
+          <h2>我的身份</h2>
+        </div>
+        <Badge tone={myPlayer.role === 'wolf' ? 'danger' : 'success'}>
+          {myPlayer.role === 'wolf' ? '狼人阵营' : '好人阵营'}
+        </Badge>
+      </div>
+      {isRoleConfirmation ? (
+        <>
+          <RoleRevealCard
+            role={myPlayer.role}
+            faction={myPlayer.role === 'wolf' ? '狼人阵营' : '好人阵营'}
+            factionTone={myPlayer.role === 'wolf' ? 'wolf' : 'village'}
+            description={ROLE_DESCRIPTIONS[myPlayer.role]}
+            revealed={roleRevealed}
+            infoOpen={roleInfoOpen}
+            onReveal={() => setRoleRevealed((current) => !current)}
+            onToggleInfo={() => setRoleInfoOpen((current) => !current)}
+          />
+          <div className="v3-role-confirm">
+            <p className="v3-panel-copy">
+              {canConfirmRole ? '请确认你已查看身份牌；确认后首夜将开始。' : '身份牌已确认，等待其他玩家。'}
+            </p>
+            {canConfirmRole ? (
+              <Button
+                disabled={loading || !roleRevealed}
+                onClick={() => void submitAction()}
+              >
+                <Check size={17} />
+                确认身份
+              </Button>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <RoleCard
+          role={myPlayer.role}
+          name={ROLE_LABELS[myPlayer.role]}
+          faction={myPlayer.role === 'wolf' ? '狼人阵营' : '好人阵营'}
+          factionTone={myPlayer.role === 'wolf' ? 'wolf' : 'village'}
+          description={ROLE_DESCRIPTIONS[myPlayer.role]}
+        />
+      )}
+    </Card>
+  ) : null;
+
   if (!room || !session) {
     return (
       <AppShell title="玩家对局" connected={connected}>
@@ -515,55 +565,6 @@ export function GamePage() {
             unreadCounts={mobileUnreadCounts}
             onChange={(section) => setMobileSection(section as GameMobileSection)}
           />
-          {myPlayer?.role ? (
-            <Card className="v3-identity-panel">
-              <div className="v3-panel-heading">
-                <div>
-                  <span>仅你可见</span>
-                  <h2>我的身份</h2>
-                </div>
-                <Badge tone={myPlayer.role === 'wolf' ? 'danger' : 'success'}>
-                  {myPlayer.role === 'wolf' ? '狼人阵营' : '好人阵营'}
-                </Badge>
-              </div>
-              {isRoleConfirmation ? (
-                <>
-                  <RoleRevealCard
-                    role={myPlayer.role}
-                    faction={myPlayer.role === 'wolf' ? '狼人阵营' : '好人阵营'}
-                    factionTone={myPlayer.role === 'wolf' ? 'wolf' : 'village'}
-                    description={ROLE_DESCRIPTIONS[myPlayer.role]}
-                    revealed={roleRevealed}
-                    infoOpen={roleInfoOpen}
-                    onReveal={() => setRoleRevealed((current) => !current)}
-                    onToggleInfo={() => setRoleInfoOpen((current) => !current)}
-                  />
-                  <div className="v3-role-confirm">
-                    <p className="v3-panel-copy">
-                      {canConfirmRole ? '请确认你已查看身份牌；确认后首夜将开始。' : '身份牌已确认，等待其他玩家。'}
-                    </p>
-                    {canConfirmRole ? (
-                      <Button
-                        disabled={loading || !roleRevealed}
-                        onClick={() => void submitAction()}
-                      >
-                        <Check size={17} />
-                        确认身份
-                      </Button>
-                    ) : null}
-                  </div>
-                </>
-              ) : (
-                <RoleCard
-                  role={myPlayer.role}
-                  name={ROLE_LABELS[myPlayer.role]}
-                  faction={myPlayer.role === 'wolf' ? '狼人阵营' : '好人阵营'}
-                  factionTone={myPlayer.role === 'wolf' ? 'wolf' : 'village'}
-                  description={ROLE_DESCRIPTIONS[myPlayer.role]}
-                />
-              )}
-            </Card>
-          ) : null}
           <MatchShell
           className="v3-game-layout"
           mobileSection={mobileSection}
@@ -612,6 +613,7 @@ export function GamePage() {
           }
           right={
             <div className="v3-match-side">
+            {identityPanel}
             {isEliminated && !isLastWordsTurn ? (
             <Card className="v3-action-panel v3-spectator-panel v3-mobile-pane-action">
               <div className="v3-panel-heading">
