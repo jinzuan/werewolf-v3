@@ -19,6 +19,7 @@ import { RoomConfigEditor } from './components/RoomConfigEditor';
 import { RoomConfigSummary } from './components/RoomConfigSummary';
 import { RoomAIConfigEditor } from './components/RoomAIConfigEditor';
 import { PlayerSeatGrid } from './components/PlayerSeatGrid';
+import { WaitingRoomQuickSettings } from './components/WaitingRoomQuickSettings';
 import { SpectatorList } from './components/SpectatorList';
 import { StartCheckPanel } from './components/StartCheckPanel';
 import { WaitingRoomHeader } from './components/WaitingRoomHeader';
@@ -237,6 +238,14 @@ export function WaitingRoomPage() {
           <div className="v3-alert v3-alert--error waiting-room__error" role="alert">
             {error}
           </div>
+        ) : null}
+
+        {isHost ? (
+          <WaitingRoomQuickSettings
+            room={room}
+            pending={pendingRoomCommand === 'room.update_config'}
+            onSubmit={updateConfig}
+          />
         ) : null}
 
         <div className="waiting-room__board">

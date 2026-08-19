@@ -93,6 +93,7 @@
 }
 
 .waiting-room__players,
+.waiting-room__quick-settings,
 .waiting-room__checks,
 .waiting-room__spectators,
 .waiting-room__config,
@@ -211,6 +212,98 @@
   margin-left: auto;
   flex: 0 0 auto;
   white-space: nowrap;
+}
+
+.waiting-room__quick-settings {
+  display: grid;
+  gap: var(--ww-space-4);
+}
+
+.waiting-room__quick-settings .waiting-room__section-heading {
+  margin-bottom: 0;
+}
+
+.waiting-room__quick-settings-status {
+  color: var(--ww-text-muted);
+  font-size: var(--ww-text-caption-size);
+  white-space: nowrap;
+}
+
+.waiting-room__quick-settings-grid {
+  display: grid;
+  grid-template-columns: minmax(210px, .8fr) minmax(110px, .35fr) minmax(180px, .7fr);
+  align-items: end;
+  gap: var(--ww-space-4);
+}
+
+.waiting-room__quick-number {
+  display: flex;
+  align-items: center;
+  gap: var(--ww-space-2);
+}
+
+.waiting-room__quick-number .v3-input {
+  min-width: 0;
+  text-align: center;
+}
+
+.waiting-room__quick-role-total,
+.waiting-room__quick-ai-toggle {
+  min-height: var(--ww-height-control);
+  display: flex;
+  align-items: center;
+  gap: var(--ww-space-2);
+}
+
+.waiting-room__quick-role-total {
+  justify-content: space-between;
+  padding: 0 var(--ww-space-3);
+  border-radius: var(--ww-radius-control);
+  background: var(--ww-bg-subtle);
+}
+
+.waiting-room__quick-role-total strong.is-valid { color: var(--ww-state-success); }
+.waiting-room__quick-role-total strong.is-invalid { color: var(--ww-state-warning); }
+
+.waiting-room__quick-ai-toggle {
+  cursor: pointer;
+}
+
+.waiting-room__quick-ai-toggle > span {
+  display: grid;
+  gap: 2px;
+}
+
+.waiting-room__quick-ai-toggle small,
+.waiting-room__quick-settings-actions > span {
+  color: var(--ww-text-muted);
+  font-size: var(--ww-text-caption-size);
+}
+
+.waiting-room__quick-role-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--ww-space-3);
+}
+
+.waiting-room__quick-role {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.waiting-room__quick-role > span {
+  color: var(--ww-text-muted);
+  font-size: var(--ww-text-caption-size);
+}
+
+.waiting-room__quick-settings-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ww-space-4);
+  padding-top: var(--ww-space-3);
+  border-top: 1.5px solid var(--ww-border-default);
 }
 
 .waiting-room__seat-grid .ww-seat {
@@ -583,10 +676,11 @@
   }
   .waiting-room__header-card { order: 1; padding: var(--ww-space-4); }
   .waiting-room__error { order: 2; margin: 0; }
-  .waiting-room__board { order: 3; }
-  .waiting-room__config { order: 4; }
-  .waiting-room__secondary-details { order: 5; }
-  .waiting-room__footer-note { order: 6; }
+  .waiting-room__quick-settings { order: 3; }
+  .waiting-room__board { order: 4; }
+  .waiting-room__config { order: 5; }
+  .waiting-room__secondary-details { order: 6; }
+  .waiting-room__footer-note { order: 7; }
   .waiting-room__header-main { align-items: flex-start; }
   .waiting-room__header-main h1 { font-size: var(--ww-text-page-title-size); line-height: var(--ww-text-page-title-line); }
   .waiting-room__header-main p { max-width: 230px; }
@@ -599,6 +693,10 @@
   .waiting-room__muted-action { margin-left: 0; }
   .waiting-room__seat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--ww-space-2); }
   .waiting-room__seat-grid .ww-seat { min-height: 112px; }
+  .waiting-room__quick-settings-grid { grid-template-columns: 1fr; align-items: stretch; }
+  .waiting-room__quick-role-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .waiting-room__quick-settings-actions { align-items: stretch; flex-direction: column; }
+  .waiting-room__quick-settings-actions .v3-button { width: 100%; }
   .waiting-room__config-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .waiting-room__action-list { display: grid; grid-template-columns: 1fr; }
   .waiting-room__action-list--flow { grid-template-columns: 1fr; }
@@ -619,7 +717,8 @@
   .waiting-room__header-main { gap: var(--ww-space-2); flex-direction: column; align-items: stretch; }
   .waiting-room__header-main .v3-badge { white-space: normal; text-align: center; }
   .waiting-room__players,
-  .waiting-room__header-card { padding: var(--ww-space-4); }
+  .waiting-room__header-card,
+  .waiting-room__quick-settings { padding: var(--ww-space-4); }
   .waiting-room__section-heading { grid-template-columns: 36px minmax(0, 1fr) auto; gap: var(--ww-space-2); }
   .waiting-room__section-icon { width: 36px; height: 36px; }
   .waiting-room__seat-grid { grid-template-columns: 1fr; }
