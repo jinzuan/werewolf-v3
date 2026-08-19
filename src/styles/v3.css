@@ -2564,6 +2564,26 @@ button.ww-role-card { width: 100%; cursor: pointer; font: inherit; }
 /* Tablet lobby: keep the welcome art present without letting it squeeze the
    room list and its actions into a second, ambiguous row. */
 @media (min-width: 768px) and (max-width: 1023px) {
+  .v3-topbar {
+    min-height: 100px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'identity actions' 'phase phase';
+    align-items: center;
+    gap: var(--ww-space-2) var(--ww-space-4);
+  }
+
+  .v3-topbar__identity { grid-area: identity; }
+  .v3-topbar__actions {
+    grid-area: actions;
+    width: max-content;
+    justify-self: end;
+  }
+  .v3-phase-track {
+    grid-area: phase;
+    width: 100%;
+  }
+  .v3-phase-track__meta { justify-content: center; }
+
   .v3-lobby-hero {
     min-height: 198px;
     gap: var(--ww-space-6);
