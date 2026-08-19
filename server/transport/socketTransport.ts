@@ -606,6 +606,16 @@ export function bindSocketTransport(
           if (command.type === 'room.leave') {
             socket.leave(`room:${identity.roomCode}`);
             state(socket).identity = undefined;
+          } else if (result.room) {
+            // Seat-kind transitions change the authority projection. Refresh
+            // the socket identity before any room/game push, otherwise a
+            // player who just became a spectator can keep receiving private
+            // player projections until reconnect.
+            state(socket).identity = await rooms.identity(
+              identity.roomCode,
+              identity.actorId,
+              identity.resumeToken,
+            );
           }
           mutationPushBlocked.delete(identity.roomCode.toUpperCase());
           deferredRoomPushes.delete(identity.roomCode.toUpperCase());

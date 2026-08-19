@@ -68,6 +68,22 @@ export const createEmptyAuthorityState = (): V3AuthorityState => ({
   events: [],
 });
 
+/**
+ * A room revision can change the authority of the current browser without
+ * changing the game (for example, a player becoming a spectator).  Treat
+ * those transitions like a new projection stream: retaining the old stream
+ * would leave role-private history reachable from the new view.
+ */
+export const roomViewProjectionBoundary = (
+  previous: RoomView | null,
+  next: RoomView,
+  previousGameId: string | undefined,
+): boolean =>
+  previous === null ||
+  previousGameId !== next.gameId ||
+  previous.viewer.kind !== next.viewer.kind ||
+  previous.viewer.omniscient !== next.viewer.omniscient;
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 

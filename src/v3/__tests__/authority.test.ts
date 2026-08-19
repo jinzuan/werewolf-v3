@@ -36,6 +36,7 @@ import {
   isPublicRoomViewSafe,
   isSnapshotSafeForViewer,
   readV3Session,
+  roomViewProjectionBoundary,
   viewerPlayerId,
   writeV3Session,
 } from '../session';
@@ -334,6 +335,16 @@ test('authority reset clears room, identity, snapshot, and events atomically', (
     snapshot: null,
     events: [],
   });
+});
+
+test('viewer authority changes are projection boundaries even within one game', () => {
+  const playerView = roomView('p1', 'player');
+  const spectatorView = roomView('p1', 'spectator');
+
+  assert.equal(roomViewProjectionBoundary(playerView, spectatorView, 'game-1'), true);
+  assert.equal(roomViewProjectionBoundary(spectatorView, playerView, 'game-1'), true);
+  assert.equal(roomViewProjectionBoundary(playerView, playerView, 'game-1'), false);
+  assert.equal(roomViewProjectionBoundary(playerView, playerView, 'game-2'), true);
 });
 
 test('waiting room summaries detect joins, disconnects, and spectator changes', () => {

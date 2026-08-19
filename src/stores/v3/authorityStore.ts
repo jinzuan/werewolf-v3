@@ -64,6 +64,7 @@ import {
   acceptsRoomRevision,
   readV3Session,
   roomViewMatchesSession,
+  roomViewProjectionBoundary,
   snapshotMatchesSession,
   sessionIdentityChanged,
   type V3Session,
@@ -362,17 +363,21 @@ export const useV3Store = create<V3Store>()((set, get) => {
     const previousSession = current.session;
     const previousGameId = previousSession?.gameId;
     const nextGameId = room.gameId;
-    const gameChanged = previousGameId !== nextGameId;
+    const projectionBoundary = roomViewProjectionBoundary(
+      previousRoom,
+      room,
+      previousGameId,
+    );
     const nextSession = previousSession
       ? {
           ...previousSession,
           mode: room.viewer.kind,
           gameId: nextGameId,
-          ...(gameChanged ? { lastSeenSeq: 0 } : {}),
+          ...(projectionBoundary ? { lastSeenSeq: 0 } : {}),
         }
       : null;
 
-    if (gameChanged) bufferedGameMessages = [];
+    if (projectionBoundary) bufferedGameMessages = [];
     if (sessionIdentityChanged(previousSession, nextSession)) {
       persistSessionIdentity(nextSession);
     } else if (
@@ -385,8 +390,11 @@ export const useV3Store = create<V3Store>()((set, get) => {
     set({
       room,
       session: nextSession,
-      ...(gameChanged ? { snapshot: null, events: [] } : {}),
-      review: gameChanged || room.status !== 'ended' ? null : current.review,
+      ...(projectionBoundary ? { snapshot: null, events: [] } : {}),
+      review: projectionBoundary || room.status !== 'ended' ? null : current.review,
+      ...(projectionBoundary
+        ? { aiConfigSummary: null, aiConfigStatus: 'idle', aiConfigError: null }
+        : {}),
       authorityStatus: previousSession ? 'authorized' : current.authorityStatus,
       error: null,
     });
