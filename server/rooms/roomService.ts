@@ -584,7 +584,10 @@ export class RoomService {
           auto: config.mode === 'quick_computer',
           debugMode: false,
           config,
-          configLocked: true,
+          // The unified waiting room keeps settings editable until the actual
+          // start transaction freezes the roster/config. Readiness is still
+          // reset on every settings mutation.
+          configLocked: false,
           roomRevision: 1,
           configRevision: 1,
           schemaVersion: 1,
@@ -1115,7 +1118,7 @@ export class RoomService {
       // legacy "return to settings" path usable without bringing back a
       // separate begin-preparation button.
       room.status = 'ready_check';
-      room.configLocked = true;
+      room.configLocked = false;
       room.auto = next.mode === 'quick_computer';
       room.members.forEach((member) => {
         if (member.kind === 'player' && !member.isAI) member.ready = false;

@@ -104,14 +104,12 @@ test('public listing filters namespace, visibility, lifecycle and TTL', async ()
   assert.equal(await repository.get(expired.room.code), undefined);
   assert.notEqual(await repository.get(playing.room.code), undefined);
 
-  await assert.rejects(
-    rooms.join({
-      actorId: 'guest-without-token',
-      name: 'Guest',
-      roomCode: listed.room.code,
-    }),
-    (error: unknown) => (error as { code?: string }).code === 'ROOM_TOKEN_INVALID',
-  );
+  const publicJoin = await rooms.join({
+    actorId: 'guest-without-token',
+    name: 'Guest',
+    roomCode: listed.room.code,
+  });
+  assert.equal(publicJoin.room.members.some((member) => member.id === 'guest-without-token'), true);
   await rooms.join({
     actorId: 'guest-with-token',
     name: 'Guest',

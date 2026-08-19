@@ -430,6 +430,9 @@ export class RoomPolicy {
       actions.add('update_ai_config');
       if (baseReadyCheckCanStart(check)) actions.add('begin_ready_check');
     }
+    if (isHost && status === 'ready_check' && !room.configLocked) {
+      actions.add('update_config');
+    }
     if (isHost && status === 'ready_check') {
       actions.add('cancel_ready_check');
       // AI tuning is an independent host-only patch. Keep it available after
@@ -443,7 +446,7 @@ export class RoomPolicy {
     if ((status === 'waiting' || status === 'ready_check') && member.kind === 'spectator') {
       actions.add('claim_seat');
     }
-    if ((status === 'waiting' || status === 'ready_check') && isHumanPlayer) {
+    if ((status === 'waiting' || status === 'ready_check') && isHumanPlayer && !isHost) {
       actions.add('become_spectator');
       actions.add('request_seat');
     }
