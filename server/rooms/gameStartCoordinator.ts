@@ -360,15 +360,22 @@ const createAIId = (room: RoomRecord, seatIndex: number): string =>
 /** Names are assigned once when the start claim adds the AI roster. */
 export { AI_NAME_POOL };
 
-const createAINames = (
+export const createAINames = (
   count: number,
-): string[] => secureShuffle(AI_NAME_POOL, cryptoRandomInt).slice(0, count);
+): string[] => {
+  const shuffled = secureShuffle(AI_NAME_POOL, cryptoRandomInt);
+  return Array.from({ length: Math.max(0, Math.floor(count)) }, (_, index) => {
+    const base = shuffled[index % shuffled.length] ?? '小雨';
+    const cycle = Math.floor(index / shuffled.length);
+    return cycle === 0 ? base : `${base}·${cycle + 1}`;
+  });
+};
 
 /** Repair AI placeholders from rooms created before the Chinese-name fix. */
 const normalizeComputerNames = (room: RoomRecord): void => {
   const computers = room.members.filter(isComputer);
   if (computers.length === 0) return;
-  const shuffled = createAINames(AI_NAME_POOL.length);
+  const shuffled = createAINames(Math.max(AI_NAME_POOL.length, computers.length));
   const used = new Set<string>();
   let nextName = 0;
   for (const member of computers) {
@@ -378,7 +385,7 @@ const normalizeComputerNames = (room: RoomRecord): void => {
       continue;
     }
     while (nextName < shuffled.length && used.has(shuffled[nextName])) nextName += 1;
-    const replacement = shuffled[nextName++] ?? `AI玩家${member.seatIndex ?? 1}`;
+    const replacement = shuffled[nextName++] ?? `小雨·${(member.seatIndex ?? 0) + 1}`;
     member.name = replacement;
     used.add(replacement);
   }

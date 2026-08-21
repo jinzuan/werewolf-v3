@@ -60,6 +60,8 @@ export interface V3ApplicationOptions {
   runtime?: RuntimeConfig;
   security?: RuntimeSecurityConfig;
   socket?: SocketTransportOptions;
+  /** Optional test/deployment overrides for the modern RoomService composition. */
+  roomOptions?: V3ApplicationPorts['roomOptions'];
   clock?: () => number;
   testClock?: MutableTestClock;
 }
@@ -240,7 +242,8 @@ const createModernApplication = async (
     dataRoot: runtime.dataDir,
     ...persistence,
   }), eventStore, {
-    autoDrive: true,
+    ...options.roomOptions,
+    autoDrive: options.roomOptions?.autoDrive ?? true,
     environment: runtime.environment,
     deploymentNamespace: runtime.deploymentNamespace,
     waitingRoomTtlMs: runtime.waitingRoomTtlMs,
@@ -248,7 +251,7 @@ const createModernApplication = async (
     roomSweepIntervalMs: runtime.roomSweepIntervalMs,
     startupGraceMs: runtime.startupGraceMs,
     clock: now,
-    session: { now },
+    session: { ...options.roomOptions?.session, now },
     credentialStore,
     lifecycleOutbox,
     credentialNamespace: runtime.deploymentNamespace,

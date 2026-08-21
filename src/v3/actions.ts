@@ -33,6 +33,7 @@ export const ACTION_DEFINITIONS: Record<GameAction, ActionDefinition> = {
   skip_night: { action: 'skip_night', input: 'immediate' },
   speak: { action: 'speak', input: 'text' },
   skip_speech: { action: 'skip_speech', input: 'immediate' },
+  request_speech: { action: 'request_speech', input: 'immediate' },
   vote: { action: 'vote', input: 'target' },
   abstain: { action: 'abstain', input: 'immediate' },
   hunter_shoot: { action: 'hunter_shoot', input: 'target' },
@@ -47,6 +48,22 @@ export const orderedAllowedActions = (
 ): GameAction[] =>
   GAME_ACTIONS.filter((action) => allowedActions.includes(action));
 
+export interface GameActionReadiness {
+  connected: boolean;
+  recovering: boolean;
+  syncStatus: 'idle' | 'syncing' | 'synced' | 'error';
+  authorityStatus: 'resolving' | 'authorized' | 'unauthorized' | 'error';
+  hasSnapshot: boolean;
+}
+
+/** Never turn a transient reconnect into an identity-loss action request. */
+export const gameActionsReady = (state: GameActionReadiness): boolean =>
+  state.connected &&
+  !state.recovering &&
+  state.syncStatus === 'synced' &&
+  state.authorityStatus === 'authorized' &&
+  state.hasSnapshot;
+
 export interface VoteRoundProjection {
   key: string;
   active: boolean;
@@ -54,6 +71,12 @@ export interface VoteRoundProjection {
   abstainAllowed: boolean;
   boundarySequence: number;
   candidates: Player[];
+  currentTargetId: string | null;
+  submitted: boolean;
+  changed: boolean;
+  submittedCount: number;
+  totalVoters: number;
+  waitingFor: number;
 }
 
 const latestEvent = (
@@ -126,26 +149,55 @@ export const currentVoteRoundProjection = (
               event.sequence > boundarySequence,
           )
       : undefined;
-  const revoteIds = Array.isArray(revote?.payload.candidates)
+  const snapshotRevoteIds =
+    snapshot.gameState.voteRound === 2 &&
+    Array.isArray(snapshot.gameState.voteCandidates)
+      ? snapshot.gameState.voteCandidates
+      : [];
+  const eventRevoteIds = Array.isArray(revote?.payload.candidates)
     ? revote.payload.candidates.filter(
         (value): value is string => typeof value === 'string',
       )
     : [];
+  const revoteIds = snapshotRevoteIds.length > 0
+    ? snapshotRevoteIds
+    : eventRevoteIds;
   const kind = active
-    ? abstainAllowed
+    ? snapshot.gameState.voteRound === 2
+      ? 'revote'
+      : abstainAllowed
       ? 'ordinary'
       : 'revote'
     : null;
+  const roundBoundarySequence = kind === 'revote' && revote
+    ? Math.max(boundarySequence, revote.sequence)
+    : boundarySequence;
   const allowedTargetIds =
     kind === 'revote' ? new Set(revoteIds) : null;
   const candidates = active
     ? snapshot.players.filter(
         (player) =>
           player.isAlive &&
-          player.id !== actorId &&
           (allowedTargetIds === null || allowedTargetIds.has(player.id)),
       )
     : [];
+  const latestVote = [...scopedEvents]
+    .reverse()
+    .find(
+      (event) =>
+        event.eventType === 'day.vote_cast' &&
+        event.sequence > roundBoundarySequence &&
+        (event.actorId === actorId || event.payload.actorId === actorId),
+    );
+  const snapshotSubmission = snapshot.gameState.voteSubmission;
+  const currentTargetId = snapshotSubmission?.submitted
+    ? snapshotSubmission.targetId
+    : typeof latestVote?.payload.targetId === 'string'
+      ? latestVote.payload.targetId
+      : latestVote?.payload.targetId === null
+        ? null
+        : null;
+  const submitted = snapshotSubmission?.submitted ?? (latestVote !== undefined);
   return {
     key: [
       snapshot.gameId,
@@ -156,8 +208,23 @@ export const currentVoteRoundProjection = (
     active,
     kind,
     abstainAllowed,
-    boundarySequence,
+    boundarySequence: roundBoundarySequence,
     candidates,
+    currentTargetId,
+    submitted,
+    changed: latestVote?.payload.changed === true,
+    submittedCount: snapshotSubmission?.submittedCount ??
+      (typeof latestVote?.payload.submittedCount === 'number'
+        ? latestVote.payload.submittedCount
+        : submitted ? 1 : 0),
+    totalVoters: snapshotSubmission?.totalVoters ??
+      (typeof latestVote?.payload.totalVoters === 'number'
+        ? latestVote.payload.totalVoters
+        : 0),
+    waitingFor: snapshotSubmission?.waitingFor ??
+      (typeof latestVote?.payload.waitingFor === 'number'
+        ? latestVote.payload.waitingFor
+        : 0),
   };
 };
 
@@ -281,6 +348,11 @@ export const buildGameCommand = ({
       return content.trim()
         ? { type: 'game.skip_speech', payload: { reason: content.trim() } }
         : { type: 'game.skip_speech', payload: {} };
+    case 'request_speech':
+      return {
+        type: 'game.request_speech',
+        payload: reason?.trim() ? { reason: reason.trim() } : {},
+      };
     case 'vote':
       return targetId
         ? {

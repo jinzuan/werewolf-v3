@@ -12,7 +12,7 @@ test('bundled CJK webfonts cover the product probe without a network fallback', 
   for (const width of [390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`${v3.appURL}/rooms/new/players`);
-    await expect(page.getByRole('heading', { name: '先决定今晚有多少人' })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('heading', { name: '房间设置', exact: true })).toBeVisible({ timeout: 20_000 });
 
     const result = await page.evaluate(async (probe) => {
       const families = [

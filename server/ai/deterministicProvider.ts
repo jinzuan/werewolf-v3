@@ -1,6 +1,7 @@
 import type { AIProvider, AISuggestion } from './types';
 import { randomElement } from './randomSelection';
 import { recommendedWolfTarget } from './memory';
+import { shouldPreferSpeechSkip } from './speechDecisionContext';
 
 export interface DeterministicAIProviderOptions {
   mode?: 'rules-degraded' | 'test-deterministic';
@@ -58,6 +59,24 @@ export class DeterministicAIProvider implements AIProvider {
         reason: 'deterministic first legal target',
       };
     }
+    if (allowed.has('game.night_action') && actor.role === 'witch') {
+      const action = context.allowedActions?.includes('poison') ? 'poison' : 'heal';
+      const legalTarget = context.promptContext?.legalTargets?.[0]?.id ??
+        (action === 'poison' ? target?.id ?? null : null);
+      return {
+        command: {
+          type: 'game.night_action' as const,
+          payload: {
+            playerId: actor.id,
+            action,
+            targetId: legalTarget,
+          },
+        },
+        reason: action === 'poison'
+          ? 'deterministic witch poison target'
+          : 'deterministic witch heal or pass',
+      };
+    }
     if (allowed.has('game.wolf_vote')) {
       const legalTargets = context.promptContext?.legalTargets ?? alive.map(({ id, name }) => ({ id, name }));
       const memoryTarget = recommendedWolfTarget(
@@ -87,6 +106,22 @@ export class DeterministicAIProvider implements AIProvider {
         reason: 'rules-degraded contextual wolf discussion',
       };
     }
+    if (
+      allowed.has('game.speak') &&
+      allowed.has('game.skip_speech') &&
+      shouldPreferSpeechSkip(context)
+    ) {
+      return {
+        command: {
+          type: 'game.skip_speech' as const,
+          payload:
+            context.phase === 'lastWords' || context.stage === 'last_words'
+              ? { reason: '没有新的信息可补充' }
+              : {},
+        },
+        reason: 'rules-degraded no-content speech skip',
+      };
+    }
     if (allowed.has('game.speak')) {
       return {
         command: {
@@ -96,6 +131,15 @@ export class DeterministicAIProvider implements AIProvider {
           },
         },
         reason: 'rules-degraded contextual speech',
+      };
+    }
+    if (allowed.has('game.request_speech')) {
+      return {
+        command: {
+          type: 'game.request_speech' as const,
+          payload: {},
+        },
+        reason: 'deterministic speech queue request',
       };
     }
     if (allowed.has('game.skip_speech')) {

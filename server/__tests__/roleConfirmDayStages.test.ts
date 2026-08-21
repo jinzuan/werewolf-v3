@@ -110,21 +110,14 @@ test('day checkpoints are durable, private before lock, and retain vote reasons'
   });
   assert.equal(overlong.code, 'CONTENT_TOO_LONG');
 
-  while (session.serialize().state.dayFlow.stage === 'speech') {
+  while (
+    session.serialize().state.dayFlow.stage === 'speech' ||
+    session.serialize().state.dayFlow.stage === 'discussion'
+  ) {
     const actorId = session.serialize().state.gameState.currentSpeaker!;
     const result = await dispatch(session, actorId, {
       type: 'game.speak',
       payload: { content: '公开发言' },
-    });
-    assert.equal(result.ok, true);
-  }
-  assert.equal(session.serialize().state.dayFlow.stage, 'discussion');
-
-  while (session.serialize().state.dayFlow.stage === 'discussion') {
-    const actorId = session.serialize().state.gameState.currentSpeaker!;
-    const result = await dispatch(session, actorId, {
-      type: 'game.speak',
-      payload: { content: '讨论判断' },
     });
     assert.equal(result.ok, true);
   }

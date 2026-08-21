@@ -7,6 +7,9 @@ import type { VisualAsset } from './assetRegistry';
 interface ChatBubbleProps {
   author: string;
   time: string;
+  seatNumber?: number;
+  isAI?: boolean;
+  playerStatus?: 'alive' | 'exiled' | 'night-death';
   authorRole?: string;
   children: React.ReactNode;
   variant?: 'self' | 'other' | 'system' | 'wolf';
@@ -18,6 +21,9 @@ interface ChatBubbleProps {
 export function ChatBubble({
   author,
   time,
+  seatNumber,
+  isAI = false,
+  playerStatus = 'alive',
   authorRole,
   children,
   variant = 'other',
@@ -50,6 +56,15 @@ export function ChatBubble({
       )}>
         <header>
           <strong>{author}</strong>
+          {seatNumber !== undefined ? (
+            <span className="v3-chat-seat">{seatNumber.toString().padStart(2, '0')} 号</span>
+          ) : null}
+          {isAI ? <span className="v3-ai-label">AI</span> : null}
+          {playerStatus !== 'alive' ? (
+            <span className="v3-chat-player-status">
+              {playerStatus === 'exiled' ? '已流放' : '已死亡'}
+            </span>
+          ) : null}
           {authorRole ? <span className="v3-chat-role">{authorRole}</span> : null}
           {variant === 'wolf' ? (
             <Badge tone="danger"><ShieldAlert size={12} />狼人频道</Badge>

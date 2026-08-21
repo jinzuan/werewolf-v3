@@ -171,9 +171,6 @@ export function validateVoteChoice(
       ? success()
       : failure({ code: 'abstain_forbidden', message: 'Abstention is forbidden in this vote.' });
   }
-  if (targetId === voterId) {
-    return failure({ code: 'self_target_forbidden', message: 'A voter cannot vote for themselves.' });
-  }
   if (!policy.eligibleTargetIds.includes(targetId)) {
     return failure({ code: 'ineligible_target', message: 'This target is not eligible in the current round.' });
   }

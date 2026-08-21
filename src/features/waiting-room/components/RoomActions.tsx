@@ -1,4 +1,4 @@
-import { AlertOctagon, ArrowRightLeft, CheckCircle, LogOut, Play, RotateCcw, ShieldAlert, UserPlus } from 'lucide-react';
+import { AlertOctagon, ArrowRightLeft, CheckCircle, LogOut, Play, RotateCcw, Settings2, ShieldAlert, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import type {
   AllowedRoomAction,
@@ -21,6 +21,8 @@ interface RoomActionsProps {
   onCancelReadyCheck: () => void;
   onStartGame: () => void;
   onInvite: () => void;
+  onOpenSettings: () => void;
+  onLocateProblem: () => void;
   onTransferHost: (memberId: string) => void;
   onDissolve: () => void;
   onLeave: () => void;
@@ -35,6 +37,8 @@ export function RoomActions({
   onCancelReadyCheck,
   onStartGame,
   onInvite,
+  onOpenSettings,
+  onLocateProblem,
   onTransferHost,
   onDissolve,
   onLeave,
@@ -47,7 +51,9 @@ export function RoomActions({
   const can = (action: AllowedRoomAction) => isActionAllowed(room, action);
   const viewerId = viewerPlayerId(room.viewer);
   const failedChecks = room.startCheck.items
-    .filter((item) => !item.passed)
+    .filter((item) => !item.passed);
+  const playerMembers = room.members.filter((member) => member.kind === 'player');
+  const readyCount = playerMembers.filter((member) => member.ready).length;
   const blockedReasonFor = (): string => {
     return failedChecks.length
       ? `暂不可用：${failedChecks.map(startCheckReason).join('；')}`
@@ -69,8 +75,8 @@ export function RoomActions({
           <ShieldAlert size={20} />
         </div>
         <div>
-          <span className="waiting-room__eyebrow">可用操作</span>
-          <h2 id="room-actions-title">房间操作</h2>
+          <span className="waiting-room__eyebrow">现在要做什么</span>
+          <h2 id="room-actions-title">当前操作</h2>
         </div>
         {isHost ? <Badge tone="gold">房主</Badge> : null}
       </div>
@@ -94,8 +100,9 @@ export function RoomActions({
         ) : null}
 
         {isHost && room.status === 'ready_check' ? (
-          <>
+          <div className="waiting-room__start-control">
             <Button
+              className="waiting-room__start-action"
               variant="primary"
               size="action"
               disabled={locked || busy('start_game') || !can('start_game')}
@@ -105,12 +112,18 @@ export function RoomActions({
               <Play size={18} aria-hidden="true" />
               {busy('start_game') ? '正在开局…' : '开始游戏'}
             </Button>
-            {!can('start_game') ? (
-              <p id="start-game-reason" className="waiting-room__action-blocker" role="status">
-                {blockedReasonFor()}
-              </p>
-            ) : null}
-          </>
+            <div className="waiting-room__start-meta">
+              <span className="waiting-room__ready-count">
+                准备 {readyCount} / {playerMembers.length}
+              </span>
+              {!can('start_game') ? (
+                <p id="start-game-reason" className="waiting-room__action-blocker" role="status">
+                  <span>{blockedReasonFor()}</span>
+                  <Button variant="quiet" onClick={onLocateProblem}>查看问题</Button>
+                </p>
+              ) : <span className="waiting-room__start-ready">开局条件已满足</span>}
+            </div>
+          </div>
         ) : null}
 
         {isHost && room.status === 'waiting' && can('begin_ready_check') ? (
@@ -136,6 +149,17 @@ export function RoomActions({
           >
             <RotateCcw size={17} aria-hidden="true" />
             {busy('cancel_ready_check') ? '正在返回设置…' : '返回设置'}
+          </Button>
+        ) : null}
+
+        {isHost && can('update_config') ? (
+          <Button
+            variant="secondary"
+            disabled={locked || busy('update_config')}
+            onClick={onOpenSettings}
+          >
+            <Settings2 size={17} aria-hidden="true" />
+            房间设置
           </Button>
         ) : null}
 

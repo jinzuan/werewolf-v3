@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Home, Monitor, Save, UserRound, Volume2 } from 'lucide-react';
+import { ArrowLeft, Home, Monitor, Save, UserRound, Volume2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AppShell } from '../../components/shell/AppShell';
@@ -100,8 +100,7 @@ export function SettingsPage() {
         <Card className="v3-settings-note">
           <Volume2 size={19} />
           <Monitor size={19} />
-          <div><strong>电脑玩家参数由房主掌握，服务端管理</strong><span>玩家端只保留本地显示与辅助功能；进入等待房后，受权房主可在电脑玩家设置中管理模型服务，其他成员只能看到准备状态。创建混合房或电脑局时，可以在开房向导填写模型、访问凭据和服务地址。</span></div>
-          <Link className="v3-button v3-button--quiet" to="/rooms/new/players">打开开房向导<ArrowRight size={16} /></Link>
+          <div><strong>电脑玩家参数由房主掌握，服务端管理</strong><span>创建房间会直接使用标准配置；进入等待房后，房主可从唯一的“房间设置”入口调整角色、AI 补位与高级参数，其他成员只看到摘要。</span></div>
         </Card>
       </div>
     </AppShell>

@@ -11,19 +11,32 @@ import { RoomService } from '../server/rooms/roomService';
 import { bindSocketTransport } from '../server/transport/socketTransport';
 
 const workspace = process.cwd();
+const allocatePort = async (): Promise<number> => {
+  const probe = createHttpServer();
+  await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+  const address = probe.address();
+  assert.ok(address && typeof address === 'object');
+  const port = address.port;
+  await new Promise<void>((resolve, reject) => {
+    probe.close((error) => error ? reject(error) : resolve());
+  });
+  return port;
+};
 const screenshotDir = path.join(
   workspace,
   'artifacts',
   'monitor-responsive',
 );
 const viewports = [
-  { name: '390', width: 390, height: 844, screenshot: true },
-  { name: '768', width: 768, height: 1024, screenshot: true },
-  { name: '899', width: 899, height: 1024, screenshot: false },
-  { name: '900', width: 900, height: 1024, screenshot: false },
-  { name: '1199', width: 1199, height: 1000, screenshot: false },
-  { name: '1200', width: 1200, height: 1000, screenshot: false },
-  { name: '1440', width: 1440, height: 1000, screenshot: true },
+  { name: '375x812', width: 375, height: 812, screenshot: true },
+  { name: '390x844', width: 390, height: 844, screenshot: true },
+  { name: '412x915', width: 412, height: 915, screenshot: true },
+  { name: '768x1024', width: 768, height: 1024, screenshot: true },
+  { name: '1024x768', width: 1024, height: 768, screenshot: true },
+  { name: '1199x800', width: 1199, height: 800, screenshot: true },
+  { name: '1280x900', width: 1280, height: 900, screenshot: true },
+  { name: '1440x900', width: 1440, height: 900, screenshot: true },
+  { name: '1920x1080', width: 1920, height: 1080, screenshot: true },
 ] as const;
 
 await mkdir(screenshotDir, { recursive: true });
@@ -51,7 +64,7 @@ const vite = await createViteServer({
   logLevel: 'silent',
   server: {
     host: '127.0.0.1',
-    port: 0,
+    port: await allocatePort(),
     strictPort: false,
     watch: null,
   },
@@ -70,6 +83,33 @@ const consoleErrors: string[] = [];
 const pageErrors: string[] = [];
 const requestFailures: Array<{ url: string; error: string }> = [];
 const layoutMetricsScript = `(() => {
+  const isVisibleInClipChain = (element) => {
+    const elementRect = element.getBoundingClientRect();
+    let left = elementRect.left;
+    let right = elementRect.right;
+    let top = elementRect.top;
+    let bottom = elementRect.bottom;
+    let ancestor = element.parentElement;
+    while (ancestor) {
+      const style = getComputedStyle(ancestor);
+      const clipsX = ['hidden', 'clip', 'scroll', 'auto'].includes(style.overflowX);
+      const clipsY = ['hidden', 'clip', 'scroll', 'auto'].includes(style.overflowY);
+      if (clipsX || clipsY) {
+        const ancestorRect = ancestor.getBoundingClientRect();
+        if (clipsX) {
+          left = Math.max(left, ancestorRect.left);
+          right = Math.min(right, ancestorRect.right);
+        }
+        if (clipsY) {
+          top = Math.max(top, ancestorRect.top);
+          bottom = Math.min(bottom, ancestorRect.bottom);
+        }
+        if (right <= left || bottom <= top) return false;
+      }
+      ancestor = ancestor.parentElement;
+    }
+    return right - left > 2 && bottom - top > 2;
+  };
   const controls = [...document.querySelectorAll(
     'button, a, input, select, textarea'
   )].filter((element) => {
@@ -77,7 +117,8 @@ const layoutMetricsScript = `(() => {
     const rect = element.getBoundingClientRect();
     const style = getComputedStyle(element);
     return rect.width > 0 && rect.height > 0 &&
-      style.display !== 'none' && style.visibility !== 'hidden';
+      style.display !== 'none' && style.visibility !== 'hidden' &&
+      isVisibleInClipChain(element);
   });
   const clippedControls = controls
     .filter((element) =>
@@ -124,7 +165,21 @@ const layoutMetricsScript = `(() => {
             second.textContent ||
             second.getAttribute('aria-label') ||
             second.tagName
-          ).trim().slice(0, 40)
+          ).trim().slice(0, 40),
+          firstRect: {
+            left: firstRect.left,
+            right: firstRect.right,
+            top: firstRect.top,
+            bottom: firstRect.bottom,
+          },
+          secondRect: {
+            left: secondRect.left,
+            right: secondRect.right,
+            top: secondRect.top,
+            bottom: secondRect.bottom,
+          },
+          firstParent: first.parentElement?.className ?? '',
+          secondParent: second.parentElement?.className ?? ''
         });
       }
     }
@@ -194,6 +249,20 @@ const layoutMetricsScript = `(() => {
     documentWidth: document.documentElement.scrollWidth,
     bodyWidth: document.body.scrollWidth,
     viewportWidth: window.innerWidth,
+    overflowElements: [...document.querySelectorAll('*')]
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+          tag: element.tagName,
+          className: typeof element.className === 'string' ? element.className : '',
+          text: (element.textContent ?? '').trim().slice(0, 80),
+          left: rect.left,
+          right: rect.right,
+          width: rect.width,
+        };
+      })
+      .filter(({ left, right }) => left < -1 || right > window.innerWidth + 1)
+      .slice(-20),
     clippedControls,
     overlappingControls,
     identityNames,
@@ -216,9 +285,39 @@ try {
   await page.addInitScript((url) => {
     localStorage.setItem('wolf-server-url', url);
   }, serverUrl);
-  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: '创建快速 AI 房' }).click();
-  await page.waitForURL(/\/rooms\/[A-Z2-9]{6}\/(?:play|watch|monitor)$/, {
+  await page.goto(appUrl, { waitUntil: 'commit', timeout: 30_000 });
+  await page.getByRole('button', { name: '创建房间', exact: true }).waitFor({ timeout: 90_000 });
+  const roomCode = await page.evaluate(async () => {
+    const loadStore = new Function('return import("/src/stores/v3Store.ts")');
+    const module = await loadStore();
+    const store = module.useV3Store;
+    await store.getState().refreshCatalog();
+    const catalog = store.getState().catalog;
+    const preset = catalog?.rolePresets.find((candidate: { enabled: boolean }) => candidate.enabled);
+    if (!catalog || !preset) throw new Error('No enabled room preset');
+    const response = await store.getState().createRoomWithOptions({
+      catalogVersion: catalog.catalogVersion,
+      roomName: 'Monitor Responsive Room',
+      creator: { name: 'Monitor Host', avatarId: 'avatar-player' },
+      mode: 'quick_computer',
+      visibility: 'invite_only',
+      maxPlayers: preset.playerCount,
+      minHumanPlayers: 0,
+      computerSeats: 0,
+      aiFillPolicy: 'fill_to_max',
+      roleSetup: { ...preset.roleSetup },
+      rolePresetId: preset.id,
+      rulesetId: preset.rulesetId,
+      rulesetVersion: preset.rulesetVersion,
+      readyPolicy: 'all_connected_humans',
+      allowPublicSpectators: false,
+      reviewEnabled: true,
+    });
+    if (!response.ok) throw new Error('Quick computer room creation failed');
+    return response.room.code;
+  });
+  await page.goto(`${appUrl}/rooms/${roomCode}`, { waitUntil: 'domcontentloaded' });
+  await page.waitForURL(/\/rooms\/[A-Z2-9]{6}\/monitor$/, {
     timeout: 15_000,
   });
   await page.getByRole('heading', { name: '身份摘要' }).waitFor({
@@ -232,6 +331,7 @@ try {
       documentWidth: number;
       bodyWidth: number;
       viewportWidth: number;
+      overflowElements: unknown[];
       clippedControls: unknown[];
       overlappingControls: unknown[];
       identityNames: Array<{

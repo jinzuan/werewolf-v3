@@ -4,10 +4,7 @@ import type { RoomAIConfigSummary } from '../../../../shared/aiRoomConfigContrac
 import type { Role } from '../../../../shared/types';
 import { roomModeLabel } from '../../../v3/presentation';
 import { Badge } from '../../../ui/Badge';
-import { Button } from '../../../ui/Button';
 import { Card } from '../../../ui/Card';
-import { isActionAllowed } from '../selectors';
-import { viewerPlayerId } from '../../../v3/session';
 
 const ROLE_LABELS: Record<Role, string> = {
   wolf: '狼人',
@@ -29,19 +26,14 @@ const visibilityLabel = (visibility: RoomConfigView['visibility']): string =>
 
 interface RoomConfigSummaryProps {
   room: RoomViewV31;
-  onUpdateConfig: () => void;
   aiSummary: RoomAIConfigSummary | null;
 }
 
-export function RoomConfigSummary({ room, onUpdateConfig, aiSummary }: RoomConfigSummaryProps) {
+export function RoomConfigSummary({ room, aiSummary }: RoomConfigSummaryProps) {
   const { config } = room;
   const roleEntries = (Object.keys(ROLE_LABELS) as Role[])
     .map((role) => ({ role, count: config.roleSetup[role] ?? 0 }))
     .filter(({ count }) => count > 0);
-  const viewerId = viewerPlayerId(room.viewer);
-  const isHost = viewerId !== null && room.members.some(
-    (member) => member.kind === 'player' && member.id === viewerId && member.isHost,
-  );
   const aiCheck = room.startCheck.items.find((item) => item.key === 'ai_provider_config');
   const aiReady = aiCheck?.passed ?? room.computerPlayerStatus !== 'invalid';
 
@@ -53,7 +45,7 @@ export function RoomConfigSummary({ room, onUpdateConfig, aiSummary }: RoomConfi
         </div>
         <div>
           <span className="waiting-room__eyebrow">房间信息</span>
-          <h2 id="room-config-title">房间设置</h2>
+          <h2 id="room-config-title">房间摘要</h2>
         </div>
         <Badge tone={room.configLocked ? 'warning' : 'success'}>
           {room.configLocked ? '已锁定' : '可修改'}
@@ -94,16 +86,6 @@ export function RoomConfigSummary({ room, onUpdateConfig, aiSummary }: RoomConfi
         <p className="waiting-room__empty-copy">当前为纯真人房，没有电脑玩家设置。</p>
       )}
 
-      {isHost && isActionAllowed(room, 'update_config') ? (
-        <Button
-          variant="secondary"
-          disabled={room.configLocked || room.status === 'starting'}
-          onClick={onUpdateConfig}
-        >
-          <Settings2 size={16} aria-hidden="true" />
-          编辑房间设置（含电脑玩家）
-        </Button>
-      ) : null}
     </Card>
   );
 }

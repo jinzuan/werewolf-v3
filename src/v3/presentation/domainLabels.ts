@@ -105,6 +105,7 @@ export const GAME_ACTION_LABELS = {
   skip_night: '跳过夜间行动',
   speak: '发言',
   skip_speech: '跳过发言',
+  request_speech: '申请插队',
   vote: '投票',
   abstain: '弃票',
   hunter_shoot: '开枪',

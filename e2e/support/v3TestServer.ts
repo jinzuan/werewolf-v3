@@ -8,6 +8,15 @@ if (!dataDir || !path.isAbsolute(dataDir)) {
 
 const application = await createV3Application({
   enableTestControl: true,
+  // E2E uses real wall-clock deadlines; the test-control clock is only for
+  // explicit control-port probes and must not freeze automatic AI stages.
+  clock: Date.now,
+  roomOptions: {
+    aiTimeoutMs: 500,
+    aiSpeechDelayMinMs: 0,
+    aiSpeechDelayMaxMs: 0,
+    session: { stageDurationMs: 1_000 },
+  },
   runtime: undefined,
   socket: {
     dropCreateAckOnce: process.env.WW_TEST_DROP_CREATE_ACK_ONCE === '1',

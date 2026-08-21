@@ -49,9 +49,13 @@ export function SpectatorList({ room, embedded = false }: SpectatorListProps) {
   );
 
   return embedded ? (
-    <div className="waiting-room__spectators waiting-room__spectators--embedded" aria-labelledby="spectator-title">
+    <details className="waiting-room__spectators waiting-room__spectators--embedded">
+      <summary>
+        <span><Eye size={17} aria-hidden="true" />观战席</span>
+        <Badge tone="info">{spectators.length} 人</Badge>
+      </summary>
       {content}
-    </div>
+    </details>
   ) : (
     <section className="v3-card waiting-room__spectators" aria-labelledby="spectator-title">
       {content}

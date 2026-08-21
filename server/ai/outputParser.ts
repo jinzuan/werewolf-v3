@@ -1,6 +1,7 @@
 import type { GameCommand } from '../../shared/protocol';
 import type { GameAction, Role } from '../../shared/types';
 import type { AIRequestContext, AIPromptContext, AILegalTarget } from './types';
+import { shouldPreferSpeechSkip } from './speechDecisionContext';
 
 export type ParsedAIOutput =
   | {
@@ -121,6 +122,12 @@ const parseSkipSpeech = (
   if (isLastWordsContext(context) && !cleanReason) {
     return fail('REASON_REQUIRED', 'A last-words skip reason is required.');
   }
+  if (!isLastWordsContext(context) && !shouldPreferSpeechSkip(context)) {
+    return fail(
+      'ACTION_NOT_ALLOWED',
+      'skip_speech is allowed only when there is no new information, no direct address, and no response trigger.',
+    );
+  }
   return {
     ok: true,
     command: {
@@ -128,6 +135,24 @@ const parseSkipSpeech = (
       payload: cleanReason ? { reason: cleanReason } : {},
     },
     reason: cleanReason ? `parsed speech skip: ${cleanReason}` : 'parsed speech skip',
+  };
+};
+
+const parseSpeechRequest = (
+  reason: unknown,
+  context: ParseContext,
+): ParsedAIOutput => {
+  if (!allowed(context, 'game.request_speech')) {
+    return fail('ACTION_NOT_ALLOWED', 'A speech queue request is not allowed.');
+  }
+  const cleanReason = cleanText(reason);
+  return {
+    ok: true,
+    command: {
+      type: 'game.request_speech',
+      payload: cleanReason ? { reason: cleanReason } : {},
+    },
+    reason: cleanReason ? `parsed speech queue request: ${cleanReason}` : 'parsed speech queue request',
   };
 };
 
@@ -334,6 +359,8 @@ const parseObject = (
         return parseSpeech(cleanText(payload.content), context, 'game.wolf_speak');
       case 'game.skip_speech':
         return parseSkipSpeech(payload.reason, context);
+      case 'game.request_speech':
+        return parseSpeechRequest(payload.reason, context);
       case 'game.vote':
         return parseVote(payload.targetId, payload.reason, context, 'game.vote');
       case 'game.wolf_vote':
@@ -383,6 +410,9 @@ const parseObject = (
       return parseSkipNight(context);
     case 'skip_speech':
       return parseSkipSpeech(object.reason, context);
+    case 'request_speech':
+    case 'insert':
+      return parseSpeechRequest(object.reason, context);
     case 'abstain':
       return parseVote(null, '弃票', context, 'game.vote');
     case 'hunter_shoot':
@@ -453,6 +483,9 @@ const parsePlain = (raw: string, context: ParseContext): ParsedAIOutput => {
   }
   if (allowed(context, 'game.skip_speech') && isSkip(first)) {
     return parseSkipSpeech(lines.slice(1).join(' '), context);
+  }
+  if (allowed(context, 'game.request_speech')) {
+    return parseSpeechRequest(lines.join(' '), context);
   }
   if (allowed(context, 'game.skip_speech') && isLastWordsContext(context)) {
     const skipLine = lastWordsSkipLine.exec(first);

@@ -20,7 +20,7 @@ export interface TopStatusBarProps {
 }
 
 export function TopStatusBar({
-  eyebrow = '狼人杀·月光森林',
+  eyebrow = '月影桌游台',
   title,
   phase,
   countdown,
@@ -46,7 +46,7 @@ export function TopStatusBar({
       {phase ? (
         <div className="v3-phase-track">
           <div className="v3-phase-track__meta">
-            <img className="v3-phase-track__moon" src={phaseAsset.src} alt={phaseAsset.label} />
+            <img className="v3-phase-track__moon" src={phaseAsset.src} alt="" aria-hidden="true" />
             <span className="v3-phase-track__scene-label">{ROOM_SCENE_LABELS[scene]}</span>
             <Badge tone="purple">{phase}</Badge>
             {countdown ? <strong className="v3-numeric">{countdown}</strong> : null}
@@ -59,7 +59,7 @@ export function TopStatusBar({
       ) : null}
 
       <div className="v3-topbar__actions">
-        <Badge tone={connected ? 'success' : 'warning'}>
+        <Badge tone={connected ? 'success' : 'warning'} className="v3-topbar__connection">
           <Wifi size={13} />{connected ? '已连接' : '连接中'}
         </Badge>
         <Button variant="icon" aria-label="查看完整规则" aria-haspopup="dialog" title="规则" onClick={() => setRulesOpen(true)}>

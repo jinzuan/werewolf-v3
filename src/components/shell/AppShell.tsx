@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { RoomHeader } from '../../features/room-shell/RoomHeader';
 import { useRoomShell } from '../../features/room-shell/RoomShellContext';
 import { TopStatusBar } from './TopStatusBar';
+import { SyncStatusNotice } from './SyncStatusNotice';
 
 interface AppShellProps {
   children: ReactNode;
@@ -26,6 +27,7 @@ export function AppShell({ children, pageClassName, ...status }: AppShellProps) 
         <TopStatusBar {...status} scene={scene} />
       )}
       <div className="v3-app-shell__body">
+        <SyncStatusNotice />
         <main className={`v3-page ${pageClassName ?? ''}`.trim()}>{children}</main>
       </div>
     </div>

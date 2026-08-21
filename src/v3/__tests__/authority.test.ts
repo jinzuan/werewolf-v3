@@ -14,7 +14,6 @@ import type {
 import {
   GAME_ACTIONS,
   type GameAction,
-  type GameState,
   type Player,
   type ProjectedGameState,
   type Role,
@@ -23,9 +22,26 @@ import {
   buildGameCommand,
   currentVoteRoundProjection,
   eligibleTargets,
+  gameActionsReady,
   healTargetId,
   orderedAllowedActions,
 } from '../actions';
+
+test('game actions wait through reload recovery instead of treating sync as identity loss', () => {
+  const stable = {
+    connected: true,
+    recovering: false,
+    syncStatus: 'synced' as const,
+    authorityStatus: 'authorized' as const,
+    hasSnapshot: true,
+  };
+  assert.equal(gameActionsReady(stable), true);
+  assert.equal(gameActionsReady({ ...stable, recovering: true }), false);
+  assert.equal(gameActionsReady({ ...stable, syncStatus: 'syncing' }), false);
+  assert.equal(gameActionsReady({ ...stable, authorityStatus: 'resolving' }), false);
+  assert.equal(gameActionsReady({ ...stable, connected: false }), false);
+  assert.equal(gameActionsReady({ ...stable, hasSnapshot: false }), false);
+});
 import { mergeEventEnvelope } from '../eventStream';
 import {
   V3_SESSION_KEY,
@@ -127,7 +143,7 @@ const player = (
 });
 
 const gameState = (
-  overrides: Partial<GameState> = {},
+  overrides: Partial<ProjectedGameState> = {},
 ): ProjectedGameState => ({
   roomId: 'room-1',
   phase: 'night',
@@ -754,7 +770,7 @@ test('target matrix follows action rules and current-stage event boundaries', ()
   ];
   assert.deepEqual(
     eligibleTargets('vote', current, voteEvents).map((item) => item.id),
-    ['p2', 'p3'],
+    ['p1', 'p2', 'p3'],
   );
 
   const witchEvents = [
@@ -825,8 +841,46 @@ test('day 2 ordinary vote rebuilds living targets after a day 1 revote', () => {
   assert.equal(projection.abstainAllowed, true);
   assert.deepEqual(
     projection.candidates.map((item) => item.id),
-    ['p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10'],
+    ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10'],
   );
+});
+
+test('ordinary abstention ACK projects completed feedback without a public ballot target', () => {
+  const viewer: ViewerContext = {
+    kind: 'player',
+    playerId: 'p1',
+    role: 'villager',
+  };
+  const votingSnapshot = snapshot(viewer, {
+    gameState: gameState({
+      phase: 'voting',
+      day: 1,
+      stageRevision: 12,
+      allowedActions: ['vote', 'abstain'],
+    }),
+    lastSequence: 3,
+  });
+  const projection = currentVoteRoundProjection(
+    votingSnapshot,
+    [
+      domainEvent(1, 'day.started', 'public_timeline', { day: 1 }),
+      domainEvent(2, 'day.voting_started', 'public_timeline', { round: 1 }),
+      domainEvent(3, 'day.vote_cast', 'role_private', {
+        actorId: 'p1',
+        targetId: null,
+        submittedCount: 2,
+        totalVoters: 3,
+        waitingFor: 1,
+      }, ['p1']),
+    ],
+    ['vote', 'abstain'],
+  );
+
+  assert.equal(projection.submitted, true);
+  assert.equal(projection.currentTargetId, null);
+  assert.equal(projection.submittedCount, 2);
+  assert.equal(projection.totalVoters, 3);
+  assert.equal(projection.waitingFor, 1);
 });
 
 test('current-day revote narrows candidates after the ordinary vote boundary', () => {
@@ -874,4 +928,89 @@ test('current-day revote narrows candidates after the ordinary vote boundary', (
     projection.candidates.map((item) => item.id),
     ['p3', 'p9'],
   );
+});
+
+test('revote candidates recover from the authoritative snapshot without older event history', () => {
+  const viewer: ViewerContext = {
+    kind: 'player',
+    playerId: 'p1',
+    role: 'villager',
+  };
+  const recoveredRevote = snapshot(viewer, {
+    gameState: gameState({
+      phase: 'voting',
+      day: 2,
+      stageRevision: 24,
+      allowedActions: ['vote'],
+      voteRound: 2,
+      voteCandidates: ['p3', 'p9'],
+      voteSubmission: {
+        submitted: false,
+        targetId: null,
+        submittedCount: 0,
+        totalVoters: 1,
+        waitingFor: 1,
+      },
+    }),
+    players: [
+      player('p1', 'villager', 1),
+      player('p3', null, 3),
+      player('p9', null, 9),
+    ],
+    lastSequence: 80,
+  });
+
+  const projection = currentVoteRoundProjection(
+    recoveredRevote,
+    [],
+    ['vote'],
+  );
+
+  assert.equal(projection.kind, 'revote');
+  assert.deepEqual(
+    projection.candidates.map((item) => item.id),
+    ['p3', 'p9'],
+  );
+  assert.equal(projection.submitted, false);
+});
+
+test('revote ignores an ordinary-round private ballot before the revote boundary', () => {
+  const viewer: ViewerContext = {
+    kind: 'player',
+    playerId: 'p1',
+    role: 'villager',
+  };
+  const currentRevote = snapshot(viewer, {
+    gameState: gameState({
+      phase: 'voting',
+      day: 1,
+      stageRevision: 23,
+      allowedActions: ['vote'],
+      voteRound: 2,
+      voteCandidates: ['p3', 'p9'],
+    }),
+    players: [
+      player('p1', 'villager', 1),
+      player('p3', null, 3),
+      player('p9', null, 9),
+    ],
+    lastSequence: 30,
+  });
+  const projection = currentVoteRoundProjection(
+    currentRevote,
+    [
+      domainEvent(10, 'day.started', 'public_timeline', { day: 1 }),
+      domainEvent(20, 'day.voting_started', 'public_timeline', { round: 1 }),
+      domainEvent(25, 'day.vote_cast', 'role_private', {
+        actorId: 'p1',
+        targetId: 'p3',
+      }, ['p1']),
+      domainEvent(30, 'day.revote_required', 'public_timeline', {
+        candidates: ['p3', 'p9'],
+      }),
+    ],
+    ['vote'],
+  );
+  assert.equal(projection.submitted, false);
+  assert.equal(projection.currentTargetId, null);
 });

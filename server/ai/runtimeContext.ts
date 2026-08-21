@@ -1,6 +1,7 @@
 import type { DomainEvent } from '../../shared/events';
 import type { GameAction, Player, Role } from '../../shared/types';
 import type { AIDeathStatus, AIActorStatus, AILegalTarget, AIPromptContext } from './types';
+import type { AIPersonaProfile } from './persona';
 import { secureShuffle, type SecureRandomIndex } from './randomSelection';
 
 export interface AIRuntimeContextInput {
@@ -25,6 +26,7 @@ export interface AIRuntimeContextInput {
   lastWordsRoundsRemaining?: number;
   firstLastWords?: string;
   experience?: string;
+  personaVoiceProfile?: AIPersonaProfile;
 }
 
 const isSpeechAction = (actions: readonly GameAction[]): boolean =>
@@ -420,6 +422,76 @@ const buildPublicFacts = (
   };
 };
 
+const describeNewInformation = (
+  event: DomainEvent,
+  input: AIRuntimeContextInput,
+): string | null => {
+  const item = payload(event);
+  const actor = playerName(input.players, item.actorId ?? event.actorId);
+  switch (event.eventType) {
+    case 'day.speech':
+      if (item.actorId === input.actorId || event.actorId === input.actorId) return null;
+      return `${actor}的新发言：${String(item.content ?? '')}`;
+    case 'day.speech_skipped':
+      return `${actor}跳过了发言`;
+    case 'day.vote_cast':
+      return typeof item.targetId === 'string'
+        ? `${actor}投票给${playerName(input.players, item.targetId)}`
+        : `${actor}已提交投票，目标尚未公开`;
+    case 'day.exiled':
+      return `${playerName(input.players, item.playerId)}被公开放逐`;
+    case 'day.no_exile':
+      return '本轮公开结果为无人被放逐';
+    case 'night.resolved': {
+      const deaths = Array.isArray(item.deaths)
+        ? item.deaths.filter((id): id is string => typeof id === 'string')
+        : [];
+      if (deaths.length > 0) {
+        return `夜间公开死亡：${deaths.map((id) => playerName(input.players, id)).join('、')}`;
+      }
+      return item.peacefulNight === true ? '公开结果为平安夜' : null;
+    }
+    case 'seer.result':
+      return `你的新查验结果：${playerName(input.players, item.targetId)}为${item.alignment === 'wolf' ? '狼人' : '好人'}`;
+    case 'witch.kill_notice':
+      return item.hasKillNotice === true && typeof item.killTargetId === 'string'
+        ? `你的新刀口通知：${playerName(input.players, item.killTargetId)}`
+        : '本次没有向你提供刀口目标';
+    case 'guardian.completed':
+      return `你的守护行动已记录：${playerName(input.players, item.targetId)}`;
+    case 'witch.completed':
+      return `你的用药行动已记录：${String(item.action ?? '未知动作')}`;
+    case 'wolf.message':
+      if (item.actorId === input.actorId || event.actorId === input.actorId) return null;
+      return `${actor}的新狼队发言：${String(item.content ?? '')}`;
+    case 'wolf.kill_locked':
+      return `狼队已锁定目标：${playerName(input.players, item.targetId)}`;
+    case 'hunter.shot':
+      return `猎人公开开枪带走${playerName(input.players, item.targetId)}`;
+    default:
+      return null;
+  }
+};
+
+/** Only facts after this actor's latest speech count as genuinely new. */
+const newInformationSinceLastTurn = (
+  input: AIRuntimeContextInput,
+): string[] => {
+  const lastOwnSpeechSequence = [...input.visibleEvents]
+    .reverse()
+    .find((event) => {
+      if (event.eventType !== 'day.speech' && event.eventType !== 'wolf.message') return false;
+      const item = payload(event);
+      return item.actorId === input.actorId || event.actorId === input.actorId;
+    })?.sequence ?? 0;
+
+  return input.visibleEvents
+    .filter((event) => event.sequence > lastOwnSpeechSequence)
+    .map((event) => describeNewInformation(event, input))
+    .filter((item): item is string => Boolean(item))
+    .slice(-12);
+};
+
 export const legalTargetsForAI = (
   players: readonly Player[],
   actorId: string,
@@ -440,9 +512,7 @@ export const legalTargetsForAI = (
       voteCandidates.length > 0
         ? alive.filter((player) => voteCandidates.includes(player.id))
         : alive;
-    return candidates
-      .filter((player) => player.id !== actorId)
-      .map(({ id, name }) => ({ id, name }));
+    return candidates.map(({ id, name }) => ({ id, name }));
   }
   if (allowedActions.includes('guard')) {
     return alive
@@ -497,6 +567,9 @@ export const buildAIRuntimeContext = (
     currentRoundSpeeches: publicFacts.currentRoundSpeeches,
     publicVoteHistory: publicFacts.publicVoteHistory,
     ownPreviousSpeeches: publicFacts.ownPreviousSpeeches,
+    alreadyStatedClaims: publicFacts.ownPreviousSpeeches,
+    alreadyUsedEvidence: [],
+    newInformationSinceLastTurn: newInformationSinceLastTurn(input),
     overnightPublicEvents: latestOvernightPublicEvent(input),
     lastWordsRound: input.lastWordsRound,
     lastWordsRoundsRemaining: input.lastWordsRoundsRemaining,
@@ -514,6 +587,7 @@ export const buildAIRuntimeContext = (
         .map((event) => String(payload(event).content ?? ''))
         .find(Boolean),
     experience: input.experience,
+    personaVoiceProfile: input.personaVoiceProfile,
     lastWordsVisibleDeathHistory: visibleDeathHistory(input),
     lastWordsVisibleActionHistory: visibleActionHistory(input),
     legalActions: [...input.allowedActions],

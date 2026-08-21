@@ -89,7 +89,14 @@ const ROLE_RULE_KEYS: Record<Role, readonly string[]> = {
 
 const toRuleValues = (role: Role): Record<string, unknown> => {
   const values = RULESET.values as unknown as Record<string, unknown>;
-  const keys = [...BASE_RULE_KEYS, ...ROLE_RULE_KEYS[role]];
+  // Every seat receives the complete legal role contract.  The current role
+  // still controls private facts and legal actions; it must not hide rules
+  // needed to evaluate another player's public claim.
+  const keys = [
+    ...BASE_RULE_KEYS,
+    ...Object.values(ROLE_RULE_KEYS).flat(),
+    ...ROLE_RULE_KEYS[role],
+  ];
   return Object.fromEntries(
     [...new Set(keys)].map((key) => [key, values[key]]),
   );
@@ -151,6 +158,7 @@ export async function projectAIContext(
       context.stageRevision,
     ),
     memoryBoard: session.aiMemoryFor(context.playerId),
+    personaVoiceProfile: session.aiPersonaFor(context.playerId),
     actorStatus,
     allowedActions,
   };

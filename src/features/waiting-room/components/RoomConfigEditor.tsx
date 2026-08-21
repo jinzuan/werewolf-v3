@@ -74,8 +74,8 @@ export function RoomConfigEditor({
   return (
     <Modal
       open={open}
-      title="修改房间设置"
-      context="保存后会重新确认设置，并更新开局检查。"
+      title="房间设置"
+      context="基础设置、角色、AI 补位与规则集中在这里；保存后会刷新开局检查。"
       onClose={onClose}
       size="wide"
       footer={(
@@ -160,45 +160,50 @@ export function RoomConfigEditor({
         {draft.mode !== 'human' && onOpenAIConfig ? (
           <div className="waiting-room__editor-ai-link">
             <div><strong>电脑玩家</strong><span>模型、接口、凭据和行动风格使用同一房间设置入口。</span></div>
-            <Button variant="secondary" onClick={onOpenAIConfig}>打开电脑玩家详细设置</Button>
+            <Button variant="secondary" onClick={onOpenAIConfig}>AI 参数与服务</Button>
           </div>
         ) : null}
 
-        <label className="waiting-room__editor-check">
-          <input
-            type="checkbox"
-            checked={draft.allowPublicSpectators}
-            onChange={(event) => setDraft((current) => ({
-              ...current,
-              allowPublicSpectators: event.target.checked,
-            }))}
-          />
-          <span>允许公开观战</span>
-        </label>
-        <label className="waiting-room__editor-check">
-          <input
-            type="checkbox"
-            checked={draft.reviewEnabled}
-            onChange={(event) => setDraft((current) => ({
-              ...current,
-              reviewEnabled: event.target.checked,
-            }))}
-          />
-          <span>对局结束后开启复盘</span>
-        </label>
-        {draft.reviewEnabled ? (
-          <label className="waiting-room__editor-check">
-            <input
-              type="checkbox"
-              checked={draft.reviewMode === 'ai'}
-              onChange={(event) => setDraft((current) => ({
-                ...current,
-                reviewMode: event.target.checked ? 'ai' : 'rules',
-              }))}
-            />
-            <span>使用 AI 生成复盘总结（无 Key 自动降级）</span>
-          </label>
-        ) : null}
+        <details className="waiting-room__editor-advanced">
+          <summary>高级设置：观战与局后复盘</summary>
+          <div className="waiting-room__editor-checks">
+            <label className="waiting-room__editor-check">
+              <input
+                type="checkbox"
+                checked={draft.allowPublicSpectators}
+                onChange={(event) => setDraft((current) => ({
+                  ...current,
+                  allowPublicSpectators: event.target.checked,
+                }))}
+              />
+              <span>允许公开观战</span>
+            </label>
+            <label className="waiting-room__editor-check">
+              <input
+                type="checkbox"
+                checked={draft.reviewEnabled}
+                onChange={(event) => setDraft((current) => ({
+                  ...current,
+                  reviewEnabled: event.target.checked,
+                }))}
+              />
+              <span>对局结束后开启复盘</span>
+            </label>
+            {draft.reviewEnabled ? (
+              <label className="waiting-room__editor-check">
+                <input
+                  type="checkbox"
+                  checked={draft.reviewMode === 'ai'}
+                  onChange={(event) => setDraft((current) => ({
+                    ...current,
+                    reviewMode: event.target.checked ? 'ai' : 'rules',
+                  }))}
+                />
+                <span>使用 AI 生成复盘总结（无凭据自动降级）</span>
+              </label>
+            ) : null}
+          </div>
+        </details>
       </div>
     </Modal>
   );

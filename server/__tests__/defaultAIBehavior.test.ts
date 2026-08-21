@@ -46,6 +46,28 @@ test('default rules-degraded AI emits contextual non-empty speech and wolf discu
   assert.ok(String(wolfSpeech.command.payload.content).trim().length > 0);
 });
 
+
+test('deterministic witch emits a legal night action instead of an unsupported skip command', async () => {
+  const provider = new DeterministicAIProvider({ mode: 'test-deterministic' });
+  const suggestion = await provider.suggest(context({
+    playerId: 'witch-7',
+    role: 'witch',
+    phase: 'night',
+    stage: 'witch',
+    allowedCommandTypes: ['game.night_action'],
+    allowedActions: ['heal'],
+    promptContext: {
+      dayNumber: 1,
+      situationSummary: '当前没有可见刀口。',
+      legalTargets: [],
+    },
+  }));
+
+  assert.equal(suggestion.command.type, 'game.night_action');
+  assert.equal(suggestion.command.payload.action, 'heal');
+  assert.equal(suggestion.command.payload.targetId, null);
+});
+
 test('production RoomService cannot boot an implicit deterministic provider', () => {
   assert.throws(
     () => new RoomService(

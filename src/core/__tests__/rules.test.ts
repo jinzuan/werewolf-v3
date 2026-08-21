@@ -19,6 +19,8 @@ test('contains the ten finalized rule decisions', () => {
   assert.equal(getRuleValue('victory.simultaneous_both_sides_condition'), 'draw');
   assert.equal(getRuleValue('speech.speech_order'), 'random_clockwise_or_counterclockwise');
   assert.equal(getRuleValue('speech.last_words_scope'), 'exile_only_two_rounds');
+  assert.equal(getRuleValue('speech.speech_limits').free_discussion_cycles, 2);
+  assert.equal(getRuleValue('voting.eligible_targets'), 'all_alive_players_except_revote_scope');
   assert.equal(getRuleValue('voting.abstain_allowed'), true);
   assert.equal(getRuleValue('voting.tie_policy'), 'single_revote_then_no_exile');
   assert.equal(

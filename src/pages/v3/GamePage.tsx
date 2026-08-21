@@ -4,6 +4,7 @@ import {
   Eye,
   List,
   MessageSquare,
+  RotateCcw,
   Shield,
   Swords,
   UsersRound,
@@ -31,16 +32,20 @@ import {
   buildGameCommand,
   currentVoteRoundProjection,
   eligibleTargets,
+  gameActionsReady,
   healTargetId,
   orderedAllowedActions,
 } from '../../v3/actions';
 import {
   ACTION_LABELS,
   createPlayerNameResolver,
+  DAY_STAGE_LABELS,
   describeEvent,
   formatEventTime,
   phaseLabel,
   ROLE_LABELS,
+  NIGHT_STAGE_LABELS,
+  visibilityLabel,
 } from '../../v3/presentation';
 import {
   remainingServerMs,
@@ -64,16 +69,7 @@ const ROLE_DESCRIPTIONS = {
 } as const;
 
 type SeatStatus = 'alive' | 'exiled' | 'night-death';
-type GameMobileSection = 'chat' | 'events' | 'action' | 'identity' | 'view';
-
-const GAME_MOBILE_NAV_ITEMS: readonly MobileMatchNavItem[] = [
-  { id: 'chat', label: '聊天', icon: MessageSquare },
-  { id: 'events', label: '时间线', icon: List },
-  { id: 'action', label: '行动', icon: Swords },
-  { id: 'identity', label: '身份座位', icon: UsersRound },
-  { id: 'view', label: '查看', icon: Eye },
-];
-
+type GameMobileSection = 'chat' | 'events' | 'action' | 'players';
 const ACTION_HELP: Record<GameAction, string> = {
   confirm_role: '确认已查看自己的身份牌。',
   guard: '可守自己，不能连续两晚守同一名玩家。',
@@ -85,6 +81,7 @@ const ACTION_HELP: Record<GameAction, string> = {
   skip_night: '放弃当前角色的夜间行动。',
   speak: '向公开聊天流提交本轮发言。',
   skip_speech: '白天可直接跳过；遗言阶段若放弃，必须填写理由（例如“懒得说”）。',
+  request_speech: '申请进入服务端发言队列，排队顺序对所有玩家一致。',
   vote: '仅显示本轮规则允许的候选人。',
   abstain: '本轮允许弃票。',
   hunter_shoot: '选择一名其他存活玩家开枪。',
@@ -94,6 +91,9 @@ const ACTION_HELP: Record<GameAction, string> = {
 export function GamePage() {
   const connected = useV3Store((state) => state.connected);
   const loading = useV3Store((state) => state.loading);
+  const recovering = useV3Store((state) => state.recovering);
+  const syncStatus = useV3Store((state) => state.syncStatus);
+  const authorityStatus = useV3Store((state) => state.authorityStatus);
   const error = useV3Store((state) => state.error);
   const room = useV3Store((state) => state.room);
   const session = useV3Store((state) => state.session);
@@ -111,6 +111,7 @@ export function GamePage() {
   });
   const [roleRevealed, setRoleRevealed] = useState(false);
   const [roleInfoOpen, setRoleInfoOpen] = useState(false);
+  const [voteEditing, setVoteEditing] = useState(false);
   const chatInputRef = useRef<HTMLInputElement | null>(null);
   const chatListRef = useRef<HTMLDivElement | null>(null);
   const timelineListRef = useRef<HTMLDivElement | null>(null);
@@ -120,6 +121,11 @@ export function GamePage() {
   const mobileActionKeyRef = useRef('');
 
   const state = snapshot?.gameState ?? null;
+  const currentPhaseLabel = phaseLabel(state);
+  const stageTitle = currentPhaseLabel.replace(
+    /\s*（第\s*\d+\/\d+\s*轮）$/u,
+    '',
+  );
   const players = useMemo(() => snapshot?.players ?? [], [snapshot?.players]);
   const myId = viewerPlayerId(snapshot?.viewer) ?? '';
   const myPlayer = players.find((player) => player.id === myId);
@@ -171,12 +177,15 @@ export function GamePage() {
   useEffect(() => {
     if (actionTransitionKey === mobileActionKeyRef.current) return;
     mobileActionKeyRef.current = actionTransitionKey;
-    // `allowedActions` is projected for this player only. An empty list means
-    // that a state revision belongs to somebody else (for example, another
-    // wolf speaking), so preserve the player's current tab in that case.
     if (!actionKey) return;
-    setMobileSection(speechActionAvailable ? 'chat' : 'action');
-  }, [actionKey, actionTransitionKey, speechActionAvailable]);
+    setMobileSection(
+      allowedActions.includes('confirm_role')
+        ? 'players'
+        : speechActionAvailable
+          ? 'chat'
+          : 'action',
+    );
+  }, [actionKey, actionTransitionKey, allowedActions, speechActionAvailable]);
   const mobileUnreadCounts = useMobileMatchUnread(
     events,
     snapshot?.gameId,
@@ -185,6 +194,20 @@ export function GamePage() {
   const voteRound = snapshot
     ? currentVoteRoundProjection(snapshot, events, allowedActions)
     : null;
+  const actionsSynchronized = gameActionsReady({
+    connected,
+    recovering,
+    syncStatus,
+    authorityStatus,
+    hasSnapshot: snapshot !== null,
+  });
+  const voteSubmitted = voteRound?.submitted === true;
+  const discussionQueue = state?.discussionQueue ?? [];
+  const freeDiscussion = state?.daySpeechMode === 'free_discussion' || dayStage === 'discussion';
+  const turnTakingSpeech = state?.phase === 'day' &&
+    (dayStage === 'speech' || dayStage === 'discussion');
+  const discussionCycle = state?.discussionCycle ?? 1;
+  const discussionCyclesRequired = state?.discussionCyclesRequired ?? 2;
   const draftScopeKey = [
     snapshot?.gameId ?? 'no-game',
     state?.day ?? 0,
@@ -197,6 +220,18 @@ export function GamePage() {
     : actionDraft.activeAction && allowedActions.includes(actionDraft.activeAction)
       ? actionDraft.activeAction
       : allowedActions[0] ?? null;
+  const mobileNavItems = useMemo<readonly MobileMatchNavItem[]>(() => [
+    { id: 'chat', icon: MessageSquare, label: speechActionAvailable ? '发言' : '聊天' },
+    { id: 'events', icon: List, label: '事件' },
+    {
+      id: 'action',
+      icon: Swords,
+      label: activeAction && !['speak', 'wolf_speak', 'skip_speech'].includes(activeAction)
+        ? ACTION_LABELS[activeAction]
+        : '行动',
+    },
+    { id: 'players', icon: UsersRound, label: '玩家/身份' },
+  ], [activeAction, speechActionAvailable]);
   const visibleEvents = useMemo(
     () =>
       chatEventsForViewer(events, snapshot?.viewer ?? null)
@@ -227,6 +262,9 @@ export function GamePage() {
   const currentSpeakerName = hasActiveSpeaker && currentSpeakerId
     ? playerName(currentSpeakerId)
     : null;
+  const nextDiscussionEntry = discussionQueue.find(
+    (entry) => entry.playerId !== currentSpeakerId,
+  );
   const speakerToneFor = (id: string | null): number => {
     const player = players.find((candidate) => candidate.id === id);
     return player ? seatColorIndex(player.order) : 0;
@@ -256,6 +294,22 @@ export function GamePage() {
     () => visibleEvents.filter((event) => !isSpeechEvent(event)),
     [visibleEvents],
   );
+  const discussionSpokenPlayerIds = useMemo(() => [...new Set(visibleEvents
+    .filter((event) => {
+      if (
+        event.eventType !== 'day.speech' &&
+        event.eventType !== 'day.speech_skipped'
+      ) return false;
+      if (event.payload.day !== state?.day || event.payload.lastWords === true) return false;
+      return freeDiscussion
+        ? event.payload.discussion === true && event.payload.discussionRound === discussionCycle
+        : event.payload.discussion !== true;
+    })
+    .map((event) => {
+      const id = event.payload.actorId ?? event.actorId;
+      return typeof id === 'string' ? id : null;
+    })
+    .filter((id): id is string => id !== null))], [discussionCycle, freeDiscussion, state?.day, visibleEvents]);
   const mobileTimelineEvents = useMemo(
     () => visibleEvents.filter(
       (event) => event.visibility === 'public_timeline' && !isSpeechEvent(event),
@@ -264,15 +318,32 @@ export function GamePage() {
   );
   const renderSystemEvents = (items: typeof visibleEvents) => items.length === 0 ? (
     <span className="v3-inline-note">暂无系统通知。</span>
-  ) : items.map((event, index) => (
-    <Fragment key={event.eventId}>
-      <DayDivider event={event} previous={items[index - 1] ?? null} fallbackDay={state?.day ?? 1} />
-      <div className="v3-event-item">
-        <time>{formatEventTime(event.occurredAt)}</time>
-        <p>{describeEvent(event, playerName, { viewer: snapshot?.viewer ?? undefined })}</p>
-      </div>
-    </Fragment>
-  ));
+  ) : items.map((event, index) => {
+    const actorId = eventActorId(event);
+    const actor = players.find((player) => player.id === actorId);
+    const actorColorClass = actor ? ` v3-seat-color-${seatColorIndex(actor.order)}` : '';
+    const stageName = event.stage
+      ? DAY_STAGE_LABELS[event.stage as keyof typeof DAY_STAGE_LABELS] ??
+        NIGHT_STAGE_LABELS[event.stage as keyof typeof NIGHT_STAGE_LABELS] ??
+        '阶段更新'
+      : event.phase === 'role_confirm'
+        ? '身份确认'
+        : '对局进程';
+    return (
+      <Fragment key={event.eventId}>
+        <DayDivider event={event} previous={items[index - 1] ?? null} fallbackDay={state?.day ?? 1} />
+        <div className={`v3-event-item${actorColorClass}`}>
+          <div className="v3-event-item__meta">
+            <time>{formatEventTime(event.occurredAt)}</time>
+            <span>{stageName}</span>
+            <span>{actor ? `来源：${playerName(actor.id)}` : '来源：系统'}</span>
+            <span>{visibilityLabel(event.visibility)}</span>
+          </div>
+          <p>{describeEvent(event, playerName, { viewer: snapshot?.viewer ?? undefined })}</p>
+        </div>
+      </Fragment>
+    );
+  });
   const seatStatus = useMemo(() => {
     const statuses = new Map<string, SeatStatus>();
     for (const player of players) {
@@ -326,11 +397,15 @@ export function GamePage() {
     });
   }, [draftScopeKey, firstAllowedAction]);
 
+  useEffect(() => {
+    setVoteEditing(false);
+  }, [voteRound?.key]);
+
   const definition = activeAction
     ? ACTION_DEFINITIONS[activeAction]
     : null;
   const targets =
-    activeAction && snapshot
+    activeAction && snapshot && actionsSynchronized
       ? activeAction === 'vote' && voteRound
         ? voteRound.candidates
         : eligibleTargets(activeAction, snapshot, events, allowedActions)
@@ -339,7 +414,7 @@ export function GamePage() {
     actionDraft.activeAction === activeAction &&
     (actionDraft.selectedTarget === null ||
       targets.some((target) => target.id === actionDraft.selectedTarget))
-      ? actionDraft.selectedTarget
+      ? actionDraft.selectedTarget ?? (activeAction === 'vote' ? voteRound?.currentTargetId ?? null : null)
       : null;
   const message =
     actionDraft.activeAction === activeAction ? actionDraft.message : '';
@@ -351,6 +426,7 @@ export function GamePage() {
   const resolvedTarget =
     activeAction === 'heal' ? notifiedHealTarget : selectedTarget;
   const canSubmit =
+    actionsSynchronized &&
     activeAction !== null &&
     ((definition?.input === 'immediate' && !lastWordsSkip) ||
       (lastWordsSkip && message.trim().length > 0) ||
@@ -366,7 +442,8 @@ export function GamePage() {
     (dayStage === 'speech' || dayStage === 'discussion') &&
     currentSpeakerId === myId &&
     allowedActions.includes('skip_speech') &&
-    showsTextInput;
+    showsTextInput &&
+    actionsSynchronized;
 
   useEffect(() => {
     if (!autoSkipSpeech) return undefined;
@@ -393,13 +470,13 @@ export function GamePage() {
 
   useLayoutEffect(() => {
     if (mobileSection === 'chat') {
-      const list = chatListRef.current;
-      if (list) list.scrollTop = list.scrollHeight;
+      const chatList = chatListRef.current;
+      if (chatList) chatList.scrollTop = chatList.scrollHeight;
       setChatAtBottom(true);
     }
     if (mobileSection === 'events') {
-      const list = timelineListRef.current;
-      if (list) list.scrollTop = list.scrollHeight;
+      const timelineList = timelineListRef.current;
+      if (timelineList) timelineList.scrollTop = timelineList.scrollHeight;
     }
   }, [chatMessages.length, mobileSection, mobileTimelineEvents.length]);
 
@@ -417,7 +494,7 @@ export function GamePage() {
   };
 
   const submitAction = async () => {
-    if (!activeAction) return;
+    if (!activeAction || !actionsSynchronized) return;
     const command = buildGameCommand({
       actorId: myId,
       actorRole: myPlayer?.role,
@@ -428,6 +505,9 @@ export function GamePage() {
     });
     if (!command) return;
     if (await dispatch(command)) {
+      if (activeAction === 'vote' || activeAction === 'abstain') {
+        setVoteEditing(false);
+      }
       setActionDraft((current) => ({
         ...current,
         selectedTarget: null,
@@ -470,7 +550,7 @@ export function GamePage() {
             </p>
             {canConfirmRole ? (
               <Button
-                disabled={loading || !roleRevealed}
+                disabled={loading || !roleRevealed || !actionsSynchronized}
                 onClick={() => void submitAction()}
               >
                 <Check size={17} />
@@ -491,46 +571,21 @@ export function GamePage() {
     </Card>
   ) : null;
 
-  const desktopRoomPanel = room ? (
-    <Card className="v3-desktop-room-panel">
-      <div className="v3-panel-heading">
-        <div>
-          <span>桌面信息条</span>
-          <h2>房间信息</h2>
-        </div>
-        <Badge tone={connected ? 'success' : 'warning'}>
-          {connected ? '已连接' : '连接中'}
-        </Badge>
-      </div>
-      <dl className="v3-desktop-room-facts">
-        <div>
-          <dt>房间码</dt>
-          <dd className="v3-numeric">{room.code}</dd>
-        </div>
-        <div>
-          <dt>当前阶段</dt>
-          <dd>{phaseLabel(state)}</dd>
-        </div>
-        <div>
-          <dt>存活席位</dt>
-          <dd>{players.filter((player) => player.isAlive).length} / {players.length}</dd>
-        </div>
-        <div>
-          <dt>参与玩家</dt>
-          <dd>{room.members.filter((member) => member.kind === 'player').length} 人</dd>
-        </div>
-      </dl>
-      <p className="v3-inline-note">行动卡、身份卡和私密结果都固定在右侧信息条；席位点击仍可直接选择行动目标。</p>
-    </Card>
-  ) : null;
-
   if (!room || !session) {
+    const credentialsInvalid = authorityStatus === 'unauthorized' &&
+      !recovering &&
+      syncStatus !== 'syncing' &&
+      Boolean(error);
     return (
       <AppShell title="玩家对局" connected={connected}>
         <Card className="v3-empty-state" aria-live="polite">
           <Shield size={24} />
-          <strong>正在恢复对局入口</strong>
-          <span>房间身份正在同步，游戏界面会在权限确认后显示。</span>
+          <strong>{credentialsInvalid ? '需要重新进入房间' : '正在恢复对局入口'}</strong>
+          <span>
+            {credentialsInvalid
+              ? '服务端已确认当前身份凭据无效或席位不存在，请返回大厅后重新进入。'
+              : '房间身份正在同步，游戏界面会在权限确认后显示。'}
+          </span>
         </Card>
       </AppShell>
     );
@@ -570,7 +625,7 @@ export function GamePage() {
       title={room.code}
       eyebrow="房间码"
       pageClassName="v3-page--match"
-      phase={phaseLabel(state)}
+      phase={currentPhaseLabel}
       countdown={countdown === '—' ? undefined : countdown}
       progress={progress ?? undefined}
       connected={connected}
@@ -587,13 +642,35 @@ export function GamePage() {
         </Card>
       ) : (
         <>
+          <section className="v3-stage-summary" aria-labelledby="current-stage-title">
+            <div>
+              <span>当前阶段</span>
+              <h1 id="current-stage-title">{stageTitle}</h1>
+            </div>
+            <div className="v3-stage-summary__turn" aria-live="polite">
+              <span>当前轮到</span>
+              <strong>{currentSpeakerName ?? (allowedActions.length ? '你来操作' : '等待其他玩家')}</strong>
+            </div>
+            <div className="v3-stage-summary__action">
+              <span>你</span>
+              <strong>
+                {!actionsSynchronized
+                  ? '同步中'
+                  : allowedActions.length
+                    ? activeAction
+                      ? `可操作 · ${ACTION_LABELS[activeAction]}`
+                      : '可操作'
+                    : '等待'}
+              </strong>
+            </div>
+          </section>
           <div
             className="v3-mobile-match-surface v3-game-workspace"
             data-mobile-section={mobileSection}
             data-role-confirmation={isRoleConfirmation ? 'true' : 'false'}
           >
           <MobileMatchNav
-            items={GAME_MOBILE_NAV_ITEMS}
+            items={mobileNavItems}
             active={mobileSection}
             unreadCounts={mobileUnreadCounts}
             onChange={(section) => setMobileSection(section as GameMobileSection)}
@@ -605,7 +682,9 @@ export function GamePage() {
           centerAriaLabel="聊天与发言"
           rightAriaLabel="房间信息、身份与行动"
           left={
-            <details className="v3-card v3-player-panel" open>
+            <div className="v3-player-rail">
+              {identityPanel}
+              <details className="v3-card v3-player-panel" open>
               <summary className="v3-panel-heading v3-collapsible-heading">
                 <div>
                   <span>{players.length} 席</span>
@@ -643,12 +722,11 @@ export function GamePage() {
                   );
                 })}
               </div>
-            </details>
+              </details>
+            </div>
           }
           right={
             <div className="v3-match-side v3-desktop-info-rail">
-            {desktopRoomPanel}
-            {identityPanel}
             {isEliminated && !isLastWordsTurn ? (
             <Card className="v3-action-panel v3-spectator-panel v3-mobile-pane-action">
               <div className="v3-panel-heading">
@@ -671,7 +749,13 @@ export function GamePage() {
                   <h2>{isLastWordsTurn ? '遗言' : '行动面板'}</h2>
                 </div>
                 <Badge tone={allowedActions.length ? 'warning' : 'info'}>
-                  {allowedActions.length ? '轮到你' : '等待队友'}
+                  {!actionsSynchronized
+                    ? '同步中'
+                    : currentSpeakerId === myId
+                      ? '轮到你'
+                      : allowedActions.includes('request_speech')
+                        ? '可申请插队'
+                        : '等待队友'}
                 </Badge>
               </div>
               {latestSeerResult ? (
@@ -680,13 +764,90 @@ export function GamePage() {
                   <strong>{seerResultSummary(latestSeerResult)}</strong>
                 </div>
               ) : null}
+              {turnTakingSpeech ? (
+                <div className="v3-discussion-queue" aria-live="polite">
+                  <div className="v3-discussion-queue__heading">
+                    <strong>发言队列</strong>
+                    <span>
+                      {freeDiscussion
+                        ? `自由讨论 ${discussionCycle}/${discussionCyclesRequired} 轮`
+                        : '首轮信息报告'}
+                    </span>
+                  </div>
+                  <span>当前发言者：<strong>{currentSpeakerName ?? '暂无'}</strong></span>
+                  <span>
+                    已发言：{discussionSpokenPlayerIds.length > 0
+                      ? discussionSpokenPlayerIds.map((id) => playerName(id)).join('、')
+                      : '暂无'}
+                  </span>
+                  {discussionQueue.length > 0 ? (
+                    <ol className="v3-discussion-queue__list">
+                      {discussionQueue.map((entry) => (
+                        <li
+                          key={`${entry.playerId}:${entry.requestOrder}`}
+                          className={`v3-seat-color-${speakerToneFor(entry.playerId)}`}
+                        >
+                          <span>{entry.position}. {playerName(entry.playerId)}</span>
+                          <small>
+                            {entry.playerId === currentSpeakerId
+                              ? '正在发言'
+                              : entry.playerId === myId
+                                ? entry.source === 'insert'
+                                  ? `你 · 插队后第 ${entry.position} 位`
+                                  : `你 · 队列第 ${entry.position} 位`
+                                : entry.source === 'insert'
+                                  ? '已插队'
+                                  : '待发言'}
+                          </small>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : <span>待发言：暂无</span>}
+                  <span>
+                    下一位：<strong>{nextDiscussionEntry
+                      ? playerName(nextDiscussionEntry.playerId)
+                      : '暂无'}</strong>
+                  </span>
+                </div>
+              ) : null}
+              {voteSubmitted && voteRound ? (
+                <div
+                  className={`v3-vote-status${voteRound.currentTargetId ? ` v3-seat-color-${speakerToneFor(voteRound.currentTargetId)}` : ''}`}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <strong>
+                    {voteRound.currentTargetId
+                      ? `已投给：${players.find((player) => player.id === voteRound.currentTargetId)?.order ?? '?'}号 · ${playerName(voteRound.currentTargetId)}`
+                      : '已弃票'}
+                  </strong>
+                  <span>投票完成，等待其他玩家投票</span>
+                  <span>已投票人数 / 当前存活人数：{voteRound.submittedCount} / {voteRound.totalVoters}</span>
+                  {voteEditing ? <span>正在更改当前票，新目标将以服务端确认为准。</span> : null}
+                </div>
+              ) : null}
               {isLastWordsTurn ? (
                 <div className="v3-inline-note">
                   仅被投票放逐的玩家可以在此提交遗言；夜间死亡不会进入遗言阶段。
                 </div>
               ) : null}
 
-              {allowedActions.length && activeAction !== 'confirm_role' ? (
+              {voteSubmitted && !voteEditing ? (
+                <Button
+                  variant="secondary"
+                  disabled={loading || !actionsSynchronized}
+                  onClick={() => {
+                    setVoteEditing(true);
+                    setActionDraft({
+                      activeAction: 'vote',
+                      selectedTarget: voteRound?.currentTargetId ?? null,
+                      message: '',
+                    });
+                  }}
+                >
+                  <RotateCcw size={16} />更改投票
+                </Button>
+              ) : allowedActions.length && activeAction !== 'confirm_role' ? (
                 <>
                   <div
                     className="v3-action-tabs"
@@ -698,6 +859,7 @@ export function GamePage() {
                         key={action}
                         role="tab"
                         aria-selected={activeAction === action}
+                        disabled={loading || !actionsSynchronized}
                         className={
                           activeAction === action ? 'is-active' : undefined
                         }
@@ -723,6 +885,7 @@ export function GamePage() {
                     <div className="v3-target-grid">
                       {definition.allowsEmptyTarget ? (
                         <button
+                          disabled={loading || !actionsSynchronized}
                           className={
                             selectedTarget === null ? 'is-selected' : undefined
                           }
@@ -741,11 +904,8 @@ export function GamePage() {
                       {targets.map((player) => (
                         <button
                           key={player.id}
-                          className={
-                            selectedTarget === player.id
-                              ? 'is-selected'
-                              : undefined
-                          }
+                          disabled={loading || !actionsSynchronized}
+                          className={`v3-seat-color-${seatColorIndex(player.order)}${selectedTarget === player.id ? ' is-selected' : ''}`}
                           onClick={() =>
                             setActionDraft((current) => ({
                               ...current,
@@ -790,11 +950,18 @@ export function GamePage() {
                             : '当前无行动'}
                       </span>
                       <Button
-                        disabled={loading || !canSubmit}
+                        className={selectedTarget
+                          ? `v3-action-submit--seat v3-seat-color-${speakerToneFor(selectedTarget)}`
+                          : undefined}
+                        disabled={loading || !canSubmit || (voteSubmitted && !voteEditing)}
                         onClick={() => void submitAction()}
                       >
                         <Check size={17} />
-                        确认{activeAction ? ACTION_LABELS[activeAction] : '行动'}
+                        {activeAction === 'vote' && voteRound?.submitted
+                          ? '确认修改投票'
+                          : activeAction === 'request_speech'
+                            ? '申请插队'
+                            : `确认${activeAction ? ACTION_LABELS[activeAction] : '行动'}`}
                       </Button>
                     </div>
                   )}
@@ -836,24 +1003,23 @@ export function GamePage() {
             </div>
             <p className="v3-inline-note">身份牌和私密行动只属于你；其他玩家的身份不会在玩家视角展开。</p>
           </Card>
-          <details
+          <section
             className="v3-event-details v3-mobile-pane-events"
-            open={mobileSection === 'events'}
           >
-            <summary className="v3-event-details__summary">
+            <div className="v3-event-details__summary">
               <span>事件与系统通知</span>
               <span className="v3-event-counts">
                 <Badge tone="info" className="v3-event-count--desktop">{systemEvents.length}</Badge>
                 <Badge tone="info" className="v3-event-count--mobile">{mobileTimelineEvents.length}</Badge>
               </span>
-            </summary>
+            </div>
             <div className="v3-event-list v3-event-list--desktop">
               {renderSystemEvents(systemEvents)}
             </div>
             <div ref={timelineListRef} className="v3-event-list v3-event-list--mobile">
               {renderSystemEvents(mobileTimelineEvents)}
             </div>
-          </details>
+          </section>
             </div>
           }
           center={
@@ -885,6 +1051,7 @@ export function GamePage() {
                   ) : (
                     chatMessages.map((event, index) => {
                       const actorId = eventActorId(event);
+                      const speaker = players.find((player) => player.id === actorId);
                       return (
                         <Fragment key={event.eventId}>
                           <DayDivider event={event} previous={chatMessages[index - 1] ?? null} fallbackDay={state?.day ?? 1} />
@@ -892,6 +1059,9 @@ export function GamePage() {
                             author={
                               playerName(actorId)
                             }
+                            seatNumber={speaker?.order}
+                            isAI={speaker?.isAI}
+                            playerStatus={actorId ? seatStatus.get(actorId) : undefined}
                             time={formatEventTime(event.occurredAt)}
                             variant={
                               event.eventType === 'wolf.message'
@@ -900,7 +1070,7 @@ export function GamePage() {
                                   ? 'self'
                                   : 'other'
                             }
-                            speakerTone={speakerToneFor(actorId)}
+                            speakerTone={speaker ? seatColorIndex(speaker.order) : undefined}
                             visibility={event.visibility}
                             avatarAsset={avatarForPlayer(actorId)}
                           >
@@ -931,7 +1101,7 @@ export function GamePage() {
               >
                 <Input
                   ref={chatInputRef}
-                  disabled={!showsTextInput || loading}
+                  disabled={!showsTextInput || loading || !actionsSynchronized}
                   aria-label={lastWordsSkip ? '遗言内容' : '发言内容'}
                   value={message}
                   onFocus={() => setChatInputFocused(true)}
@@ -952,7 +1122,7 @@ export function GamePage() {
                           : '输入本轮公开发言'
                   }
                 />
-                <Button type="submit" disabled={!showsTextInput || loading || !canSubmit}>
+                <Button type="submit" disabled={!showsTextInput || loading || !canSubmit || !actionsSynchronized}>
                   <MessageSquare size={17} />发送
                 </Button>
               </form>

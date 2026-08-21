@@ -21,6 +21,7 @@ export const GAME_ACTIONS = [
   'skip_night',
   'speak',
   'skip_speech',
+  'request_speech',
   'vote',
   'abstain',
   'hunter_shoot',
@@ -44,6 +45,14 @@ export interface ProjectedAuthorityFields {
   deadlineTs: number | null;
   /** Absolute start of the currently authoritative stage, when timed. */
   stageStartedAt: number | null;
+  /** The requesting player's own current ballot; never another player's target. */
+  voteSubmission?: {
+    submitted: boolean;
+    targetId: string | null;
+    submittedCount: number;
+    totalVoters: number;
+    waitingFor: number;
+  } | null;
 }
 
 export type ProjectedGameState = GameState & ProjectedAuthorityFields;
@@ -66,6 +75,26 @@ export interface Player {
   isHost: boolean;
   order: number;
   isReady?: boolean;
+}
+
+export type DiscussionQueueSource =
+  | 'first_report'
+  | 'free_cycle'
+  | 'mention'
+  | 'insert'
+  | 'wait_timeout';
+
+/** Public, server-derived queue data. Private request text is never included. */
+export interface DiscussionQueueEntry {
+  playerId: string;
+  position: number;
+  enqueuedAt: number;
+  requestOrder: number;
+  source: DiscussionQueueSource;
+  mentionCount: number;
+  priority: number;
+  /** One-based free-discussion cycle; absent on migrated/insert-only rows. */
+  cycle?: number;
 }
 
 export interface GameState {
@@ -91,6 +120,16 @@ export interface GameState {
   winner: 'wolf' | 'good' | null;
   currentSpeaker: string | null;
   speakerOrder: string[];
+  /** Public projection of the daytime report/discussion queue. */
+  daySpeechMode?: 'first_report' | 'free_discussion' | null;
+  discussionQueue?: DiscussionQueueEntry[];
+  discussionMentionCounts?: Record<string, number>;
+  discussionCycle?: number;
+  discussionCyclesRequired?: number;
+  /** Public authority for the active day vote; ballots remain server-private. */
+  voteRound?: 1 | 2;
+  /** Empty for an ordinary vote, narrowed to the public tied set on revote. */
+  voteCandidates?: string[];
   actionDone: Record<string, boolean>;
   speechTimeLeft: number;
   actionTimeLeft: number;

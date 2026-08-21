@@ -2,6 +2,7 @@ import type { AIPrompt } from './promptBuilder';
 import { parseAIOutput } from './outputParser';
 import { buildPromptPipeline } from './promptPipeline';
 import { RepeatPolicy } from './repeatPolicy';
+import { inspectSpeechStyle } from './speechStyleGate';
 import type {
   AIProvider,
   AIRequestContext,
@@ -67,6 +68,21 @@ export class PromptAIProvider implements AIProvider {
       }
 
       if (RepeatPolicy.isSpeechCommand(parsed.command.type) && parsed.speechText) {
+        const style = inspectSpeechStyle(parsed.speechText, {
+          commandType: parsed.command.type,
+          role: context.role,
+          phase: context.phase,
+          stage: context.stage,
+          players: context.players,
+          promptContext,
+        });
+        if (!style.ok) {
+          if (attempt < this.maxCorrectionAttempts) {
+            correction = style.rewriteInstruction;
+            continue;
+          }
+          throw new Error(`AI_SPEECH_STYLE_${style.issues.join('_')}`);
+        }
         const repeat = this.repeatPolicy.inspect(
           {
             gameId: context.gameId,
@@ -97,6 +113,7 @@ export class PromptAIProvider implements AIProvider {
       return {
         command: parsed.command,
         reason: parsed.reason,
+        providerMeta: { retryCount: attempt },
       };
     }
     throw new Error('AI_OUTPUT_RETRY_EXHAUSTED');

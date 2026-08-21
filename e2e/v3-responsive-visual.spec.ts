@@ -11,7 +11,7 @@ test('all public entry pages keep the primary flow usable at all required widths
     for (const [name, route, heading] of [
       ['lobby', '/lobby', '邀请朋友，点亮一局狼人杀'],
       ['join', '/rooms/join', '用房间码找到同伴'],
-      ['wizard', '/rooms/new/players', '先决定今晚有多少人'],
+      ['wizard', '/rooms/new/players', '房间设置'],
       ['settings', '/settings', '设置'],
     ] as const) {
       await page.goto(`${v3.appURL}${route}`);

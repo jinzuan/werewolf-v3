@@ -1,4 +1,4 @@
-import { ArrowRight, DoorOpen, Radio } from 'lucide-react';
+import { ArrowRight, DoorOpen, LoaderCircle, Radio } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppShell } from '../../components/shell/AppShell';
@@ -40,9 +40,21 @@ export function LobbyPage() {
   const roomsNextCursor = useV3Store((state) => state.roomsNextCursor);
   const roomsLoading = useV3Store((state) => state.roomsLoading);
   const loading = useV3Store((state) => state.loading);
+  const createRoom = useV3Store((state) => state.createRoom);
   const joinRoom = useV3Store((state) => state.joinRoom);
   const spectateRoom = useV3Store((state) => state.spectateRoom);
   const [joiningCode, setJoiningCode] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  const createDefaultRoom = async () => {
+    if (creating || loading) return;
+    setCreating(true);
+    const nickname = writePlayerNickname(readPlayerNickname());
+    const accepted = await createRoom(nickname, `${nickname}的月影房`, true);
+    setCreating(false);
+    const createdRoom = useV3Store.getState().room;
+    if (accepted && createdRoom) navigate(roomPath(createdRoom.code), { replace: true });
+  };
 
   const enterPublicRoom = async (room: RoomSummary) => {
     if (joiningCode || loading) return;
@@ -56,15 +68,16 @@ export function LobbyPage() {
   };
 
   return (
-    <AppShell title="大厅" eyebrow="狼人杀·月光森林" connected={connected}>
+    <AppShell title="大厅" eyebrow="月影桌游台" connected={connected}>
       <section className="v3-lobby-hero" aria-labelledby="lobby-hero-title">
         <div className="v3-lobby-hero__copy">
           <span className="v3-lobby-hero__eyebrow">月影村 · 今夜开席</span>
           <h1 id="lobby-hero-title">邀请朋友，点亮一局狼人杀</h1>
-          <p>先选人数和角色，再把房间码发给同伴。房间会在开局前同步最新设置。</p>
+          <p>按标准 12 人配置立即开房，进入等待房后再按需要调整设置。</p>
           <div className="v3-lobby-hero__actions">
-            <Button size="action" onClick={() => navigate('/rooms/new/settings')}>
-              创建房间<ArrowRight size={17} />
+            <Button size="action" disabled={creating || loading} onClick={() => void createDefaultRoom()}>
+              {creating ? <LoaderCircle className="v3-spin" size={17} /> : null}
+              {creating ? '正在创建…' : '创建房间'}{creating ? null : <ArrowRight size={17} />}
             </Button>
             <Button variant="secondary" onClick={() => navigate('/rooms/join')}>
               <DoorOpen size={17} />加入房间
@@ -90,16 +103,12 @@ export function LobbyPage() {
           </div>
         </header>
 
-        <div className="v3-room-list">
+        <div className={`v3-room-list${rooms.length === 0 ? ' v3-room-list--empty' : ''}`}>
           {rooms.length === 0 ? (
             <Card className="v3-empty-state">
               <img className="v3-empty-state__art" src={villageScene} alt="" aria-hidden="true" />
               <strong>村口还没有亮灯的房间</strong>
-              <span>创建一间朋友房，邀请同伴入座。</span>
-              <div className="v3-empty-state__actions">
-                <Button onClick={() => navigate('/rooms/new/settings')}>创建第一个房间</Button>
-                <Button variant="quiet" onClick={() => navigate('/rooms/join')}>输入房间码</Button>
-              </div>
+              <span>暂时没有可加入的公开房间，列表刷新后会在这里出现。</span>
             </Card>
           ) : rooms.map((room) => {
             const state = roomState[room.status];

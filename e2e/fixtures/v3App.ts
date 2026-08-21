@@ -95,15 +95,34 @@ const startPreview = async (): Promise<{ child: ChildProcess; url: string }> => 
   ], { cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
   const url = await new Promise<string>((resolve, reject) => {
     let output = '';
-    const onData = (chunk: Buffer): void => {
-      output += chunk.toString();
-      const match = output.match(/(http:\/\/127\.0\.0\.1:\d+)/);
+    let settled = false;
+    const cleanup = (): void => {
+      child.stdout?.off('data', onChunk);
+      child.stderr?.off('data', onChunk);
+      child.off('exit', onExit);
+    };
+    const finishURL = (): void => {
+      if (settled) return;
+      const normalized = output.replace(/\u001B\[[0-?]*[ -\/]*[@-~]/g, '');
+      const match = normalized.match(/(https?:\/\/(?:127\.0\.0\.1|localhost):\d+)/);
       if (!match) return;
-      child.stdout?.off('data', onData);
+      settled = true;
+      cleanup();
       resolve(match[1]);
     };
-    child.stdout?.on('data', onData);
-    child.once('exit', (code) => reject(new Error(`Vite preview exited before startup (${code}): ${output}`)));
+    const onChunk = (chunk: Buffer): void => {
+      output += chunk.toString();
+      finishURL();
+    };
+    const onExit = (code: number | null): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error(`Vite preview exited before startup (${code}): ${output}`));
+    };
+    child.stdout?.on('data', onChunk);
+    child.stderr?.on('data', onChunk);
+    child.once('exit', onExit);
   });
   return { child, url };
 };

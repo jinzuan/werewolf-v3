@@ -53,6 +53,7 @@ const commandTypeForAction = (action: GameAction): GameCommand['type'] => {
     case 'skip_night': return 'game.skip_night';
     case 'speak': return 'game.speak';
     case 'skip_speech': return 'game.skip_speech';
+    case 'request_speech': return 'game.request_speech';
     case 'vote':
     case 'abstain': return 'game.vote';
     case 'hunter_shoot':
@@ -222,6 +223,8 @@ export class SessionCoordinator {
       roundNumber:
         state.dayFlow.stage === 'voting'
           ? state.dayFlow.voteRound
+          : state.dayFlow.stage === 'discussion'
+            ? state.dayFlow.discussionCycle ?? 1
           : state.gameState.phase === 'night'
             ? state.gameState.wolfDiscussionRound
             : state.dayFlow.voteRound,

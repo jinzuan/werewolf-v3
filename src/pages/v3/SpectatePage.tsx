@@ -29,6 +29,7 @@ import {
 import { MAX_EVENT_WINDOW } from '../../v3/eventStream';
 import { formatCountdown } from '../../v3/countdown';
 import { chatEventsForViewer, isSpeechEvent } from '../../v3/visibility';
+import { seatColorClass, seatColorIndex } from '../../v3/seatColors';
 
 type SpectateMobileSection = 'events' | 'chat' | 'identity' | 'view';
 type SpectateSeatStatus = 'alive' | 'exiled' | 'night-death';
@@ -199,7 +200,7 @@ export function SpectatePage() {
               {players.map((player) => (
                 <div
                   key={player.id}
-                  className={`v3-spectate-identity v3-spectate-identity--${seatStatuses.get(player.id) ?? 'alive'}`}
+                  className={`v3-spectate-identity ${seatColorClass(player.order)} v3-spectate-identity--${seatStatuses.get(player.id) ?? 'alive'}`}
                 >
                   <button
                     type="button"
@@ -271,8 +272,12 @@ export function SpectatePage() {
                       <ChatBubble
                         author={playerName(actorId)}
                         authorRole={player?.role ? ROLE_LABELS[player.role] : undefined}
+                        seatNumber={player?.order}
+                        isAI={player?.isAI}
+                        playerStatus={player ? seatStatuses.get(player.id) : undefined}
                         time={formatEventTime(event.occurredAt)}
                         variant="other"
+                        speakerTone={player ? seatColorIndex(player.order) : undefined}
                         visibility={event.visibility}
                         avatarAsset={player ? getAvatarAsset(player.isAI ? 'computer' : 'player') : avatarAssetMap.spectator}
                       >

@@ -309,6 +309,7 @@ export type GameCommand =
   | { type: 'game.speak'; payload: { content: string } }
   /** Daytime skips may omit a reason; last-words skips are validated server-side as reason-required. */
   | { type: 'game.skip_speech'; payload: { reason?: string } }
+  | { type: 'game.request_speech'; payload: { reason?: string } }
   | { type: 'game.vote'; payload: { targetId: string | null; reason?: string } }
   | { type: 'game.wolf_speak'; payload: { content: string } }
   | { type: 'game.wolf_vote'; payload: { targetId: string | null } }

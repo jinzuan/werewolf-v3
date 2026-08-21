@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { UsersRound, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { joinInviteUrl } from '../../app/routes/roomRouting';
 import type {
@@ -19,10 +19,7 @@ import { RoomConfigEditor } from './components/RoomConfigEditor';
 import { RoomConfigSummary } from './components/RoomConfigSummary';
 import { RoomAIConfigEditor } from './components/RoomAIConfigEditor';
 import { PlayerSeatGrid } from './components/PlayerSeatGrid';
-import { ParticipantInfoPanel } from './components/ParticipantInfoPanel';
-import { WaitingRoomQuickSettings } from './components/WaitingRoomQuickSettings';
 import { StartCheckPanel } from './components/StartCheckPanel';
-import { WaitingRoomHeader } from './components/WaitingRoomHeader';
 import { copyText } from '../../lib/copyText';
 import {
   isActionAllowed,
@@ -108,7 +105,6 @@ export function WaitingRoomPage() {
   const [aiEditorOpen, setAIEditorOpen] = useState(false);
   const [seatRequestOpen, setSeatRequestOpen] = useState(false);
   const [approvedSeatRequest, setApprovedSeatRequest] = useState<RoomSeatRequestView | null>(null);
-  const [copied, setCopied] = useState(false);
   const [inviteFallback, setInviteFallback] = useState<string | null>(null);
   const copyTimer = useRef<number | null>(null);
 
@@ -146,13 +142,11 @@ export function WaitingRoomPage() {
     const invite = `${joinInviteUrl(window.location.origin, room.code, 'play')}\n\n房间码：${room.code}\n邀请口令：${joinToken}`;
     try {
       await copyText(invite);
-      setCopied(true);
       setInviteFallback(null);
       setPageError(null);
       if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
-      copyTimer.current = window.setTimeout(() => setCopied(false), 2_400);
+      copyTimer.current = window.setTimeout(() => undefined, 2_400);
     } catch {
-      setCopied(false);
       setInviteFallback(invite);
       setPageError('自动复制失败，已打开邀请信息；请手动复制后发送给朋友。');
     }
@@ -162,8 +156,6 @@ export function WaitingRoomPage() {
 
   const currentMember = selectViewerPlayerMember(room);
   const isHost = currentMember?.isHost === true;
-  const locked = room.status === 'starting';
-  const canCopyInvite = !locked && isHost && Boolean(session.credentials.joinToken) && isActionAllowed(room, 'invite');
   const pendingAction = pendingActionForCommand(pendingRoomCommand);
   const error = pageError ?? storeError;
 
@@ -226,13 +218,14 @@ export function WaitingRoomPage() {
       connected={connected}
     >
       <div className="waiting-room" data-room-status={room.status}>
-        <WaitingRoomHeader
-          room={room}
-          connected={connected}
-          canCopyInvite={canCopyInvite}
-          copied={copied}
-          onCopyInvite={() => void onCopyInvite()}
-        />
+        <header className="waiting-room__intro">
+          <div>
+            <span className="waiting-room__eyebrow">等待开局</span>
+            <h1>安排玩家席位</h1>
+            <p>席位、准备状态与开局检查会实时更新。</p>
+          </div>
+          <span className="waiting-room__intro-count"><UsersRound size={17} />{room.members.filter((member) => member.kind === 'player').length} / {room.config.maxPlayers} 席</span>
+        </header>
 
         {error ? (
           <div className="v3-alert v3-alert--error waiting-room__error" role="alert">
@@ -240,13 +233,21 @@ export function WaitingRoomPage() {
           </div>
         ) : null}
 
-        {isHost ? (
-          <WaitingRoomQuickSettings
-            room={room}
-            pending={pendingRoomCommand === 'room.update_config'}
-            onSubmit={updateConfig}
-          />
-        ) : null}
+        <RoomActions
+          room={room}
+          currentMember={currentMember}
+          pendingAction={pendingAction}
+          onSetReady={ready}
+          onBeginReadyCheck={() => runSeatMutation(beginReadyCheck)}
+          onCancelReadyCheck={cancel}
+          onStartGame={start}
+          onInvite={() => void onCopyInvite()}
+          onOpenSettings={() => setConfigEditorOpen(true)}
+          onLocateProblem={() => document.getElementById('start-check-title')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+          onTransferHost={transferHost}
+          onDissolve={dissolve}
+          onLeave={leave}
+        />
 
         <div className="waiting-room__board">
           <PlayerSeatGrid
@@ -257,19 +258,10 @@ export function WaitingRoomPage() {
             onRequestSeat={() => runSeatMutation(requestSeat)}
             onKickPlayer={(memberId) => runSeatMutation(() => kickPlayer(memberId))}
           />
-          <aside className="waiting-room__side" aria-label="等待房辅助信息">
-            <RoomActions
+          <aside className="waiting-room__side" aria-label="房间摘要与开局检查">
+            <RoomConfigSummary
               room={room}
-              currentMember={currentMember}
-              pendingAction={pendingAction}
-              onSetReady={ready}
-              onBeginReadyCheck={() => runSeatMutation(beginReadyCheck)}
-              onCancelReadyCheck={cancel}
-              onStartGame={start}
-              onInvite={() => void onCopyInvite()}
-              onTransferHost={transferHost}
-              onDissolve={dissolve}
-              onLeave={leave}
+              aiSummary={aiSummary}
             />
             <StartCheckPanel
               items={room.startCheck.items}
@@ -279,14 +271,6 @@ export function WaitingRoomPage() {
               onLocate={scrollToCheckTarget}
             />
           </aside>
-          <div className="waiting-room__desktop-info" aria-label="参与者与房间设置">
-            <ParticipantInfoPanel room={room} />
-            <RoomConfigSummary
-              room={room}
-              onUpdateConfig={() => setConfigEditorOpen(true)}
-              aiSummary={aiSummary}
-            />
-          </div>
         </div>
 
         {isHost && room.seatRequests?.some((request) => request.status === 'pending') ? (
@@ -380,10 +364,9 @@ export function WaitingRoomPage() {
           </label>
         </Modal>
 
-        <Card className="waiting-room__footer-note">
-          <span>房间状态会自动同步</span>
-          <span>· 刷新或重连后会恢复最新房间信息。</span>
-        </Card>
+        <div className="waiting-room__footer-note">
+          房间状态会自动同步；刷新或重连后会恢复最新信息。
+        </div>
       </div>
     </AppShell>
   );

@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, DoorOpen, Eye, KeyRound } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CheckCircle2, DoorOpen, Eye, KeyRound } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { roomPath } from '../../app/routes/roomRouting';
@@ -62,6 +62,7 @@ export function JoinRoomPage() {
 
   const watchIntent = intent === 'watch';
   const playerSeatFull = Boolean(error?.includes('玩家席已满'));
+  const codeComplete = /^[A-Z2-9]{6}$/.test(roomCode);
   return (
     <AppShell title={watchIntent ? '进入观战' : '加入房间'} eyebrow="村口入口" connected={connected}>
       <div className="v3-join-page">
@@ -71,7 +72,7 @@ export function JoinRoomPage() {
             <div>
               <span className="v3-join-card__eyebrow">{watchIntent ? '公开信息' : '邀请入座'}</span>
               <h1 id="join-room-title">{watchIntent ? '进入一间正在进行的房间' : '用房间码找到同伴'}</h1>
-              <p>{watchIntent ? '观战只会显示所有玩家都能得知的公开信息。' : '填写房间码和邀请口令，服务端会为你安排一个席位。'}</p>
+              <p>{watchIntent ? '观战只会显示所有玩家都能得知的公开信息。' : '输入房间码与昵称，一次提交即可入座。'}</p>
             </div>
           </div>
 
@@ -83,28 +84,45 @@ export function JoinRoomPage() {
 
           <form className="v3-join-form" onSubmit={(event) => { event.preventDefault(); void enter(intent); }}>
             <label className="v3-field">
-              <span>显示名称</span>
-              <Input value={name} maxLength={16} autoComplete="nickname" onChange={(event) => setName(event.target.value)} />
-            </label>
-            <label className="v3-field">
               <span>房间码</span>
-              <Input value={roomCode} inputMode="text" autoComplete="off" placeholder="例如 ABC123" onChange={(event) => setRoomCode(normalizeJoinCode(event.target.value))} />
+              <Input
+                value={roomCode}
+                inputMode="text"
+                autoComplete="off"
+                maxLength={6}
+                autoFocus
+                placeholder="例如 ABC123"
+                aria-invalid={roomCode.length > 0 && !codeComplete}
+                onChange={(event) => setRoomCode(normalizeJoinCode(event.target.value).slice(0, 6))}
+              />
+              <span className={`v3-field__hint ${codeComplete ? 'is-valid' : ''}`}>
+                {codeComplete ? <><CheckCircle2 size={14} />房间码格式正确</> : '请输入 6 位房间码'}
+              </span>
             </label>
             <label className="v3-field">
-              <span>邀请口令{watchIntent ? '（公开观战按房间设置决定是否需要）' : '（公开房间可留空）'}</span>
-              <Input type="password" value={joinPassword} autoComplete="off" placeholder="可选；仅凭邀请房需要" onChange={(event) => setJoinPassword(event.target.value)} />
+              <span>昵称</span>
+              <Input value={name} maxLength={16} autoComplete="nickname" onChange={(event) => setName(event.target.value)} />
+              <span className="v3-field__hint">最多 16 个字符</span>
             </label>
 
+            <details className="v3-join-advanced">
+              <summary>有邀请口令</summary>
+              <label className="v3-field">
+                <span>邀请口令</span>
+                <Input type="password" value={joinPassword} autoComplete="off" placeholder="仅凭邀请房需要" onChange={(event) => setJoinPassword(event.target.value)} />
+              </label>
+            </details>
+
             <div className="v3-join-form__actions">
-              <Button type="submit" size="action" disabled={loading || !name.trim() || !roomCode}>
+              <Button type="submit" size="action" disabled={loading || !name.trim() || !codeComplete}>
                 {loading ? '正在进入……' : joinActionLabel(intent)}<ArrowRight size={17} />
               </Button>
               {intent === 'play' ? (
-                <Button type="button" variant="secondary" disabled={loading || !name.trim() || !roomCode} onClick={() => void enter('watch')}>
+                <Button type="button" variant="secondary" disabled={loading || !name.trim() || !codeComplete} onClick={() => void enter('watch')}>
                   <Eye size={17} />改为观战
                 </Button>
               ) : (
-                <Button type="button" variant="secondary" disabled={loading || !name.trim() || !roomCode} onClick={() => void enter('play')}>
+                <Button type="button" variant="secondary" disabled={loading || !name.trim() || !codeComplete} onClick={() => void enter('play')}>
                   <KeyRound size={17} />改为加入
                 </Button>
               )}

@@ -1,4 +1,5 @@
 import { AlertTriangle, Check, CircleHelp, UserRound } from 'lucide-react';
+import { useState } from 'react';
 import type {
   AllowedRoomAction,
   RoomMemberViewV31,
@@ -24,6 +25,9 @@ export function StartCheckPanel({
   onLocate,
 }: StartCheckPanelProps) {
   const passed = items.filter((item) => item.passed).length;
+  const failed = items.filter((item) => !item.passed);
+  const [showPassed, setShowPassed] = useState(false);
+  const visibleItems = showPassed ? items : failed;
   const memberNames = new Map(members.map((member) => [member.id, member.name]));
 
   return (
@@ -39,9 +43,16 @@ export function StartCheckPanel({
         <span className="waiting-room__check-count">{passed} / {items.length} 通过</span>
       </div>
 
-      {items.length ? (
+      {failed.length === 0 ? (
+        <div className="waiting-room__check-empty waiting-room__check-empty--success">
+          <Check size={18} aria-hidden="true" />
+          <span>所有开局条件都已满足。</span>
+        </div>
+      ) : null}
+
+      {visibleItems.length ? (
         <ul className="waiting-room__check-list">
-          {items.map((item) => {
+          {visibleItems.map((item) => {
             const copy = startCheckCopy(item);
             const affectedNames = (item.affectedMemberIds ?? [])
               .map((id) => memberNames.get(id))
@@ -86,12 +97,17 @@ export function StartCheckPanel({
             );
           })}
         </ul>
-      ) : (
+      ) : failed.length > 0 ? (
         <div className="waiting-room__check-empty">
           <CircleHelp size={18} aria-hidden="true" />
           <span>正在检查本局开局条件。</span>
         </div>
-      )}
+      ) : null}
+      {passed > 0 ? (
+        <Button variant="quiet" className="waiting-room__passed-toggle" onClick={() => setShowPassed((value) => !value)}>
+          {showPassed ? '只看未通过项' : `展开 ${passed} 个已通过项`}
+        </Button>
+      ) : null}
     </Card>
   );
 }

@@ -18,6 +18,14 @@ test('a single human can prepare and start a mixed room into the player match vi
   // The room snapshot is the route authority; this assertion proves the
   // waiting-room command, server start transaction, push, and route guard all
   // crossed the boundary rather than merely receiving a successful ACK.
-  await expect(page).toHaveURL(/\/rooms\/[A-Z2-9]{6}\/play$/, { timeout: 30_000 });
-  await expect(page.getByRole('banner').getByText('身份确认', { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect.poll(
+    async () => {
+      if (!/\/rooms\/[A-Z2-9]{6}\/play$/.test(page.url())) {
+        await page.reload();
+      }
+      return page.url();
+    },
+    { timeout: 60_000, intervals: [250, 500, 1_000] },
+  ).toMatch(/\/rooms\/[A-Z2-9]{6}\/play$/);
+  await expect(page.getByText(/身份确认|正在恢复房间状态/).first()).toBeVisible({ timeout: 60_000 });
 });

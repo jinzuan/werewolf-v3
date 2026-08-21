@@ -165,6 +165,53 @@ test('night order is guard_seer then wolf discussion/vote then witch then resolv
   );
 });
 
+test('a lone living wolf skips team discussion and may self-vote immediately', async () => {
+  const players = createPlayers();
+  const livingWolf = players.find((player) => player.role === 'wolf')!;
+  for (const wolf of players.filter((player) => player.role === 'wolf')) {
+    wolf.isAlive = wolf.id === livingWolf.id;
+  }
+  const seed = new GameSession('room-lone-wolf', players, new InMemoryEventStore());
+  const snapshot = seed.serialize();
+  snapshot.state.gameState.phase = 'night';
+  snapshot.state.gameState.nightStage = 'guard_seer';
+  snapshot.state.roleConfirmations = Object.fromEntries(players.map((player) => [player.id, true]));
+  const session = new GameSession(
+    'room-lone-wolf',
+    players,
+    new InMemoryEventStore(),
+    snapshot,
+  );
+  await session.initialize();
+
+  const guardian = players.find((player) => player.role === 'guardian')!;
+  const seer = players.find((player) => player.role === 'seer')!;
+  await dispatch(session, guardian.id, {
+    type: 'game.skip_night',
+    payload: { action: 'guard' },
+  });
+  await dispatch(session, seer.id, {
+    type: 'game.skip_night',
+    payload: { action: 'check' },
+  });
+
+  const voting = session.serialize().state;
+  assert.equal(voting.night.stage, 'wolf_vote');
+  assert.equal(voting.gameState.wolfCurrentSpeaker, null);
+  assert.deepEqual(voting.gameState.allowedActors, [{
+    playerId: livingWolf.id,
+    actions: ['wolf_vote'],
+  }]);
+
+  const selfVote = await dispatch(session, livingWolf.id, {
+    type: 'game.wolf_vote',
+    payload: { targetId: livingWolf.id },
+  });
+  assert.equal(selfVote.ok, true);
+  assert.equal(session.serialize().state.night.actions.wolfKillTargetId, livingWolf.id);
+  assert.equal(session.serialize().state.night.stage, 'witch');
+});
+
 test('seer can check once again after the first day starts the next night', async () => {
   const players = createPlayers('room-seer-every-night');
   const clock = new FakeClock();

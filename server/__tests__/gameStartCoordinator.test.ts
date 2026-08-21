@@ -3,6 +3,7 @@ import test from 'node:test';
 import { InMemoryEventStore } from '../events/store';
 import {
   AI_NAME_POOL,
+  createAINames,
   GameStartCoordinator,
   GameStartError,
   type GameStartResult,
@@ -91,6 +92,22 @@ test('role deck expands persisted roleSetup and shuffles with the secure seam', 
     (error: unknown) =>
       error instanceof RoleDeckError && error.code === 'ROLE_COUNT_MISMATCH',
   );
+});
+
+test('AI display-name pool is large, unique, neutral, and safely extends past one cycle', () => {
+  const bundledNameGlyphs = new Set([
+    ...'小雨阿杰雅诚安北子轩梓涵浩然思远清风星河王大锤李嘴张三赵六不吃香菜摸鱼稳住别浪全村希望隔壁老今天啥锅盖侠躺赢选手平无奇先苟一波好运来口墨景行书宁林深山云舒初十七白露月长松满乐程苏叶顾周予野木五麦素问和明时如',
+  ]);
+  assert.ok(AI_NAME_POOL.length >= 80 && AI_NAME_POOL.length <= 120);
+  assert.equal(new Set(AI_NAME_POOL).size, AI_NAME_POOL.length);
+  assert.ok(AI_NAME_POOL.every((name) => name.trim() === name && name.length >= 2));
+  assert.ok(AI_NAME_POOL.every((name) => !/(狼人|预言家|女巫|猎人|守卫|村民|职业|人设)/u.test(name)));
+  assert.ok(AI_NAME_POOL.every((name) => [...name].every((character) => bundledNameGlyphs.has(character))));
+
+  const extended = createAINames(AI_NAME_POOL.length + 12);
+  assert.equal(extended.length, AI_NAME_POOL.length + 12);
+  assert.equal(new Set(extended).size, extended.length);
+  assert.ok(extended.slice(AI_NAME_POOL.length).every((name) => /·2$/u.test(name)));
 });
 
 test('start CAS fills exactly the configured AI seats and deals persisted setup', async () => {

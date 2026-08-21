@@ -73,6 +73,18 @@ test('first exile vote permits abstention and a tie triggers one restricted revo
   }
 });
 
+test('ordinary exile voting permits a living player to vote for themselves', () => {
+  const eligibility = getExileVoteEligibility(players, 1);
+  assert.deepEqual(
+    validateVoteChoice('a', 'a', {
+      eligibleVoterIds: eligibility.voterIds,
+      eligibleTargetIds: eligibility.targetIds,
+      abstainAllowed: eligibility.abstainAllowed,
+    }),
+    { ok: true },
+  );
+});
+
 test('revote forbids tied candidates from voting, forbids abstention, and second tie means no exile', () => {
   const eligibility = getExileVoteEligibility(players, 2, ['c', 'd']);
   assert.deepEqual(eligibility, {

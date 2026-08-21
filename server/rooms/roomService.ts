@@ -51,6 +51,7 @@ import type { ReviewPipeline } from '../review/reviewPipeline';
 import { RoomCatalogService, defaultRoomCatalogService } from './roomCatalogService';
 import { RoomConfigValidationError } from './roomConfigValidator';
 import { GameStartCoordinator, GameStartError } from './gameStartCoordinator';
+import type { SecureRandomIndex } from './roleDeckBuilder';
 import { randomFreeSeatIndex } from './seatAllocator';
 import { RoomPolicy, RoomPolicyError, roomCounts } from './roomPolicy';
 import { RoomProjector, assertIdentityRoom } from './roomProjector';
@@ -259,6 +260,8 @@ export interface RoomServiceOptions {
   aiLogger?: AILogger;
   /** Cryptographically random offset used for human seat assignment. */
   seatRandomIndex?: (maxExclusive: number) => number;
+  /** Optional role-deck random source for deterministic integration fixtures. */
+  roleRandomIndex?: SecureRandomIndex;
   connectionRegistry?: ConnectionRegistry;
   lifecycleService?: RoomLifecycleService;
   lifecycleOutbox?: LifecycleOutbox;
@@ -414,7 +417,7 @@ export class RoomService {
         eventStore,
         evaluateStartCheck: (room) => this.policy.evaluateStartCheck(room),
         sessionOptions: options.session,
-        randomIndex: (maxExclusive) => randomInt(maxExclusive),
+        randomIndex: options.roleRandomIndex ?? ((maxExclusive) => randomInt(maxExclusive)),
         onRoomChange: (room, reason) => this.notifyRoomChange(room.code, reason),
         startLeaseMs: options.startLeaseMs,
         sessionFactory: ({ room, players, eventStore, snapshot }) =>

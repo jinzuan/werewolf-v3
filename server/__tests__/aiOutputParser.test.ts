@@ -84,3 +84,28 @@ test('prompt provider retries an invalid-context response and returns the valid 
     payload: { content: '我会核对最新票型。' },
   });
 });
+
+test('speech queue requests are parsed only when the server grants that action', () => {
+  const parseContext = {
+    allowedCommandTypes: ['game.request_speech'] as const,
+    players,
+    playerId: players[0].id,
+    role: 'villager' as const,
+    phase: 'day',
+    stage: 'discussion',
+    promptContext: { legalActions: ['request_speech' as const] },
+  };
+  const accepted = parseAIOutput(
+    '{"action":"request_speech","reason":"回应刚才的点名"}',
+    parseContext,
+  );
+  assert.equal(accepted.ok, true);
+  if (accepted.ok) assert.equal(accepted.command.type, 'game.request_speech');
+
+  const rejected = parseAIOutput(
+    '{"action":"request_speech"}',
+    { ...parseContext, allowedCommandTypes: ['game.speak'] as const },
+  );
+  assert.equal(rejected.ok, false);
+  if (!rejected.ok) assert.equal(rejected.code, 'ACTION_NOT_ALLOWED');
+});

@@ -79,7 +79,9 @@ export const speechSimilarity = (left: string, right: string): number => {
   return Math.max(jaccard, sequence);
 };
 
-const isSpeechCommand = (commandType: string): boolean =>
+const isSpeechCommand = (
+  commandType: string,
+): commandType is 'game.speak' | 'game.wolf_speak' =>
   commandType === 'game.speak' || commandType === 'game.wolf_speak';
 
 export class RepeatPolicy {

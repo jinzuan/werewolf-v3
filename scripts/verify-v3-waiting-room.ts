@@ -13,15 +13,32 @@ import { RoomService } from '../server/rooms/roomService';
 import { bindSocketTransport } from '../server/transport/socketTransport';
 
 const workspace = process.cwd();
+const allocatePort = async (): Promise<number> => {
+  const probe = createHttpServer();
+  await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+  const address = probe.address();
+  assert.ok(address && typeof address === 'object');
+  const port = address.port;
+  await new Promise<void>((resolve, reject) => {
+    probe.close((error) => error ? reject(error) : resolve());
+  });
+  return port;
+};
 const screenshotDir = path.join(
   workspace,
   'artifacts',
   'w3-p2-waiting-room',
 );
 const viewports = [
-  { name: '390', width: 390, height: 844 },
-  { name: '768', width: 768, height: 1024 },
-  { name: '1440', width: 1440, height: 1000 },
+  { name: '375x812', width: 375, height: 812 },
+  { name: '390x844', width: 390, height: 844 },
+  { name: '412x915', width: 412, height: 915 },
+  { name: '768x1024', width: 768, height: 1024 },
+  { name: '1024x768', width: 1024, height: 768 },
+  { name: '1199x800', width: 1199, height: 800 },
+  { name: '1280x900', width: 1280, height: 900 },
+  { name: '1440x900', width: 1440, height: 900 },
+  { name: '1920x1080', width: 1920, height: 1080 },
 ] as const;
 
 await mkdir(screenshotDir, { recursive: true });
@@ -181,8 +198,8 @@ const vite = await createViteServer({
   logLevel: 'silent',
   server: {
     host: '127.0.0.1',
-    port: 0,
-    strictPort: false,
+    port: await allocatePort(),
+    strictPort: true,
     watch: null,
   },
 });
@@ -218,15 +235,12 @@ try {
   }, serverUrl);
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
 
-  await page.goto(`${appUrl}/rooms/new/settings`, { waitUntil: 'domcontentloaded' });
-  await page.getByLabel('显示名称').fill('W3-P2 Host');
-  await page.getByLabel('房间名称').fill('W3-P2 Waiting Room');
-  await page.getByRole('button', { name: '创建并进入等待房' }).click();
+  await page.getByRole('button', { name: '创建房间', exact: true }).click();
   await page.waitForURL(/\/rooms\/[A-Z2-9]{6}\/waiting$/, {
     timeout: 10_000,
   });
-  await page.getByRole('heading', { name: '玩家席' }).waitFor();
-  await page.locator('.waiting-room__meta-item').first().getByText(/1\s*\/\s*12/).waitFor();
+  await page.getByRole('heading', { name: '玩家席', exact: true }).waitFor();
+  await page.locator('.waiting-room__intro-count').getByText(/1\s*\/\s*12/).waitFor();
 
   const access = await page.evaluate(async () => {
     const module = await import('/src/stores/v3Store.ts');
@@ -267,7 +281,7 @@ try {
   });
   assert.equal(joined.ok, true);
 
-  await page.locator('.waiting-room__meta-item').first().getByText(/2\s*\/\s*12/).waitFor({
+  await page.locator('.waiting-room__intro-count').getByText(/2\s*\/\s*12/).waitFor({
     timeout: 5_000,
   });
   const memberSeats = page.locator('.ww-seat--player');
@@ -286,7 +300,7 @@ try {
   assert.equal(await memberSeats.count(), 2);
   assert.equal(
     await offlineLabels.count(),
-    2,
+    1,
   );
   await captureLayout(page, 'offline');
 
@@ -303,7 +317,7 @@ try {
   console.log(
     `W3-P2 waiting-room verification passed at ${viewports.map(({ name }) => name).join('/')} px.`,
   );
-  console.log('Member count updated 1 -> 2; disconnect rendered offline.');
+  console.log('Member count updated 1 -> 2; disconnect rendered once on its seat.');
   console.log(`Screenshots: ${screenshotDir}`);
 } finally {
   guest?.disconnect();

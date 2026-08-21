@@ -1,6 +1,8 @@
 import type { DomainEvent } from '../../shared/events';
-import type { GameState, Player } from '../../shared/types';
+import type { DiscussionQueueEntry, GameState, Player } from '../../shared/types';
 import type { AIMemoryBoards } from '../ai/memory';
+import type { AIPersonaAssignments } from '../ai/persona';
+import type { SecureRandomIndex } from '../ai/randomSelection';
 import type {
   DayStage,
   NightState,
@@ -24,6 +26,17 @@ export interface DayFlowState {
   speechQueue: PlayerId[];
   speechDirection: 'clockwise' | 'counterclockwise' | null;
   speechStartPlayerId: PlayerId | null;
+  /** These fields are optional for recovery of pre-queue snapshots. */
+  discussionMode?: 'first_report' | 'free_discussion' | null;
+  discussionQueue?: DiscussionQueueEntry[];
+  discussionMentionCounts?: Record<PlayerId, number>;
+  discussionMentionOrder?: PlayerId[];
+  discussionSpokenPlayerIds?: PlayerId[];
+  discussionRequestSequence?: number;
+  discussionCycle?: number;
+  discussionCyclesRequired?: number;
+  /** Reasons are retained for server review only and never projected. */
+  discussionRequestReasons?: Record<PlayerId, string>;
   lastWordsPlayerId: PlayerId | null;
   lastWordsRemaining: number;
   pendingHunterId: PlayerId | null;
@@ -48,6 +61,8 @@ export interface SessionState {
   processedCommands: Record<string, CommandResult>;
   /** Per-seat memory boards; private board data never enters a viewer snapshot. */
   aiMemories: AIMemoryBoards;
+  /** Per-AI voice profiles; private IDs never enter Player or public projections. */
+  aiPersonas: AIPersonaAssignments;
   sequence: number;
   streamVersion: number;
 }
@@ -80,6 +95,8 @@ export interface SessionScheduler {
 export interface SessionOptions {
   now?: () => number;
   rng?: () => number;
+  /** Injectable secure index source used only for role-independent personas. */
+  personaRandomIndex?: SecureRandomIndex;
   scheduler?: SessionScheduler;
   /** Keep real-time stage timers referenced for self-driving computer rooms. */
   keepTimersRefed?: boolean;

@@ -25,6 +25,8 @@ import {
 } from './types';
 import { buildPromptPipeline } from './promptPipeline';
 import { parseAIOutput } from './outputParser';
+import { RepeatPolicy, repeatSceneFromContext } from './repeatPolicy';
+import { inspectSpeechStyle } from './speechStyleGate';
 
 interface ProviderSettings {
   key: string;
@@ -42,6 +44,9 @@ export interface HttpAIProviderOptions {
   now?: () => number;
   timeoutMs?: number;
   maxRetries?: number;
+  /** At most one model-output correction, separate from transport retries. */
+  maxCorrectionAttempts?: number;
+  repeatPolicy?: RepeatPolicy;
   baseDelayMs?: number;
   endpointPolicy?: EndpointPolicy;
   /** Resolved by the room composition root; never silently replaced. */
@@ -121,6 +126,9 @@ const parseRetryAfter = (
   return Number.isNaN(timestamp) ? 0 : Math.max(0, timestamp - now());
 };
 
+const outputCorrectionMessage = (detail?: string): string =>
+  `上一条输出未通过服务端校验（${detail || 'INVALID_OUTPUT'}）。只修正动作、JSON 格式或合法目标，不添加解释。`;
+
 const actionForCommand = (
   command: GameCommand,
 ): GameAction | undefined => {
@@ -141,6 +149,8 @@ const actionForCommand = (
       return 'speak';
     case 'game.skip_speech':
       return 'skip_speech';
+    case 'game.request_speech':
+      return 'request_speech';
     case 'game.vote':
       return command.payload.targetId === null ? 'abstain' : 'vote';
     case 'game.hunter_shoot':
@@ -238,6 +248,8 @@ export class HttpAIProvider implements AIProvider {
   private readonly now: () => number;
   private readonly timeoutMs: number;
   private readonly maxRetries: number;
+  private readonly maxCorrectionAttempts: number;
+  private readonly repeatPolicy: RepeatPolicy;
   private readonly baseDelayMs: number;
   private readonly endpointPolicy: EndpointPolicy;
   private readonly promptBudget: { maxChars?: number; maxEvents?: number };
@@ -258,6 +270,11 @@ export class HttpAIProvider implements AIProvider {
     this.now = options.now ?? Date.now;
     this.timeoutMs = options.timeoutMs ?? AI_TIMEOUT_MS;
     this.maxRetries = options.maxRetries ?? 2;
+    this.maxCorrectionAttempts = Math.max(
+      0,
+      Math.min(1, options.maxCorrectionAttempts ?? 1),
+    );
+    this.repeatPolicy = options.repeatPolicy ?? new RepeatPolicy();
     this.baseDelayMs = options.baseDelayMs ?? 250;
     this.endpointPolicy = options.endpointPolicy ?? new EndpointPolicy();
     this.promptBudget = {
@@ -347,43 +364,117 @@ export class HttpAIProvider implements AIProvider {
   }
 
   private async requestWithRetries(
-    prompt: { system: string; user: string },
+    initialPrompt: { system: string; user: string },
     context: AIRequestContext,
     signal: AbortSignal,
   ): Promise<AISuggestion> {
-      let retryCount = 0;
-      for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
-        try {
-          const response = await this.requestOnce(prompt, signal);
-          if (response.status === 429) {
-            if (attempt < this.maxRetries) {
-              const retryAfterMs = parseRetryAfter(
-                response.headers.get('retry-after'),
-                this.now,
-              );
-              const exponentialMs = this.baseDelayMs * 2 ** attempt;
-              retryCount += 1;
-              this.telemetry.recordRetry();
-              await this.sleepWithSignal(Math.max(retryAfterMs, exponentialMs), signal);
-              continue;
-            }
-            throw new ProviderError('rate_limited', retryCount, 429);
-          }
-          return parseSuggestion(response.data, context, retryCount);
-        } catch (error) {
-          if (signal.aborted) throw new ProviderError('cancelled', retryCount);
-          const normalized = normalizeError(error, retryCount);
-          const retryableStatus = [500, 502, 503, 504].includes(normalized.status ?? 0);
-          if (retryableStatus && attempt < this.maxRetries) {
+    let prompt = initialPrompt;
+    let retryCount = 0;
+    let transportRetries = 0;
+    let correctionAttempts = 0;
+
+    const applyCorrection = (instruction: string): void => {
+      correctionAttempts += 1;
+      retryCount += 1;
+      this.telemetry.recordRetry();
+      const promptContext = {
+        ...(context.promptContext ?? {}),
+        validationError: instruction,
+        requiredNovelty: instruction,
+      };
+      prompt = buildPromptPipeline(
+        { ...context, promptContext },
+        this.promptBudget,
+      ).prompt;
+    };
+
+    while (true) {
+      try {
+        const response = await this.requestOnce(prompt, signal);
+        if (response.status === 429) {
+          if (transportRetries < this.maxRetries) {
+            const retryAfterMs = parseRetryAfter(
+              response.headers.get('retry-after'),
+              this.now,
+            );
+            const exponentialMs = this.baseDelayMs * 2 ** transportRetries;
+            transportRetries += 1;
             retryCount += 1;
             this.telemetry.recordRetry();
-            await this.sleepWithSignal(this.baseDelayMs * 2 ** attempt, signal);
+            await this.sleepWithSignal(Math.max(retryAfterMs, exponentialMs), signal);
             continue;
           }
-          throw normalized;
+          throw new ProviderError('rate_limited', retryCount, 429);
         }
+
+        const suggestion = parseSuggestion(response.data, context, retryCount);
+        if (
+          suggestion.command.type === 'game.speak' ||
+          suggestion.command.type === 'game.wolf_speak'
+        ) {
+          const speech = suggestion.command.payload.content;
+          const style = inspectSpeechStyle(speech, {
+            commandType: suggestion.command.type,
+            role: context.role,
+            phase: context.phase,
+            stage: context.stage,
+            players: context.players,
+            promptContext: context.promptContext,
+          });
+          if (!style.ok) {
+            if (correctionAttempts < this.maxCorrectionAttempts) {
+              applyCorrection(style.rewriteInstruction);
+              continue;
+            }
+            throw new ProviderError(
+              'invalid_output',
+              retryCount,
+              undefined,
+              `SPEECH_STYLE:${style.issues.join(',')}`,
+            );
+          }
+          const repeat = this.repeatPolicy.inspect(
+            repeatSceneFromContext(context),
+            speech,
+          );
+          if (repeat.repeated) {
+            if (correctionAttempts < this.maxCorrectionAttempts) {
+              applyCorrection(repeat.guidance);
+              continue;
+            }
+            throw new ProviderError(
+              'invalid_output',
+              retryCount,
+              undefined,
+              'REPETITION_DETECTED',
+            );
+          }
+          this.repeatPolicy.record(repeatSceneFromContext(context), speech);
+        }
+        return suggestion;
+      } catch (error) {
+        if (signal.aborted) throw new ProviderError('cancelled', retryCount);
+        const normalized = normalizeError(error, retryCount);
+        if (
+          normalized.errorClass === 'invalid_output' &&
+          !normalized.detail?.startsWith('SPEECH_STYLE:') &&
+          correctionAttempts < this.maxCorrectionAttempts
+        ) {
+          applyCorrection(outputCorrectionMessage(normalized.detail));
+          continue;
+        }
+        const retryableStatus = [500, 502, 503, 504].includes(normalized.status ?? 0);
+        if (retryableStatus && transportRetries < this.maxRetries) {
+          const delayMs = this.baseDelayMs * 2 ** transportRetries;
+          transportRetries += 1;
+          retryCount += 1;
+          this.telemetry.recordRetry();
+          await this.sleepWithSignal(delayMs, signal);
+          continue;
+        }
+        throw normalized;
       }
-      throw new ProviderError('rate_limited', retryCount, 429);
+    }
   }
 
   private async requestOnce(

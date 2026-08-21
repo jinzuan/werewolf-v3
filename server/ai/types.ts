@@ -2,6 +2,7 @@ import type { DomainEvent, ProjectedSnapshot, ViewerContext } from '../../shared
 import type { GameCommand } from '../../shared/protocol';
 import type { GameAction, Player, Role } from '../../shared/types';
 import type { AIMemoryBoard } from './memory';
+import type { AIPersonaProfile } from './persona';
 
 export interface AILegalTarget {
   id: string;
@@ -46,6 +47,8 @@ export interface AIPromptContext {
   publicEvents?: string[];
   /** Structured behavior reference selected by the server for this role/stage. */
   experience?: string;
+  /** Requesting AI's private voice profile; it never changes facts or actions. */
+  personaVoiceProfile?: AIPersonaProfile;
   /** The requesting AI's server-maintained, role-specific memory board. */
   memoryBoard?: AIMemoryBoard;
   publicVoteHistory?: string[];
@@ -117,6 +120,7 @@ export interface AIContextProjection {
   };
   experience: string;
   memoryBoard?: AIMemoryBoard;
+  personaVoiceProfile?: AIPersonaProfile;
   allowedActions: GameAction[];
   actorStatus?: AIActorStatus;
 }

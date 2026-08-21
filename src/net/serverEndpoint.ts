@@ -15,14 +15,19 @@ const clientEnv: Record<string, unknown> = (import.meta as ImportMeta & {
 const buildMode = String(clientEnv.MODE ?? 'development');
 const explicitEnvironment = clientEnv.VITE_WW_ENV;
 const configuredServerUrl = clientEnv.VITE_V3_SERVER_URL;
+const allowPublicDevelopmentHttp = clientEnv.VITE_WW_ALLOW_PUBLIC_HTTP === '1';
 
 export type ClientEnvironment = 'production' | 'test' | 'development';
 
 export const clientEnvironment = (): ClientEnvironment => {
-  if (explicitEnvironment === 'production' || buildMode === 'production') {
-    return 'production';
-  }
-  return explicitEnvironment === 'test' ? 'test' : 'development';
+  // An explicit deployment environment must override Vite's build mode.
+  // Development deployments are often served by `vite build` + `vite preview`,
+  // whose MODE is `production` even though the server is intentionally a
+  // public development instance.
+  if (explicitEnvironment === 'production') return 'production';
+  if (explicitEnvironment === 'test') return 'test';
+  if (explicitEnvironment === 'development') return 'development';
+  return buildMode === 'production' ? 'production' : 'development';
 };
 
 export const endpointDiagnosticsEnabled = (): boolean =>
@@ -54,10 +59,15 @@ export const validateSocketUrl = (value: string): string => {
     }
   } else if (
     parsed.protocol === 'http:' &&
-    environment !== 'test' &&
-    (!isLoopback(parsed.hostname) || !['development', 'test'].includes(environment))
+    environment === 'development' &&
+    !isLoopback(parsed.hostname) &&
+    !(
+      allowPublicDevelopmentHttp &&
+      typeof window !== 'undefined' &&
+      parsed.hostname === window.location.hostname
+    )
   ) {
-    throw new SocketConfigurationError('开发/测试明文服务只能使用 loopback 地址');
+    throw new SocketConfigurationError('开发环境公网明文服务必须显式开启，且只能连接当前页面所在主机');
   } else if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
     throw new SocketConfigurationError('服务器地址必须使用 HTTPS 或 HTTP');
   }

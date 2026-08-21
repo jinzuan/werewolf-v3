@@ -814,7 +814,15 @@ export function RoomWizardPage() {
     const response = await createRoomWithOptions(optionsFromDraft(draft));
     if (response.ok === false) {
       const mapped = serverIssuesToWizardIssues('issues' in response ? response.issues : undefined);
-      const nextIssues = mapped.length > 0 ? mapped : [{ path: '', message: messageForIssue(response.code), step: codeFallbackStep(response.code), errorCode: response.code }];
+      const isTransportFailure = 'kind' in response && response.kind === 'transport';
+      const transportMessage = isTransportFailure
+        ? '连接暂时不可用，请重试。'
+        : messageForIssue(response.code);
+      const nextIssues = isTransportFailure
+        ? [{ path: '', message: transportMessage, step: 'players' as const, errorCode: response.code }]
+        : mapped.length > 0
+          ? mapped
+          : [{ path: '', message: transportMessage, step: codeFallbackStep(response.code), errorCode: response.code }];
       setServerIssues(nextIssues);
       navigate(wizardPathForStep(nextIssues[0].step));
       setBusy(false);
@@ -853,7 +861,7 @@ export function RoomWizardPage() {
         <div><span>创建房间 · 设置完成后直接入座</span><h1>房间设置</h1><p>先决定今晚有多少人，约定怎么玩</p></div>
         <Badge tone="info">房间设置</Badge>
       </div>
-      {serverIssues.length > 0 ? <div className="v3-alert v3-alert--error" role="alert">创建未完成，请按提示修改；你的设置已保留。</div> : null}
+      {serverIssues.length > 0 ? <div className="v3-alert v3-alert--error" role="alert">{serverIssues[0]?.message ?? '创建未完成，请按提示修改；你的设置已保留。'} 设置已保留，可重试。</div> : null}
       {error && serverIssues.length === 0 ? <div className="v3-alert v3-alert--error" role="alert">{error}</div> : null}
       <div className="v3-wizard-grid v3-room-settings-grid" style={grid}>
         <section className="v3-wizard-main" aria-label="房间设置">

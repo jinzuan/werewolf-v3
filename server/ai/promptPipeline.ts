@@ -1,6 +1,6 @@
 import type { DomainEvent } from '../../shared/events';
 import type { GameAction, Player } from '../../shared/types';
-import { buildAIPrompt, type AIPrompt } from './promptBuilder';
+import { buildAIPrompt, PromptBuildError, type AIPrompt } from './promptBuilder';
 import { buildAIRuntimeContext } from './runtimeContext';
 import type { AIRequestContext, AIPromptContext } from './types';
 
@@ -44,6 +44,15 @@ const bounded = <T>(items: readonly T[] | undefined, limit: number): T[] =>
 const truncateText = (value: string | undefined, max: number): string | undefined =>
   value && value.length > max ? value.slice(-max) : value;
 
+const compactText = (value: string | undefined, max: number): string | undefined =>
+  value && value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value;
+
+const compactItems = (
+  items: readonly string[] | undefined,
+  limit: number,
+  maxItemChars: number,
+): string[] => bounded(items, limit).map((item) => compactText(item, maxItemChars) ?? '');
+
 const basePromptContext = (context: AIRequestContext): AIPromptContext => {
   const events = projectedEvents(context);
   const projectedPlayers: Player[] = context.projectedContext?.snapshot.players ?? context.players.map((player) => ({
@@ -67,6 +76,9 @@ const basePromptContext = (context: AIRequestContext): AIPromptContext => {
     visibleEvents: events,
     allowedActions,
     experience: context.projectedContext?.experience,
+    personaVoiceProfile:
+      context.projectedContext?.personaVoiceProfile ??
+      context.promptContext?.personaVoiceProfile,
   });
   const ruleset = context.projectedContext?.rules;
   return {
@@ -80,7 +92,7 @@ const basePromptContext = (context: AIRequestContext): AIPromptContext => {
     // the contract explicit even when the history is empty.
     requiredNovelty:
       context.promptContext?.requiredNovelty ??
-      'RepeatPolicy：不得复述已经使用的主张或证据，必须回应新信息或提出具体下一步。',
+      '轮到你时先尝试推进一件有价值的事：探查、追问、回应、暂时站边或信息交换均可。只在没有新信息、没有被点名且没有必须澄清的冲突时才可合法跳过；不得复述旧主张或旧证据。',
     experience: [
       context.projectedContext?.experience,
       context.promptContext?.experience,
@@ -105,6 +117,12 @@ const trimContext = (
     currentRoundSpeeches: bounded(promptContext.currentRoundSpeeches, Math.min(24, maxEvents)),
     publicVoteHistory: bounded(promptContext.publicVoteHistory, Math.min(64, maxEvents)),
     ownPreviousSpeeches: bounded(promptContext.ownPreviousSpeeches, 12),
+    alreadyStatedClaims: bounded(promptContext.alreadyStatedClaims, 12),
+    alreadyUsedEvidence: bounded(promptContext.alreadyUsedEvidence, 12),
+    newInformationSinceLastTurn: bounded(
+      promptContext.newInformationSinceLastTurn,
+      Math.min(24, maxEvents),
+    ),
     wolfPrivateChat: bounded(promptContext.wolfPrivateChat, Math.min(32, maxEvents)),
     privateRoleFacts: bounded(promptContext.privateRoleFacts, Math.min(48, maxEvents)),
     lastWordsVisibleDeathHistory: bounded(promptContext.lastWordsVisibleDeathHistory, 48),
@@ -113,6 +131,48 @@ const trimContext = (
     situationSummary: truncateText(promptContext.situationSummary, 2_000),
   };
   return { context: { ...context, promptContext: nextPromptContext }, droppedEvents };
+};
+
+const compactContext = (
+  context: AIRequestContext,
+  promptContext: AIPromptContext,
+): { context: AIRequestContext; droppedEvents: number } => {
+  const visibleEvents = bounded(promptContext.visibleEvents, 6);
+  const nextPromptContext: AIPromptContext = {
+    ...promptContext,
+    visibleEvents,
+    publicEvents: compactItems(promptContext.publicEvents, 6, 180),
+    publicSpeeches: compactItems(promptContext.publicSpeeches, 4, 180),
+    currentRoundSpeeches: compactItems(promptContext.currentRoundSpeeches, 4, 180),
+    publicVoteHistory: compactItems(promptContext.publicVoteHistory, 6, 120),
+    ownPreviousSpeeches: compactItems(promptContext.ownPreviousSpeeches, 4, 180),
+    alreadyStatedClaims: compactItems(promptContext.alreadyStatedClaims, 4, 180),
+    alreadyUsedEvidence: compactItems(promptContext.alreadyUsedEvidence, 4, 180),
+    newInformationSinceLastTurn: compactItems(
+      promptContext.newInformationSinceLastTurn,
+      4,
+      180,
+    ),
+    privateRoleFacts: compactItems(promptContext.privateRoleFacts, 6, 180),
+    wolfPrivateChat: compactItems(promptContext.wolfPrivateChat, 4, 180),
+    lastWordsVisibleDeathHistory: compactItems(
+      promptContext.lastWordsVisibleDeathHistory,
+      6,
+      160,
+    ),
+    lastWordsVisibleActionHistory: compactItems(
+      promptContext.lastWordsVisibleActionHistory,
+      6,
+      160,
+    ),
+    experience: compactText(promptContext.experience, 600),
+    requiredNovelty: compactText(promptContext.requiredNovelty, 300),
+    phaseTask: compactText(promptContext.phaseTask, 400),
+  };
+  return {
+    context: { ...context, promptContext: nextPromptContext },
+    droppedEvents: (promptContext.visibleEvents?.length ?? 0) - visibleEvents.length,
+  };
 };
 
 /**
@@ -129,6 +189,7 @@ export const buildPromptPipeline = (
   let promptContext = basePromptContext(input);
   let current = trimContext(input, promptContext, maxEvents);
   let prompt = buildAIPrompt(current.context);
+  const initialCharacters = prompt.system.length + prompt.user.length;
   let effectiveEvents = maxEvents;
 
   // Trim oldest event/context material first.  RuleSet and output contract
@@ -139,21 +200,29 @@ export const buildPromptPipeline = (
     prompt = buildAIPrompt(current.context);
   }
 
-  // A pathological custom experience/situation should not defeat the hard
-  // budget.  Preserve the system contract and trim only user context.
+  // Once history trimming is exhausted, render the same canonical fragments
+  // in compact mode. Optional style elaboration and duplicated context are
+  // omitted, while safety, RuleSet, experience and the output contract remain
+  // complete sections rather than being cut at an arbitrary character.
   if (prompt.system.length + prompt.user.length > maxChars) {
-    const availableUser = Math.max(1_000, maxChars - prompt.system.length);
-    prompt = { ...prompt, user: prompt.user.slice(-availableUser) };
+    current = compactContext(input, promptContext);
+    prompt = buildAIPrompt(current.context, undefined, 'compact');
   }
   const total = prompt.system.length + prompt.user.length;
+  if (total > maxChars) {
+    throw new PromptBuildError(
+      `Compact safety prompt exceeds maxChars (${total} > ${maxChars}).`,
+      'PROMPT_CONTEXT_INVALID',
+    );
+  }
   return {
     prompt,
     context: clone(current.context),
     budget: {
       maxChars,
       maxEvents,
-      droppedEvents: Math.max(0, (promptContext.visibleEvents?.length ?? 0) - effectiveEvents),
-      droppedCharacters: Math.max(0, total - maxChars),
+      droppedEvents: Math.max(0, current.droppedEvents),
+      droppedCharacters: Math.max(0, initialCharacters - total),
     },
   };
 };

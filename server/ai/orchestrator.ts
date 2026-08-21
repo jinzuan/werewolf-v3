@@ -20,6 +20,7 @@ import {
 import { defaultAILogger, type AILogger } from './types';
 import { randomElement } from './randomSelection';
 import { recommendedWolfTarget } from './memory';
+import { shouldPreferSpeechSkip } from './speechDecisionContext';
 
 export interface AIOrchestratorOptions {
   timeoutMs?: number;
@@ -48,6 +49,8 @@ const commandTypeForAction = (action: GameAction): GameCommand['type'] => {
       return 'game.speak';
     case 'skip_speech':
       return 'game.skip_speech';
+    case 'request_speech':
+      return 'game.request_speech';
     case 'vote':
     case 'abstain':
       return 'game.vote';
@@ -497,6 +500,21 @@ export class AIOrchestrator {
         reason: 'deterministic wolf speech fallback',
       };
     }
+    if (
+      allowed.has('speak') &&
+      allowed.has('skip_speech') &&
+      shouldPreferSpeechSkip(context)
+    ) {
+      return {
+        command: {
+          type: 'game.skip_speech',
+          payload: isLastWordsContext(context)
+            ? { reason: '没有新的信息可补充' }
+            : {},
+        },
+        reason: 'no-content speech skip fallback',
+      };
+    }
     if (allowed.has('speak')) {
       return {
         command: {
@@ -510,6 +528,12 @@ export class AIOrchestrator {
         reason: isLastWordsContext(context)
           ? 'contextual last-words fallback'
           : 'deterministic speech fallback',
+      };
+    }
+    if (allowed.has('request_speech')) {
+      return {
+        command: { type: 'game.request_speech', payload: {} },
+        reason: 'requesting a public speech queue turn',
       };
     }
     if (allowed.has('skip_speech')) {
@@ -605,6 +629,21 @@ export class AIOrchestrator {
         reason: 'role confirmation is the only allowed action',
       };
     }
+    if (
+      allowed.has('speak') &&
+      allowed.has('skip_speech') &&
+      shouldPreferSpeechSkip(context)
+    ) {
+      return {
+        command: {
+          type: 'game.skip_speech',
+          payload: isLastWordsContext(context)
+            ? { reason: '没有新的信息可补充' }
+            : {},
+        },
+        reason: 'no-content speech skip while provider unavailable',
+      };
+    }
     if (allowed.has('speak')) {
       return {
         command: {
@@ -618,6 +657,12 @@ export class AIOrchestrator {
         reason: isLastWordsContext(context)
           ? 'last-words content is required'
           : 'speech content is required',
+      };
+    }
+    if (allowed.has('request_speech')) {
+      return {
+        command: { type: 'game.request_speech', payload: {} },
+        reason: 'speech queue request is the only available action',
       };
     }
     if (allowed.has('skip_speech')) {

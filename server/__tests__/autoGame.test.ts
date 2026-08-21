@@ -43,7 +43,10 @@ test('a 12 AI room advances without human commands to an ended game', async () =
   });
 
   try {
-    const deadline = Date.now() + 15_000;
+    // Each day now contains the initial report plus two complete free-discussion
+    // cycles. A 12-seat smoke game can therefore schedule well over one
+    // hundred bounded AI decisions before reaching a terminal state.
+    const deadline = Date.now() + 45_000;
     let record = await application.rooms.getRecord(created.room.code);
     while (record?.status !== 'ended' && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 10));

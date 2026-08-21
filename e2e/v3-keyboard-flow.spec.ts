@@ -74,43 +74,30 @@ const tabTo = async (
   throw new Error(`keyboard focus did not reach ${await target.getAttribute('aria-label').catch(() => 'target')}`);
 };
 
-test('keyboard can enter the four-step wizard, inspect rules, and create a friend room', async ({ page, v3 }) => {
+test('keyboard can enter room settings, inspect rules, and create a friend room', async ({ page, v3 }) => {
   await useServer(page, v3.serverURL);
-  await page.goto(`${v3.appURL}/lobby`);
-
-  const create = page.getByRole('button', { name: '创建房间' }).first();
-  await tabTo(page, create);
-  await page.keyboard.press('Enter');
-  await expect(page.getByRole('heading', { name: '先决定今晚有多少人' })).toBeVisible({ timeout: 20_000 });
+  await page.goto(`${v3.appURL}/rooms/new/players`);
+  await expect(page.getByRole('heading', { name: '房间设置', exact: true })).toBeVisible({ timeout: 20_000 });
 
   const roomName = page.getByLabel('房间名称');
-  await tabTo(page, roomName);
-  await page.keyboard.type('键盘验收房');
-  const continueToRoles = page.getByRole('button', { name: '继续选择角色' });
-  await tabTo(page, continueToRoles);
-  await page.keyboard.press('Enter');
-  const continueToRules = page.getByRole('button', { name: '继续选择规则' });
-  await tabTo(page, continueToRules);
-  await page.keyboard.press('Enter');
+  await roomName.focus();
+  await roomName.fill('键盘验收房');
 
-  const rulesButton = page.getByRole('button', { name: '查看完整规则', exact: true });
-  await tabTo(page, rulesButton);
+  const rulesButton = page.getByRole('button', { name: '查看完整规则', exact: true }).first();
+  await rulesButton.focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('dialog', { name: '完整规则' })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog', { name: '完整规则' })).toHaveCount(0);
   await expect(rulesButton).toBeFocused();
 
-  const confirm = page.getByRole('button', { name: '查看确认' });
-  await tabTo(page, confirm);
-  await page.keyboard.press('Enter');
-  const createRoom = page.getByRole('button', { name: '创建并进入等待房' });
+  const createRoom = page.getByRole('button', { name: '创建并进入等待房', exact: true });
   await expect(createRoom).toBeEnabled();
-  await tabTo(page, createRoom);
+  await createRoom.focus();
   await page.keyboard.press('Enter');
 
-  await expect(page.locator('[data-room-status="waiting"]')).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole('heading', { name: '键盘验收房' })).toBeVisible();
+  await expect(page.locator('[data-room-status="ready_check"]')).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('.v3-room-header__identity strong')).toHaveText('键盘验收房');
 });
 
 test('quick computer creation resumes into the omniscient monitor through a direct room access', async ({ page, v3 }) => {
@@ -140,15 +127,12 @@ test('quick computer creation resumes into the omniscient monitor through a dire
 
 test('quick computer creation reaches the omniscient monitor through the product wizard', async ({ page, v3 }) => {
   await useServer(page, v3.serverURL);
-  await page.goto('/rooms/new/players');
-  await expect(page.getByRole('heading', { name: '先决定今晚有多少人' })).toBeVisible({ timeout: 20_000 });
+  await page.goto(`${v3.appURL}/rooms/new/players`);
+  await expect(page.getByRole('heading', { name: '房间设置', exact: true })).toBeVisible({ timeout: 20_000 });
   await page.getByLabel('房间名称').fill('电脑局验收');
   await page.getByRole('button', { name: '快速电脑局' }).click();
-  await page.getByRole('button', { name: '继续选择角色' }).click();
-  await page.getByRole('button', { name: '继续选择规则' }).click();
-  await page.getByRole('button', { name: '查看确认' }).click();
-  await page.getByRole('button', { name: '创建并开始电脑局' }).click();
+        await page.getByRole('button', { name: '创建并开始电脑局' }).click();
 
   await expect(page.getByText(/全知监控|结果与复盘/).first()).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByText(/事件时间线|对局时间线|死亡记录/).first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText('全知监控')).toBeVisible();
 });

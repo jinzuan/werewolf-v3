@@ -132,15 +132,22 @@ test('regular speech prompt permits independent judgment, positive interaction, 
     stage: 'speech',
   });
 
-  assert.match(prompt.system, /回应上一位或当前焦点/);
-  assert.match(prompt.system, /不是每次发言的必填开头/);
-  assert.match(prompt.system, /认可一个好判断/);
-  assert.match(prompt.system, /暂认好人/);
-  assert.match(prompt.system, /金水.*银水/);
-  assert.match(prompt.system, /选择 skip_speech/);
-  assert.match(prompt.system, /归票.*落票/);
-  assert.match(prompt.system, /哦对对对/);
-  assert.match(prompt.user, /skip_speech/);
+  assert.match(prompt.system, /公共发言决策上下文/);
+  assert.match(prompt.system, /报告信息.*认可具体判断.*保留观察/u);
+  assert.match(prompt.system, /不要求每次形成怀疑对象/u);
+  assert.match(prompt.system, /没有点名不能被自动视为无效发言/u);
+  assert.match(prompt.system, /不要求回应上一位/u);
+  assert.match(
+    prompt.system,
+    /只有在没有新证据[\s\S]*且没有人点名、追问或反驳你时，才能在规则允许时跳过发言/u,
+  );
+  assert.match(prompt.system, /“加分”表示某个明确的公开事实/u);
+  assert.match(prompt.user, /本轮可选主动作：[\s\S]*认可一个具体判断/u);
+  assert.match(prompt.user, /“指认一个人”不是必填项/u);
+  assert.match(
+    prompt.user,
+    /仅当前没有真正的新信息、没有被点名，也没有必须澄清的冲突：可输出合法的 skip_speech/u,
+  );
 });
 
 test('speech continuity guidance is not injected into a non-speech action', () => {

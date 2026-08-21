@@ -69,6 +69,7 @@ import {
   sessionIdentityChanged,
   type V3Session,
 } from '../../v3/session';
+import { gameActionsReady } from '../../v3/actions';
 import { getSessionPersistence } from '../../runtime/sessionPersistence';
 import { subscribeV3ReconnectLifecycle } from '../../runtime/reconnectLifecycle';
 
@@ -254,10 +255,13 @@ const buildDefaultOptions = (
     catalogVersion: catalog.catalogVersion,
     roomName: roomName.trim(),
     creator: { name: name.trim(), avatarId: 'avatar-player' },
-    mode: auto ? 'quick_computer' : 'human',
+    // The default lobby action always enters a waiting room. `auto` means
+    // AI fills vacant seats at start; it no longer means an immediate all-AI
+    // monitor session.
+    mode: auto ? 'mixed' : 'human',
     visibility: 'invite_only',
     maxPlayers: preset.playerCount,
-    minHumanPlayers: auto ? 0 : preset.playerCount,
+    minHumanPlayers: auto ? 1 : preset.playerCount,
     computerSeats: 0,
     aiFillPolicy: auto ? 'fill_to_max' : 'none',
     roleSetup: { ...preset.roleSetup },
@@ -274,6 +278,8 @@ export interface V3Store {
   connected: boolean;
   loading: boolean;
   recovering: boolean;
+  syncStatus: 'idle' | 'syncing' | 'synced' | 'error';
+  syncError: string | null;
   /** Explicit recovery state for route guards and retryable resolver errors. */
   authorityStatus: 'resolving' | 'authorized' | 'unauthorized' | 'error';
   error: string | null;
@@ -378,6 +384,8 @@ export const useV3Store = create<V3Store>()((set, get) => {
       loading: false,
       pendingRoomCommand: null,
       recovering: false,
+      syncStatus: 'idle',
+      syncError: null,
       authorityStatus: 'unauthorized',
       error: reason,
       // A room list is a separate lobby projection. Never carry it across
@@ -589,18 +597,23 @@ export const useV3Store = create<V3Store>()((set, get) => {
     ) {
       return true;
     }
+    set({ syncStatus: 'syncing', syncError: null });
     const response = await fetchV3Snapshot(
       current.session.roomCode,
       current.session.actorId,
     );
     if (response.ok === false) {
-      set({ error: responseMessage(response) });
+      const message = responseMessage(response);
+      set({ error: message, syncStatus: 'error', syncError: message });
       return false;
     }
     const accepted = acceptSnapshot(
       response.snapshot,
     );
-    if (!accepted) return false;
+    if (!accepted) {
+      set({ syncStatus: 'error', syncError: '服务端快照未通过校验。' });
+      return false;
+    }
 
     const session = get().session;
     if (!session) return false;
@@ -612,7 +625,8 @@ export const useV3Store = create<V3Store>()((set, get) => {
         afterSequence,
       );
       if (eventsResponse.ok === false) {
-        set({ error: responseMessage(eventsResponse) });
+        const message = responseMessage(eventsResponse);
+        set({ error: message, syncStatus: 'error', syncError: message });
         return false;
       }
       const merged = acceptEnvelope({
@@ -627,7 +641,10 @@ export const useV3Store = create<V3Store>()((set, get) => {
         nextBeforeSequence: eventsResponse.nextBeforeSequence,
         events: eventsResponse.events,
       });
-      if (!merged) return false;
+      if (!merged) {
+        set({ syncStatus: 'error', syncError: '事件同步未通过校验。' });
+        return false;
+      }
       if (eventsResponse.hasMore !== true) break;
 
       const nextAfterSequence = eventsResponse.nextAfterSequence;
@@ -637,12 +654,14 @@ export const useV3Store = create<V3Store>()((set, get) => {
         nextAfterSequence === undefined ||
         nextAfterSequence <= afterSequence && currentAfterSequence <= afterSequence
       ) {
-        set({ error: '事件补拉游标未前进，已停止自动重试。' });
+        const message = '事件补拉游标未前进，已停止自动重试。';
+        set({ error: message, syncStatus: 'error', syncError: message });
         return false;
       }
       afterSequence = Math.max(nextAfterSequence, currentAfterSequence);
     }
     if (get().room?.status === 'ended') await refreshReview();
+    set({ syncStatus: 'synced', syncError: null });
     return true;
   };
 
@@ -654,7 +673,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
         set({ authorityStatus: 'unauthorized', recovering: false });
         return false;
       }
-      set({ recovering: true, authorityStatus: 'resolving', error: null });
+      set({ recovering: true, authorityStatus: 'resolving', error: null, syncStatus: 'syncing', syncError: null });
       try {
         resetV3Connection();
         const response = await resumeV3Room(
@@ -674,7 +693,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
           ) {
             clearAuthority(message);
           } else {
-            set({ recovering: false, authorityStatus: 'error', error: message });
+            set({ recovering: false, authorityStatus: 'error', error: message, syncStatus: 'error', syncError: message });
           }
           return false;
         }
@@ -725,11 +744,13 @@ export const useV3Store = create<V3Store>()((set, get) => {
           recovering: false,
           authorityStatus: projected ? 'authorized' : 'error',
           error: projected ? null : get().error,
+          syncStatus: projected ? 'synced' : 'error',
+          syncError: projected ? null : get().syncError ?? get().error,
         });
         return projected;
       } catch (error) {
         const message = recoveryExceptionMessage(error);
-        set({ recovering: false, authorityStatus: 'error', error: message });
+        set({ recovering: false, authorityStatus: 'error', error: message, syncStatus: 'error', syncError: message });
         return false;
       }
     })().finally(() => {
@@ -742,11 +763,12 @@ export const useV3Store = create<V3Store>()((set, get) => {
     if (subscriptionCleanup) return;
     const cleanups = [
       subscribeV3Connection((connected) => {
-        set({ connected });
+        set({ connected, ...(connected ? {} : { syncStatus: 'syncing', syncError: null }) });
         if (connected && get().session && !get().recovering) void recover();
       }),
       subscribeV3ReconnectLifecycle(() => {
         const current = get();
+        set({ syncStatus: 'syncing', syncError: null });
         if (current.session && !current.recovering) void recover();
       }),
       subscribeV3Messages((message) => {
@@ -990,6 +1012,8 @@ export const useV3Store = create<V3Store>()((set, get) => {
     connected: false,
     loading: false,
     recovering: false,
+    syncStatus: 'idle',
+    syncError: null,
     authorityStatus: loadSession() ? 'resolving' : 'unauthorized',
     error: null,
     catalogStatus: 'idle',
@@ -1401,6 +1425,17 @@ export const useV3Store = create<V3Store>()((set, get) => {
       const current = get();
       const snapshot = current.snapshot;
       if (!current.session || !snapshot) return false;
+      if (!gameActionsReady({
+        connected: current.connected,
+        recovering: current.recovering,
+        syncStatus: current.syncStatus,
+        authorityStatus: current.authorityStatus,
+        hasSnapshot: true,
+      })) {
+        // Recovery is not an authentication failure. Keep the durable identity
+        // and wait for the authoritative snapshot before sending an action.
+        return false;
+      }
       set({ loading: true, error: null });
       const response = await sendGameCommand(
         current.session.actorId,

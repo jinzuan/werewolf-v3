@@ -40,6 +40,7 @@ export const DOMAIN_EVENT_TYPES = [
   'day.discussion_started',
   'day.speech',
   'day.speech_skipped',
+  'day.speech_queue_updated',
   'day.voting_started',
   'day.vote_cast',
   'day.revote_required',

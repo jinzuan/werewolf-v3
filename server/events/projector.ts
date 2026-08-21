@@ -10,6 +10,14 @@ import type { GameState, Player, ProjectedGameState } from '../../shared/types';
 interface StateEventPayload extends Record<string, unknown> {
   gameState: GameState;
   players: Player[];
+  sessionState?: {
+    dayFlow?: {
+      stage?: string | null;
+      voteRound?: 1 | 2;
+      voteCandidates?: string[];
+      votes?: Record<string, string | null>;
+    };
+  };
 }
 
 const isOmniscient = (viewer: ViewerContext): boolean =>
@@ -169,12 +177,56 @@ const projectGameState = (
   return projected;
 };
 
+const projectOwnVoteSubmission = (
+  payload: StateEventPayload,
+  viewer: ViewerContext,
+): ProjectedGameState['voteSubmission'] => {
+  if (viewer.kind !== 'player') return null;
+  const flow = payload.sessionState?.dayFlow;
+  if (flow?.stage !== 'voting' || !flow.votes) return null;
+  const candidates = new Set(flow.voteCandidates ?? []);
+  const voterIds = payload.players
+    .filter((player) =>
+      player.isAlive &&
+      (flow.voteRound !== 2 || !candidates.has(player.id)),
+    )
+    .map((player) => player.id);
+  const submitted = Object.prototype.hasOwnProperty.call(
+    flow.votes,
+    viewer.playerId,
+  );
+  const target = flow.votes[viewer.playerId];
+  const submittedCount = voterIds.filter((playerId) =>
+    Object.prototype.hasOwnProperty.call(flow.votes, playerId),
+  ).length;
+  return {
+    submitted,
+    targetId: submitted && (typeof target === 'string' || target === null)
+      ? target
+      : null,
+    submittedCount,
+    totalVoters: voterIds.length,
+    waitingFor: Math.max(0, voterIds.length - submittedCount),
+  };
+};
+
 export class VisibilityProjector implements EventProjector {
   projectEvent(
     event: DomainEvent,
     viewer: ViewerContext,
   ): DomainEvent | undefined {
-    return canSeeEvent(event, viewer) ? structuredClone(event) : undefined;
+    if (!canSeeEvent(event, viewer)) return undefined;
+    const projected = structuredClone(event);
+    // The state event is an internal recovery checkpoint. Omniscient viewers
+    // may inspect game facts, but per-AI voice assignments are not game facts
+    // and must never leave the private session boundary.
+    if (projected.eventType === 'game.state_updated') {
+      const state = (projected.payload as { sessionState?: unknown }).sessionState;
+      if (state && typeof state === 'object' && !Array.isArray(state)) {
+        delete (state as { aiPersonas?: unknown }).aiPersonas;
+      }
+    }
+    return projected;
   }
 
   projectSnapshot(
@@ -187,12 +239,14 @@ export class VisibilityProjector implements EventProjector {
     if (!stateEvent) throw new Error('Game stream has no state snapshot event.');
 
     const payload = stateEvent.event.payload as StateEventPayload;
+    const gameState = projectGameState(payload.gameState, viewer);
+    gameState.voteSubmission = projectOwnVoteSubmission(payload, viewer);
     return {
       roomId: stateEvent.event.roomId,
       gameId: stateEvent.event.gameId,
       viewer,
       gameState: {
-        ...projectGameState(payload.gameState, viewer),
+        ...gameState,
         // Older persisted state events do not carry this authority field. The
         // session projector still has to emit the complete V3.1 shape.
         stageStartedAt: payload.gameState.stageStartedAt ?? null,
