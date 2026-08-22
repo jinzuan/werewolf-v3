@@ -704,6 +704,7 @@ button.v3-player-seat { width: 100%; cursor: pointer; }
 .v3-discussion-queue, .v3-vote-status, .v3-mobile-private-result, .v3-event-private { display: grid; gap: 4px; margin-bottom: var(--ww-space-3); padding: 9px 11px; border-inline-start: 3px solid var(--v3-seat-color, var(--ww-action-primary)); border-radius: 8px; background: var(--ww-bg-subtle); color: var(--ww-text-muted); font-size: var(--ww-text-caption-size); }
 .v3-discussion-queue strong, .v3-vote-status strong, .v3-mobile-private-result strong { color: var(--ww-text-strong); }
 .v3-discussion-queue__heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.v3-discussion-queue__timeout { color: #E7BE69; }
 .v3-discussion-queue__list { max-height: 180px; display: grid; gap: 5px; margin: 2px 0; padding: 0; overflow-y: auto; list-style: none; }
 .v3-discussion-queue__list li { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 7px; border-inline-start: 2px solid var(--v3-seat-color, var(--ww-border-strong)); background: color-mix(in srgb, var(--v3-seat-color, var(--ww-bg-raised)) 8%, transparent); }
 .v3-discussion-queue__list li span { min-width: 0; overflow: hidden; color: var(--ww-text-default); text-overflow: ellipsis; white-space: nowrap; }

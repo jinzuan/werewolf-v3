@@ -126,6 +126,9 @@ export interface GameState {
   discussionMentionCounts?: Record<string, number>;
   discussionCycle?: number;
   discussionCyclesRequired?: number;
+  /** Per-player free-discussion allowance and consumption. */
+  discussionSpeechQuota?: number;
+  discussionSpeechCounts?: Record<string, number>;
   /** Public authority for the active day vote; ballots remain server-private. */
   voteRound?: 1 | 2;
   /** Empty for an ordinary vote, narrowed to the public tied set on revote. */

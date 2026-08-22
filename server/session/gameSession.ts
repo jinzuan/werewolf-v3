@@ -90,7 +90,8 @@ const TEXT_LIMITS = {
 } as const;
 
 const DISCUSSION_MENTION_LIMIT = 3;
-const DISCUSSION_WAIT_TIMEOUT_MS = 15_000;
+const DISCUSSION_WAIT_TIMEOUT_MS = 30_000;
+const FREE_DISCUSSION_SPEECH_QUOTA = 2;
 const FREE_DISCUSSION_CYCLES = Math.max(
   1,
   RULE_VALUES['speech.speech_limits'].free_discussion_cycles,
@@ -142,6 +143,8 @@ const emptyDayFlow = (): DayFlowState => ({
   discussionRequestSequence: 0,
   discussionCycle: 0,
   discussionCyclesRequired: FREE_DISCUSSION_CYCLES,
+  discussionSpeechQuota: FREE_DISCUSSION_SPEECH_QUOTA,
+  discussionSpeechCounts: {},
   discussionRequestReasons: {},
   lastWordsPlayerId: null,
   lastWordsRemaining: 0,
@@ -169,8 +172,10 @@ const createGameState = (roomId: string): AuthorityGameState => ({
   daySpeechMode: null,
   discussionQueue: [],
     discussionMentionCounts: {},
-    discussionCycle: 0,
-    discussionCyclesRequired: FREE_DISCUSSION_CYCLES,
+  discussionCycle: 0,
+  discussionCyclesRequired: FREE_DISCUSSION_CYCLES,
+  discussionSpeechQuota: FREE_DISCUSSION_SPEECH_QUOTA,
+  discussionSpeechCounts: {},
   voteRound: 1,
   voteCandidates: [],
   actionDone: {},
@@ -1131,13 +1136,29 @@ export class GameSession {
       return events;
     }
     if (isDiscussion) {
+      flow.discussionSpeechCounts ??= {};
+      flow.discussionSpeechQuota ??= FREE_DISCUSSION_SPEECH_QUOTA;
+      flow.discussionSpeechCounts[actor.id] =
+        (flow.discussionSpeechCounts[actor.id] ?? 0) + 1;
+      flow.discussionSpokenPlayerIds ??= [];
+      if (!flow.discussionSpokenPlayerIds.includes(actor.id)) {
+        flow.discussionSpokenPlayerIds.push(actor.id);
+      }
       this.removeDiscussionQueueEntry(actor.id);
       this.promoteDiscussionWaiters();
       this.sortDiscussionQueue();
-      const discussionContinues = flow.speechQueue.length > 0 ||
-        this.beginNextDiscussionCycle();
+      const discussionContinues = flow.speechQueue.length > 0;
+      const hasRemainingQuota = this.hasDiscussionQuota();
       if (discussionContinues) {
         this.state.gameState.currentSpeaker = flow.speechQueue[0];
+        this.advanceRevision();
+        events.push(this.discussionQueueEvent(correlationId));
+      } else if (hasRemainingQuota) {
+        // Free discussion is demand-driven. When the current speaker finishes
+        // and nobody has been mentioned or inserted, keep the stage open with
+        // a visible 30-second idle countdown instead of manufacturing a full
+        // second lap for every player.
+        this.state.gameState.currentSpeaker = null;
         this.advanceRevision();
         events.push(this.discussionQueueEvent(correlationId));
       } else {
@@ -1163,7 +1184,7 @@ export class GameSession {
         this.state.gameState.currentSpeaker = flow.speechQueue[0];
         this.advanceRevision();
       } else {
-      const hasDiscussionQueue = this.beginDiscussion();
+      this.beginDiscussion();
       events.push(
         this.event(
           'day.discussion_started',
@@ -1173,23 +1194,10 @@ export class GameSession {
           correlationId,
         ),
       );
-      if (hasDiscussionQueue) {
-        events.push(this.discussionQueueEvent(correlationId));
-      } else {
-        // A report round with no mentions has no authoritative next speaker.
-        // Close the discussion hand-off immediately instead of leaving a
-        // discussion stage with a null speaker that can only spin or deadlock.
-        this.beginVoting(1, []);
-        events.push(
-          this.event(
-            'day.voting_started',
-            { round: 1, discussionEmpty: true },
-            'public_timeline',
-            undefined,
-            correlationId,
-          ),
-        );
-      }
+      // An empty free-discussion queue is an intentional waiting state. Keep
+      // the stage open for insert/mention requests and let the 30s deadline
+      // move the table to voting if nobody steps forward.
+      events.push(this.discussionQueueEvent(correlationId));
       }
     }
     return events;
@@ -1515,21 +1523,26 @@ export class GameSession {
     flow.discussionMode = 'free_discussion';
     this.state.dayFlow.stage = 'discussion';
     flow.discussionCycle = 1;
-    flow.discussionCyclesRequired = FREE_DISCUSSION_CYCLES;
-    const queued = this.discussionCycleOrder();
+    flow.discussionSpeechQuota = FREE_DISCUSSION_SPEECH_QUOTA;
+    flow.discussionSpeechCounts ??= {};
+    // Do not enqueue every living player. Free discussion starts with players
+    // mentioned during the ordered report; everyone else enters only after an
+    // explicit insert request or a later mention.
+    const aliveIds = new Set(this.alivePlayers().map((player) => player.id));
+    const queued = [...new Set(flow.discussionMentionOrder ?? [])]
+      .filter((playerId) => aliveIds.has(playerId))
+      .filter((playerId) => (flow.discussionSpeechCounts?.[playerId] ?? 0) < (flow.discussionSpeechQuota ?? FREE_DISCUSSION_SPEECH_QUOTA));
     flow.discussionQueue = queued.map((playerId, index) => ({
       playerId,
       position: index + 1,
       enqueuedAt: this.now(),
       requestOrder: index + 1,
-      source: (flow.discussionMentionCounts?.[playerId] ?? 0) > 0
-        ? 'mention'
-        : 'free_cycle',
+      source: 'mention',
       mentionCount: Math.min(
         DISCUSSION_MENTION_LIMIT,
         flow.discussionMentionCounts?.[playerId] ?? 0,
       ),
-      priority: (flow.discussionMentionCounts?.[playerId] ?? 0) >= 2 ? 1 : 0,
+      priority: Math.min(3, flow.discussionMentionCounts?.[playerId] ?? 0),
       cycle: 1,
     }));
     this.state.gameState.currentSpeaker = null;
@@ -1547,6 +1560,13 @@ export class GameSession {
     this.refreshDiscussionQueueProjection();
     this.advanceRevision();
     return flow.speechQueue.length > 0;
+  }
+
+  private hasDiscussionQuota(): boolean {
+    const quota = this.state.dayFlow.discussionSpeechQuota ?? FREE_DISCUSSION_SPEECH_QUOTA;
+    return this.alivePlayers().some((player) =>
+      (this.state.dayFlow.discussionSpeechCounts?.[player.id] ?? 0) < quota,
+    );
   }
 
   private discussionCycleOrder(): PlayerId[] {
@@ -1596,6 +1616,12 @@ export class GameSession {
         mode: this.state.dayFlow.discussionMode ?? null,
         cycle: this.state.dayFlow.discussionCycle ?? 0,
         cyclesRequired: this.state.dayFlow.discussionCyclesRequired ?? FREE_DISCUSSION_CYCLES,
+        speechQuota: this.state.dayFlow.discussionSpeechQuota ?? FREE_DISCUSSION_SPEECH_QUOTA,
+        speechCounts: { ...(this.state.dayFlow.discussionSpeechCounts ?? {}) },
+        remainingQuotaPlayers: this.alivePlayers().filter((player) =>
+          (this.state.dayFlow.discussionSpeechCounts?.[player.id] ?? 0) <
+          (this.state.dayFlow.discussionSpeechQuota ?? FREE_DISCUSSION_SPEECH_QUOTA),
+        ).length,
         currentSpeaker: this.state.gameState.currentSpeaker,
         queue: (this.state.dayFlow.discussionQueue ?? []).map((entry) => ({
           playerId: entry.playerId,
@@ -1645,6 +1671,11 @@ export class GameSession {
     this.state.gameState.discussionCycle = flow.discussionCycle ?? 0;
     this.state.gameState.discussionCyclesRequired =
       flow.discussionCyclesRequired ?? FREE_DISCUSSION_CYCLES;
+    this.state.gameState.discussionSpeechQuota =
+      flow.discussionSpeechQuota ?? FREE_DISCUSSION_SPEECH_QUOTA;
+    this.state.gameState.discussionSpeechCounts = {
+      ...(flow.discussionSpeechCounts ?? {}),
+    };
   }
 
   private sortDiscussionQueue(): void {
@@ -1654,7 +1685,11 @@ export class GameSession {
     flow.discussionQueue.sort((left, right) => {
       if (left.playerId === currentSpeaker) return -1;
       if (right.playerId === currentSpeaker) return 1;
-      return right.priority - left.priority ||
+      const waitScore = (entry: DiscussionQueueEntry): number =>
+        Math.min(3, Math.floor(Math.max(0, this.now() - entry.enqueuedAt) / 10_000));
+      const score = (entry: DiscussionQueueEntry): number =>
+        entry.priority + Math.min(3, entry.mentionCount) * 2 + waitScore(entry);
+      return score(right) - score(left) ||
         left.requestOrder - right.requestOrder ||
         left.enqueuedAt - right.enqueuedAt;
     });
@@ -1691,6 +1726,9 @@ export class GameSession {
     const flow = this.state.dayFlow;
     flow.discussionQueue ??= [];
     flow.discussionMentionCounts ??= {};
+    flow.discussionSpeechQuota ??= FREE_DISCUSSION_SPEECH_QUOTA;
+    flow.discussionSpeechCounts ??= {};
+    if ((flow.discussionSpeechCounts[playerId] ?? 0) >= flow.discussionSpeechQuota) return;
     const mentionCount = Math.min(
       DISCUSSION_MENTION_LIMIT,
       flow.discussionMentionCounts[playerId] ?? 0,
@@ -1920,6 +1958,8 @@ export class GameSession {
       this.state.gameState.discussionMentionCounts = {};
       this.state.gameState.discussionCycle = 0;
       this.state.gameState.discussionCyclesRequired = FREE_DISCUSSION_CYCLES;
+      this.state.gameState.discussionSpeechQuota = FREE_DISCUSSION_SPEECH_QUOTA;
+      this.state.gameState.discussionSpeechCounts = {};
     }
     const allowed = this.allowedActors();
     this.state.gameState.allowedActors = allowed;
@@ -2056,10 +2096,16 @@ export class GameSession {
       this.state.gameState.phase === 'day' &&
       this.state.dayFlow.stage === 'dawn' &&
       this.humanPlayerCount() === 1;
+    const waitingForFreeDiscussion =
+      this.state.gameState.phase === 'day' &&
+      this.state.dayFlow.stage === 'discussion' &&
+      this.state.gameState.currentSpeaker === null;
     if (this.state.gameState.phase === 'ended') {
       this.state.gameState.deadlineTs = null;
     } else if (autoAdvanceSingleHumanDawn) {
       this.state.gameState.deadlineTs = stageStartedAt;
+    } else if (waitingForFreeDiscussion) {
+      this.state.gameState.deadlineTs = stageStartedAt + DISCUSSION_WAIT_TIMEOUT_MS;
     } else if (this.humanPlayerCount() === 1) {
       this.state.gameState.deadlineTs = null;
     } else {
@@ -2588,6 +2634,8 @@ export class GameSession {
     legacy.dayFlow.discussionCycle ??=
       legacy.dayFlow.discussionMode === 'free_discussion' ? 1 : 0;
     legacy.dayFlow.discussionCyclesRequired ??= FREE_DISCUSSION_CYCLES;
+    legacy.dayFlow.discussionSpeechQuota ??= FREE_DISCUSSION_SPEECH_QUOTA;
+    legacy.dayFlow.discussionSpeechCounts ??= {};
     legacy.dayFlow.discussionRequestReasons ??= {};
     if (legacy.dayFlow.discussionMode === undefined) {
       legacy.dayFlow.discussionMode = legacy.dayFlow.stage === 'discussion'
@@ -2628,6 +2676,11 @@ export class GameSession {
     gameState.discussionCycle ??= legacy.dayFlow.discussionCycle ?? 0;
     gameState.discussionCyclesRequired ??=
       legacy.dayFlow.discussionCyclesRequired ?? FREE_DISCUSSION_CYCLES;
+    gameState.discussionSpeechQuota ??=
+      legacy.dayFlow.discussionSpeechQuota ?? FREE_DISCUSSION_SPEECH_QUOTA;
+    gameState.discussionSpeechCounts ??= {
+      ...(legacy.dayFlow.discussionSpeechCounts ?? {}),
+    };
     legacy.roleConfirmations ??= Object.fromEntries(
       this.state.players.map((player) => [player.id, true]),
     );

@@ -90,8 +90,8 @@ const completeFreeDiscussion = async (
   assert.fail('free discussion did not advance to voting');
 };
 
-test('first report follows seat order and starts the configured full discussion cycles', async () => {
-  const { session, players } = await createSpeechSession();
+test('first report follows seat order and free discussion starts from mentioned players', async () => {
+  const { session, players, clock } = await createSpeechSession();
   await completeFirstReport(session, players, (index) =>
     index === 0 ? '@seer-2 先听他。' : index === 1 ? '@wolf-3 你回应一下。' : '先过。',
   );
@@ -109,17 +109,18 @@ test('first report follows seat order and starts the configured full discussion 
   assert.equal(state.dayFlow.stage, 'discussion');
   assert.equal(state.dayFlow.discussionMode, 'free_discussion');
   assert.equal(state.dayFlow.discussionCycle, 1);
-  assert.equal(state.dayFlow.discussionCyclesRequired, 2);
-  assert.deepEqual(new Set(state.dayFlow.speechQueue), new Set(players.map((player) => player.id)));
-  assert.equal(state.dayFlow.speechQueue.length, players.length);
+  assert.equal(state.dayFlow.discussionSpeechQuota, 2);
+  assert.deepEqual(new Set(state.dayFlow.speechQueue), new Set(['seer-2', 'wolf-3']));
+  assert.equal(state.dayFlow.speechQueue.length, 2);
   assert.ok(state.gameState.discussionQueue?.some((entry) => entry.source === 'mention'));
 });
 
-test('free discussion gives every living seat two complete cycles before voting', async () => {
-  const { session, players } = await createSpeechSession();
+test('free discussion waits for requests and moves to voting after the idle deadline', async () => {
+  const { session, players, clock } = await createSpeechSession();
   await completeFirstReport(session, players);
   assert.equal(session.serialize().state.dayFlow.stage, 'discussion');
-  await completeFreeDiscussion(session);
+  assert.equal(session.serialize().state.gameState.currentSpeaker, null);
+  await clock.advance(30_001);
   assert.equal(session.serialize().state.dayFlow.stage, 'voting');
 
   const skipped = (await session.eventsFor({
@@ -129,11 +130,7 @@ test('free discussion gives every living seat two complete cycles before voting'
   })).filter((event) =>
     event.eventType === 'day.speech_skipped' && event.payload.discussion === true,
   );
-  assert.equal(skipped.length, players.length * 2);
-  assert.deepEqual(
-    [...new Set(skipped.map((event) => event.payload.discussionRound))],
-    [1, 2],
-  );
+  assert.equal(skipped.length, 0);
 });
 
 test('mention counts are capped and insert requests share the same queue', async () => {
@@ -190,7 +187,7 @@ test('mention counts are capped and insert requests share the same queue', async
       .map((entry) => entry.playerId),
     requesters.map((player) => player.id),
   );
-  await clock.advance(15_001);
+  await clock.advance(30_001);
 });
 
 test('waiting queue entries gain deterministic timeout priority and voting overwrites one ballot', async () => {
@@ -198,11 +195,11 @@ test('waiting queue entries gain deterministic timeout priority and voting overw
   await completeFirstReport(session, players, (index) =>
     index === 0 ? '@seer-2 请回应。' : '先过。',
   );
-  const current = session.serialize().state.gameState.currentSpeaker;
-  const requesters = players.filter((player) => player.id !== current).slice(0, 2);
+  const requesters = players.slice(0, 2);
   await dispatch(session, requesters[0].id, { type: 'game.request_speech', payload: {} });
+  const current = session.serialize().state.gameState.currentSpeaker;
   await dispatch(session, requesters[1].id, { type: 'game.request_speech', payload: {} });
-  clock.elapseWithoutRunningTasks(15_001);
+  clock.elapseWithoutRunningTasks(30_001);
   await dispatch(session, current!, { type: 'game.skip_speech', payload: {} });
   assert.equal(session.serialize().state.dayFlow.discussionQueue?.[0]?.source, 'wait_timeout');
 

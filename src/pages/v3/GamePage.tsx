@@ -209,6 +209,10 @@ export function GamePage() {
     (dayStage === 'speech' || dayStage === 'discussion');
   const discussionCycle = state?.discussionCycle ?? 1;
   const discussionCyclesRequired = state?.discussionCyclesRequired ?? 2;
+  const discussionSpeechQuota = state?.discussionSpeechQuota ?? 2;
+  const discussionSpeechCounts = state?.discussionSpeechCounts ?? {};
+  const discussionRemainingQuota = players.filter((player) => player.isAlive)
+    .reduce((total, player) => total + Math.max(0, discussionSpeechQuota - (discussionSpeechCounts[player.id] ?? 0)), 0);
   const draftScopeKey = [
     snapshot?.gameId ?? 'no-game',
     state?.day ?? 0,
@@ -818,11 +822,14 @@ export function GamePage() {
                     <strong>发言队列</strong>
                     <span>
                       {freeDiscussion
-                        ? `自由讨论 ${discussionCycle}/${discussionCyclesRequired} 轮`
+                        ? `自由讨论 · 剩余发言 ${discussionRemainingQuota}`
                         : '首轮信息报告'}
                     </span>
                   </div>
                   <span>当前发言者：<strong>{currentSpeakerName ?? '暂无'}</strong></span>
+                  {freeDiscussion && !currentSpeakerId ? (
+                    <span className="v3-discussion-queue__timeout">暂无主动发言，{countdown ?? '30秒'} 后进入投票</span>
+                  ) : null}
                   <span>
                     已发言：{discussionSpokenPlayerIds.length > 0
                       ? discussionSpokenPlayerIds.map((id) => playerName(id)).join('、')
@@ -845,7 +852,7 @@ export function GamePage() {
                                   : `你 · 队列第 ${entry.position} 位`
                                 : entry.source === 'insert'
                                   ? '已插队'
-                                  : '待发言'}
+                                  : `待发言 · 已用 ${discussionSpeechCounts[entry.playerId] ?? 0}/${discussionSpeechQuota}`}
                           </small>
                         </li>
                       ))}

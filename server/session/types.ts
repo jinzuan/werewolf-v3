@@ -35,6 +35,9 @@ export interface DayFlowState {
   discussionRequestSequence?: number;
   discussionCycle?: number;
   discussionCyclesRequired?: number;
+  /** Free discussion is quota-based; cycles remain only for legacy snapshots. */
+  discussionSpeechQuota?: number;
+  discussionSpeechCounts?: Record<PlayerId, number>;
   /** Reasons are retained for server review only and never projected. */
   discussionRequestReasons?: Record<PlayerId, string>;
   lastWordsPlayerId: PlayerId | null;
