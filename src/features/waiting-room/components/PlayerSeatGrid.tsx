@@ -56,7 +56,7 @@ export function PlayerSeatGrid({
   const canClaim = room.viewer.kind === 'spectator' && isActionAllowed(room, 'claim_seat');
   const canApply = isActionAllowed(room, 'request_seat');
   const canBecomeSpectator = room.viewer.kind === 'player' && isActionAllowed(room, 'become_spectator');
-  const canKick = isHost && selectedMember?.kind === 'player' && !selectedMember.isAI && !selectedMember.isHost && isActionAllowed(room, 'kick_player');
+  const canKick = isHost && selectedMember?.kind === 'player' && !selectedMember.isHost && isActionAllowed(room, 'kick_player');
   const canAddAI = isHost && isActionAllowed(room, 'add_ai') && room.config.mode !== 'human';
   const autoFillEnabled = room.config.aiFillPolicy !== 'none';
   const openSeat = (seatIndex: number, member: RoomMemberViewV31 | null | undefined) => {
@@ -176,7 +176,7 @@ export function PlayerSeatGrid({
           {!selectedMember && canClaim ? <Button size="action" onClick={() => run(() => onClaimSeat?.(selectedSeat!))}><UserRoundPlus size={17} />进入玩家席</Button> : null}
           {selectedMember && !selectedMember.isAI && selectedMember.id !== viewerId && canApply ? <Button variant="secondary" onClick={() => run(onRequestSeat)}><UserRoundPlus size={17} />申请玩家位置</Button> : null}
           {selectedMember?.id === viewerId && canBecomeSpectator ? <Button variant="secondary" onClick={() => run(onBecomeSpectator)}><Users size={17} />加入观战席</Button> : null}
-          {canKick ? <Button variant="quiet" onClick={() => run(() => onKickPlayer?.(selectedMember!.id))}><X size={17} />房主移出玩家席</Button> : null}
+          {canKick ? <Button variant="quiet" onClick={() => run(() => onKickPlayer?.(selectedMember!.id))}><X size={17} />{selectedMember?.isAI ? '删除 AI 玩家' : '房主移出玩家席'}</Button> : null}
           {!selectedMember && canAddAI ? <Button variant="secondary" onClick={() => run(() => onAddAI?.(selectedSeat!))}><Bot size={17} />添加 AI 玩家</Button> : null}
           {!selectedMember && onInvitePlayer && isActionAllowed(room, 'invite') ? <Button variant="secondary" onClick={() => run(onInvitePlayer)}><UserPlus size={17} />邀请真人玩家</Button> : null}
           <p className="waiting-room__seat-menu-note">观战席不占用玩家席位。</p>
