@@ -106,6 +106,7 @@ export function WaitingRoomPage() {
   const [seatRequestOpen, setSeatRequestOpen] = useState(false);
   const [approvedSeatRequest, setApprovedSeatRequest] = useState<RoomSeatRequestView | null>(null);
   const [inviteFallback, setInviteFallback] = useState<string | null>(null);
+  const [inviteFeedback, setInviteFeedback] = useState<string | null>(null);
   const copyTimer = useRef<number | null>(null);
 
   useEffect(() => () => {
@@ -144,9 +145,11 @@ export function WaitingRoomPage() {
       await copyText(invite);
       setInviteFallback(null);
       setPageError(null);
+      setInviteFeedback(intent === 'watch' ? '已复制观战邀请链接。' : '已复制玩家邀请链接。');
       if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
-      copyTimer.current = window.setTimeout(() => undefined, 2_400);
+      copyTimer.current = window.setTimeout(() => setInviteFeedback(null), 2_400);
     } catch {
+      setInviteFeedback(null);
       setInviteFallback(invite);
       setPageError('自动复制失败，已打开邀请信息；请手动复制后发送给朋友。');
     }
@@ -230,6 +233,11 @@ export function WaitingRoomPage() {
         {error ? (
           <div className="v3-alert v3-alert--error waiting-room__error" role="alert">
             {error}
+          </div>
+        ) : null}
+        {inviteFeedback ? (
+          <div className="v3-alert v3-alert--success waiting-room__feedback" role="status" aria-live="polite">
+            {inviteFeedback}
           </div>
         ) : null}
 

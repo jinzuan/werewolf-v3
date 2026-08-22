@@ -76,6 +76,12 @@ import { subscribeV3ReconnectLifecycle } from '../../runtime/reconnectLifecycle'
 const storage = (): Storage | null =>
   typeof localStorage === 'undefined' ? null : localStorage;
 
+// A stale room session can be discovered while the user is simply opening the
+// lobby. Keep that cleanup silent there; room-scoped routes still receive the
+// actionable recovery message.
+const shouldExposeRoomError = (): boolean =>
+  typeof window === 'undefined' || window.location.pathname.startsWith('/rooms');
+
 const loadSession = (): V3Session | null => {
   const target = storage();
   return target ? readV3Session(target) : null;
@@ -387,7 +393,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
       syncStatus: 'idle',
       syncError: null,
       authorityStatus: 'unauthorized',
-      error: reason,
+      error: reason && shouldExposeRoomError() ? reason : null,
       // A room list is a separate lobby projection. Never carry it across
       // identity changes, otherwise a new room can render stale room cards.
       rooms: [],

@@ -592,10 +592,10 @@ details:not([open]) > :not(summary) { display: none; }
   display: grid;
   grid-template-columns: minmax(0, .82fr) minmax(0, 1.8fr) minmax(0, .82fr);
   align-items: center;
-  gap: var(--ww-space-4);
+  gap: var(--v3-workspace-gap);
   margin-bottom: var(--ww-space-3);
   padding: 13px 18px;
-  border: 1px solid color-mix(in srgb, var(--ww-action-primary) 28%, var(--ww-border-default));
+  border: var(--v3-panel-border);
   border-radius: var(--ww-radius-card);
   background: linear-gradient(110deg, color-mix(in srgb, var(--ww-action-primary) 9%, var(--ww-bg-surface)), var(--ww-bg-surface));
 }
@@ -614,13 +614,18 @@ details:not([open]) > :not(summary) { display: none; }
   align-items: stretch;
   gap: var(--v3-workspace-gap);
 }
+.v3-game-layout { grid-template-areas: 'left center right'; grid-template-rows: minmax(0, 1fr); }
 .v3-game-workspace { width: 100%; min-width: 0; min-height: 0; flex: 1 1 auto; overflow: hidden; }
 .v3-match-layout__left { grid-area: left; min-width: 0; min-height: 0; overflow: hidden; }
 .v3-match-layout__center { grid-area: center; min-width: 0; min-height: 0; overflow: hidden; }
 .v3-match-layout__right { grid-area: right; min-width: 0; min-height: 0; overflow: hidden; }
 .v3-match-layout__footer { grid-area: footer; min-width: 0; }
 .v3-match-side, .v3-desktop-info-rail, .v3-monitor-stream, .v3-spectate-stream { min-width: 0; min-height: 0; display: grid; gap: var(--ww-space-3); }
-.v3-desktop-info-rail { height: 100%; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.v3-desktop-info-rail { height: 100%; grid-template-rows: minmax(0, 1fr) minmax(220px, .85fr); overflow: hidden; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.v3-desktop-info-rail:has(> .v3-event-private) { grid-template-rows: minmax(0, 1fr) auto minmax(220px, .85fr); }
+.v3-desktop-info-rail > .v3-action-panel,
+.v3-desktop-info-rail > .v3-event-details { min-height: 0; overflow-y: auto; }
+.v3-desktop-info-rail > .v3-event-details { max-height: none; }
 .v3-player-rail { height: 100%; min-height: 0; display: flex; flex-direction: column; gap: var(--ww-space-3); overflow: hidden; }
 .v3-player-rail > .v3-identity-panel { flex: none; }
 .v3-player-panel { padding: 0; overflow: hidden; }
@@ -822,6 +827,7 @@ button.ww-role-card { width: 100%; color: inherit; cursor: pointer; }
 }
 
 @media (min-width: 1280px) {
+  .v3-stage-summary { grid-template-columns: var(--v3-workspace-columns); }
   .v3-desktop-match-layout {
     grid-template-columns: var(--v3-workspace-columns);
   }
