@@ -176,7 +176,7 @@ export function RoomConfigEditor({
                   allowPublicSpectators: event.target.checked,
                 }))}
               />
-              <span>允许公开观战</span>
+              <span>允许观战及玩家协助邀请</span>
             </label>
             <label className="waiting-room__editor-check">
               <input
