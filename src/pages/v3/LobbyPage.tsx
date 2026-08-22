@@ -1,4 +1,4 @@
-import { ArrowRight, DoorOpen, LoaderCircle, Radio } from 'lucide-react';
+import { ArrowRight, Bot, DoorOpen, LoaderCircle, Radio } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppShell } from '../../components/shell/AppShell';
@@ -41,6 +41,7 @@ export function LobbyPage() {
   const roomsLoading = useV3Store((state) => state.roomsLoading);
   const loading = useV3Store((state) => state.loading);
   const createRoom = useV3Store((state) => state.createRoom);
+  const createQuickComputerRoom = useV3Store((state) => state.createQuickComputerRoom);
   const joinRoom = useV3Store((state) => state.joinRoom);
   const spectateRoom = useV3Store((state) => state.spectateRoom);
   const [joiningCode, setJoiningCode] = useState<string | null>(null);
@@ -51,6 +52,16 @@ export function LobbyPage() {
     setCreating(true);
     const nickname = writePlayerNickname(readPlayerNickname());
     const accepted = await createRoom(nickname, `${nickname}的月影房`, true);
+    setCreating(false);
+    const createdRoom = useV3Store.getState().room;
+    if (accepted && createdRoom) navigate(roomPath(createdRoom.code), { replace: true });
+  };
+
+  const createQuickRoom = async () => {
+    if (creating || loading) return;
+    setCreating(true);
+    const nickname = writePlayerNickname(readPlayerNickname());
+    const accepted = await createQuickComputerRoom(nickname, `${nickname}的全AI房`);
     setCreating(false);
     const createdRoom = useV3Store.getState().room;
     if (accepted && createdRoom) navigate(roomPath(createdRoom.code), { replace: true });
@@ -73,11 +84,15 @@ export function LobbyPage() {
         <div className="v3-lobby-hero__copy">
           <span className="v3-lobby-hero__eyebrow">月影村 · 今夜开席</span>
           <h1 id="lobby-hero-title">邀请朋友，点亮一局狼人杀</h1>
-          <p>按标准 12 人配置立即开房，进入等待房后再按需要调整设置。</p>
+          <p>可以邀请真人，也可以直接开启一局全 AI 对局。</p>
           <div className="v3-lobby-hero__actions">
             <Button size="action" disabled={creating || loading} onClick={() => void createDefaultRoom()}>
               {creating ? <LoaderCircle className="v3-spin" size={17} /> : null}
               {creating ? '正在创建…' : '创建房间'}{creating ? null : <ArrowRight size={17} />}
+            </Button>
+            <Button variant="secondary" size="action" disabled={creating || loading} onClick={() => void createQuickRoom()}>
+              {creating ? <LoaderCircle className="v3-spin" size={17} /> : <Bot size={17} />}
+              {creating ? '正在创建…' : '全 AI 开局'}
             </Button>
             <Button variant="secondary" onClick={() => navigate('/rooms/join')}>
               <DoorOpen size={17} />加入房间

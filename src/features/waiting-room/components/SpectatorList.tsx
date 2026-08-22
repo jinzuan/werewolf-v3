@@ -58,7 +58,7 @@ export function SpectatorList({ room, embedded = false, onInvite }: SpectatorLis
       <summary>
         <span><Eye size={17} aria-hidden="true" />观战席</span>
         <span className="waiting-room__section-heading-actions">
-          {onInvite ? <Button variant="quiet" onClick={(event) => { event.preventDefault(); onInvite(); }}><UserPlus size={15} />邀请</Button> : null}
+          {onInvite ? <Button variant="quiet" onClick={(event) => { event.preventDefault(); onInvite(); }}><UserPlus size={15} />邀请观战</Button> : null}
           <Badge tone="info">{spectators.length} 人</Badge>
         </span>
       </summary>

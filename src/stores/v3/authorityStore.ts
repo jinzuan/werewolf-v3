@@ -251,7 +251,7 @@ const buildDefaultOptions = (
   catalog: RoomCreationCatalog,
   name: string,
   roomName: string,
-  auto: boolean,
+  mode: 'human' | 'mixed' | 'quick_computer',
 ): CreateRoomOptionsV31 | null => {
   const preset = catalog.rolePresets.find(
     (candidate) => candidate.enabled,
@@ -264,12 +264,12 @@ const buildDefaultOptions = (
     // The default lobby action always enters a waiting room. `auto` means
     // AI fills vacant seats at start; it no longer means an immediate all-AI
     // monitor session.
-    mode: auto ? 'mixed' : 'human',
+    mode,
     visibility: 'invite_only',
     maxPlayers: preset.playerCount,
-    minHumanPlayers: auto ? 1 : preset.playerCount,
+    minHumanPlayers: mode === 'quick_computer' ? 0 : mode === 'mixed' ? 1 : preset.playerCount,
     computerSeats: 0,
-    aiFillPolicy: auto ? 'fill_to_max' : 'none',
+    aiFillPolicy: mode === 'human' ? 'none' : 'fill_to_max',
     roleSetup: { ...preset.roleSetup },
     rolePresetId: preset.id,
     rulesetId: preset.rulesetId,
@@ -318,6 +318,7 @@ export interface V3Store {
     roomName: string,
     auto: boolean,
   ) => Promise<boolean>;
+  createQuickComputerRoom: (name: string, roomName: string) => Promise<boolean>;
   /** Full V3.1 create action used by the four-step room wizard. */
   createRoomWithOptions: (options: CreateRoomOptionsV31) => Promise<ClientAck<RoomAccess>>;
   joinRoom: (
@@ -1190,7 +1191,27 @@ export const useV3Store = create<V3Store>()((set, get) => {
         catalogResponse.catalog,
         name,
         roomName,
-        auto,
+        auto ? 'mixed' : 'human',
+      );
+      if (!options) {
+        set({ error: '当前没有可用的房间规则。', authorityStatus: 'error' });
+        return false;
+      }
+      return (await get().createRoomWithOptions(options)).ok;
+    },
+
+    createQuickComputerRoom: async (name, roomName) => {
+      const catalogResponse = await getV3Catalog();
+      if (catalogResponse.ok === false) {
+        set({ error: responseMessage(catalogResponse) });
+        return false;
+      }
+      set({ catalog: catalogResponse.catalog, catalogStatus: 'ready' });
+      const options = buildDefaultOptions(
+        catalogResponse.catalog,
+        name,
+        roomName,
+        'quick_computer',
       );
       if (!options) {
         set({ error: '当前没有可用的房间规则。', authorityStatus: 'error' });

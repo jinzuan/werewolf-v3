@@ -17,7 +17,7 @@ import { SpectatorList } from './SpectatorList';
 interface PlayerSeatGridProps {
   room: RoomViewV31;
   onSeatListFocus?: () => void;
-  onClaimSeat?: (seatIndex: number) => void;
+  onClaimSeat?: (seatIndex?: number) => void;
   onAddAI?: (seatIndex: number) => void;
   onBecomeSpectator?: () => void;
   onRequestSeat?: () => void;
@@ -85,6 +85,8 @@ export function PlayerSeatGrid({
         </div>
         <span className="waiting-room__section-heading-actions">
           {onInvitePlayer && isActionAllowed(room, 'invite') ? <Button variant="quiet" onClick={onInvitePlayer}><UserPlus size={15} />邀请玩家</Button> : null}
+          {canBecomeSpectator && onBecomeSpectator ? <Button variant="quiet" onClick={onBecomeSpectator}><Users size={15} />进入观战席</Button> : null}
+          {canClaim && onClaimSeat ? <Button variant="quiet" onClick={() => onClaimSeat()}><UserRoundPlus size={15} />进入玩家席</Button> : null}
           <span className="waiting-room__check-count">{occupied} / {seats.length}</span>
         </span>
       </div>
