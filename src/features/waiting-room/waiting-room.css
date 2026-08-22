@@ -64,6 +64,7 @@
 .waiting-room__section-heading h2 { margin: 0; color: var(--ww-text-strong); font-size: var(--ww-text-module-title-size); line-height: 1.3; }
 .waiting-room__section-heading-actions { margin-inline-start: auto; display: inline-flex; align-items: center; gap: var(--ww-space-2); }
 .waiting-room__section-heading-actions .v3-button { min-height: 34px; padding-inline: 10px; }
+.waiting-room__invite-label-compact { display: none; }
 .waiting-room__section-icon { width: 36px; height: 36px; display: grid; flex: none; place-items: center; border-radius: 10px; background: color-mix(in srgb, var(--ww-action-primary) 12%, var(--ww-bg-subtle)); color: var(--ww-action-primary); }
 .waiting-room__check-count, .waiting-room__quick-settings-status { margin-left: auto; color: var(--ww-text-muted); font-family: var(--ww-font-family-number); font-size: var(--ww-text-caption-size); white-space: nowrap; }
 
@@ -272,4 +273,9 @@
   .waiting-room__seat-grid { grid-template-columns: 1fr; }
   .waiting-room__action-list, .waiting-room__action-list--secondary { grid-template-columns: 1fr; }
   .waiting-room__action-list--flow .v3-button, .waiting-room__action-blocker { grid-column: auto; }
+}
+
+@media (max-width: 539px) {
+  .waiting-room__invite-label-full { display: none; }
+  .waiting-room__invite-label-compact { display: inline; }
 }

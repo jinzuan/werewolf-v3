@@ -84,7 +84,7 @@ export function PlayerSeatGrid({
           <h2 id="player-seats-title">玩家席</h2>
         </div>
         <span className="waiting-room__section-heading-actions">
-          {onInvitePlayer && isActionAllowed(room, 'invite') ? <Button variant="quiet" onClick={onInvitePlayer}><UserPlus size={15} />邀请玩家</Button> : null}
+          {onInvitePlayer && isActionAllowed(room, 'invite') ? <Button variant="quiet" onClick={onInvitePlayer}><UserPlus size={15} /><span className="waiting-room__invite-label-full">邀请玩家</span><span className="waiting-room__invite-label-compact">邀请</span></Button> : null}
           {canBecomeSpectator && onBecomeSpectator ? <Button variant="quiet" onClick={onBecomeSpectator}><Users size={15} />进入观战席</Button> : null}
           {canClaim && onClaimSeat ? <Button variant="quiet" onClick={() => onClaimSeat()}><UserRoundPlus size={15} />进入玩家席</Button> : null}
           <span className="waiting-room__check-count">{occupied} / {seats.length}</span>
