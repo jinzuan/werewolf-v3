@@ -487,6 +487,11 @@ export const useV3Store = create<V3Store>()((set, get) => {
       aiConfigError: null,
       loading: false,
       recovering: false,
+      // The create/join ACK is already an authoritative room projection. Do
+      // not leave the waiting room in an artificial "syncing" state while the
+      // newly adopted socket is finishing its auth hand-off.
+      syncStatus: 'synced',
+      syncError: null,
       authorityStatus: 'authorized',
       error: null,
     });
@@ -686,11 +691,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
         );
         if (response.ok === false) {
           const message = responseMessage(response);
-          if (
-            response.code === 'UNAUTHENTICATED' ||
-            response.code === 'IDENTITY_MISMATCH' ||
-            response.code === 'ROOM_NOT_FOUND'
-          ) {
+          if (response.code === 'UNAUTHENTICATED' || response.code === 'ROOM_NOT_FOUND') {
             clearAuthority(message);
           } else {
             set({ recovering: false, authorityStatus: 'error', error: message, syncStatus: 'error', syncError: message });
@@ -768,6 +769,10 @@ export const useV3Store = create<V3Store>()((set, get) => {
       }),
       subscribeV3ReconnectLifecycle(() => {
         const current = get();
+        // Room creation/joining intentionally replaces the transport. That
+        // is not a user-visible reconnect and must not start a competing
+        // recovery against the previous identity.
+        if (current.loading || current.authorityStatus === 'resolving') return;
         set({ syncStatus: 'syncing', syncError: null });
         if (current.session && !current.recovering) void recover();
       }),
@@ -842,10 +847,17 @@ export const useV3Store = create<V3Store>()((set, get) => {
       }),
       subscribeV3Errors((response) => {
         const message = getErrorMessage(response.code);
-        set({ error: message });
-        if (response.code === 'PUSH_FAILED' && !get().recovering) {
+        if (
+          (response.code === 'PUSH_FAILED' || response.code === 'IDENTITY_MISMATCH') &&
+          get().session &&
+          !get().recovering &&
+          !get().loading
+        ) {
+          set({ error: null, syncStatus: 'syncing', syncError: null });
           void recover();
+          return;
         }
+        set({ error: message });
       }),
     ];
     subscriptionCleanup = () => {
@@ -909,8 +921,27 @@ export const useV3Store = create<V3Store>()((set, get) => {
   const runRoomMutation = async (
     command: RoomMutationCommand,
   ): Promise<boolean> => {
-    const current = get();
+    let current = get();
     if (!current.session || !current.room) return false;
+    // Never send a room mutation while the browser is still changing socket
+    // identity. In particular, a freshly-created host must wait for the
+    // authoritative room state instead of receiving a misleading auth error.
+    if (
+      current.authorityStatus !== 'authorized' ||
+      current.recovering ||
+      current.syncStatus === 'syncing' ||
+      current.syncStatus === 'error'
+    ) {
+      if (!current.recovering) await recover();
+      current = get();
+      if (
+        !current.session ||
+        !current.room ||
+        current.authorityStatus !== 'authorized' ||
+        current.recovering ||
+        current.syncStatus === 'error'
+      ) return false;
+    }
     const action = roomActionForCommand(command);
     if (action && !roomActions(current.room).includes(action)) return false;
     const commandId = safeUuid();
@@ -937,6 +968,36 @@ export const useV3Store = create<V3Store>()((set, get) => {
         return true;
       }
       if (!isTransportFailure(response) && response.room) applyRoomView(response.room);
+      if (
+        !isTransportFailure(response) &&
+        (response.code === 'IDENTITY_MISMATCH' || response.code === 'UNAUTHENTICATED')
+      ) {
+        // The command was rejected before it reached the room state machine.
+        // Recover the durable identity, then replay the same command id once
+        // with the fresh room revision so a transient socket race is invisible
+        // to the user and remains idempotent.
+        set({ loading: false, pendingRoomCommand: null, error: null, syncStatus: 'syncing' });
+        if (await recover()) {
+          const recovered = get();
+          if (recovered.session && recovered.room) {
+            const retry = await sendV3RoomCommand(
+              recovered.session.actorId,
+              recovered.session.roomId,
+              recovered.room.roomRevision,
+              command,
+              commandId,
+            );
+            if (retry.ok === true) {
+              const retryOutcome = commandOutcomeRegistry.markCommitted(commandId, retry.receipt);
+              publishOutcome(retryOutcome);
+              if (retry.room) applyRoomView(retry.room);
+              set({ loading: false, pendingRoomCommand: null, error: null, syncStatus: 'synced' });
+              if (command.type === 'room.start_game') await recoverGameProjection();
+              return true;
+            }
+          }
+        }
+      }
       const outcome = isTransportFailure(response)
         ? response.sent
           ? commandOutcomeRegistry.markUnknown(commandId, command.type)

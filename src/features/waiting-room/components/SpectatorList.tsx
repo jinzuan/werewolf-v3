@@ -1,15 +1,17 @@
-import { Circle, Eye } from 'lucide-react';
+import { Circle, Eye, UserPlus } from 'lucide-react';
 import type { RoomViewV31 } from '../../../../shared/roomContract';
 import { Badge } from '../../../ui/Badge';
 import { Status } from '../../../ui/Status';
 import { selectSpectators, spectatorPresenceLabel } from '../selectors';
+import { Button } from '../../../ui/Button';
 
 interface SpectatorListProps {
   room: RoomViewV31;
   embedded?: boolean;
+  onInvite?: () => void;
 }
 
-export function SpectatorList({ room, embedded = false }: SpectatorListProps) {
+export function SpectatorList({ room, embedded = false, onInvite }: SpectatorListProps) {
   const spectators = selectSpectators(room);
   const content = (
     <>
@@ -21,7 +23,10 @@ export function SpectatorList({ room, embedded = false }: SpectatorListProps) {
           <span className="waiting-room__eyebrow">不占用玩家席</span>
           <h2 id="spectator-title">观战席</h2>
         </div>
-        <Badge tone="info">{spectators.length} 人</Badge>
+        <span className="waiting-room__section-heading-actions">
+          {onInvite ? <Button variant="quiet" onClick={onInvite}><UserPlus size={15} />邀请观战</Button> : null}
+          <Badge tone="info">{spectators.length} 人</Badge>
+        </span>
       </div>
 
       {spectators.length ? (
@@ -52,7 +57,10 @@ export function SpectatorList({ room, embedded = false }: SpectatorListProps) {
     <details className="waiting-room__spectators waiting-room__spectators--embedded">
       <summary>
         <span><Eye size={17} aria-hidden="true" />观战席</span>
-        <Badge tone="info">{spectators.length} 人</Badge>
+        <span className="waiting-room__section-heading-actions">
+          {onInvite ? <Button variant="quiet" onClick={(event) => { event.preventDefault(); onInvite(); }}><UserPlus size={15} />邀请</Button> : null}
+          <Badge tone="info">{spectators.length} 人</Badge>
+        </span>
       </summary>
       {content}
     </details>

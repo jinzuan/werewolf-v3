@@ -385,7 +385,12 @@ test('vote, night JSON, skip, and deterministic clean speech are unaffected', as
   const skipProvider = new PromptAIProvider({
     complete: async () => JSON.stringify({ action: 'skip_speech' }),
   });
-  assert.equal((await skipProvider.suggest(speechContext())).command.type, 'game.skip_speech');
+  assert.equal((await skipProvider.suggest(speechContext({
+    promptContext: {
+      legalActions: ['speak', 'skip_speech'],
+      currentRoundSpeeches: [`${players[0].name}：我前面已经说明过自己的判断。`],
+    },
+  }))).command.type, 'game.skip_speech');
 
   const guardian = players.find((player) => player.role === 'guardian')!;
   const target = players.find((player) => player.id !== guardian.id)!;

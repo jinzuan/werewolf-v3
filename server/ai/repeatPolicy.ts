@@ -5,6 +5,8 @@ export interface RepeatScene {
   playerId: string;
   phase: string;
   stage: string | null;
+  /** Public and wolf-private speech must never share repetition history. */
+  channel?: 'public' | 'wolf_private';
 }
 
 export interface RepeatRecord extends RepeatScene {
@@ -24,6 +26,9 @@ const SIMILARITY_THRESHOLD = 0.72;
 
 const sceneKey = (scene: RepeatScene): string =>
   [scene.gameId, scene.playerId, scene.phase, scene.stage ?? 'none'].join(':');
+
+const channelKey = (scene: RepeatScene): string =>
+  [scene.gameId, scene.channel ?? 'public', scene.phase, scene.stage ?? 'none'].join(':');
 
 const normalize = (value: string): string =>
   value
@@ -86,14 +91,27 @@ const isSpeechCommand = (
 
 export class RepeatPolicy {
   private readonly records = new Map<string, RepeatRecord[]>();
+  private readonly channelRecords = new Map<string, RepeatRecord[]>();
 
   inspect(scene: RepeatScene, text: string): RepeatCheck {
     const key = sceneKey(scene);
     const history = this.records.get(key) ?? [];
+    const channelHistory = this.channelRecords.get(channelKey(scene)) ?? [];
     const normalized = normalize(text);
     let bestSimilarity = 0;
     let matchedText: string | undefined;
     for (const record of history) {
+      const similarity = speechSimilarity(normalized, record.text);
+      if (similarity > bestSimilarity) {
+        bestSimilarity = similarity;
+        matchedText = record.text;
+      }
+    }
+    // A model can repeat a sentence only once per player and still make the
+    // whole table sound cloned. Compare against the current public channel as
+    // well, while keeping wolf-private and public speech isolated.
+    for (const record of channelHistory) {
+      if (record.playerId === scene.playerId) continue;
       const similarity = speechSimilarity(normalized, record.text);
       if (similarity > bestSimilarity) {
         bestSimilarity = similarity;
@@ -122,9 +140,15 @@ export class RepeatPolicy {
   record(scene: RepeatScene, text: string): void {
     const key = sceneKey(scene);
     const history = this.records.get(key) ?? [];
-    history.push({ ...scene, text: text.trim() });
+    const record = { ...scene, text: text.trim() };
+    history.push(record);
     while (history.length > MAX_HISTORY_PER_SCENE) history.shift();
     this.records.set(key, history);
+    const channel = channelKey(scene);
+    const channelHistory = this.channelRecords.get(channel) ?? [];
+    channelHistory.push(record);
+    while (channelHistory.length > MAX_HISTORY_PER_SCENE * 3) channelHistory.shift();
+    this.channelRecords.set(channel, channelHistory);
   }
 
   acceptSpeech(context: AIRequestContext, text: string): RepeatCheck {
@@ -141,6 +165,7 @@ export class RepeatPolicy {
 
   reset(): void {
     this.records.clear();
+    this.channelRecords.clear();
   }
 
   static isSpeechCommand = isSpeechCommand;
@@ -151,4 +176,7 @@ export const repeatSceneFromContext = (context: AIRequestContext): RepeatScene =
   playerId: context.playerId,
   phase: context.phase,
   stage: context.stage,
+  channel: context.allowedCommandTypes.includes('game.wolf_speak')
+    ? 'wolf_private'
+    : 'public',
 });

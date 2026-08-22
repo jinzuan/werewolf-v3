@@ -846,13 +846,12 @@ button.ww-role-card { width: 100%; color: inherit; cursor: pointer; }
   .v3-topbar { grid-template-columns: minmax(0, 1fr) auto auto; }
   .v3-phase-track__scene-label { display: none; }
   .v3-room-header { grid-template-columns: auto minmax(80px, 1fr) auto; grid-template-areas: 'primary identity actions' 'progress progress progress'; }
-  .v3-room-header__code, .v3-room-header__copy, .v3-room-header__actions { flex: none; }
+  .v3-room-header__code, .v3-room-header__actions { flex: none; }
   .v3-room-header__primary, .v3-room-header__actions, .v3-room-header__status { gap: 4px; }
-  .v3-room-header__home, .v3-room-header__copy { width: 38px; min-width: 38px; padding: 0; font-size: 0; }
-  .v3-room-header__home span, .v3-room-header__copy span, .v3-room-header__code > span { display: none; }
+  .v3-room-header__home, .v3-room-header__code { width: 38px; min-width: 38px; padding: 0; font-size: 0; }
+  .v3-room-header__home span, .v3-room-header__code > span, .v3-room-header__code > strong { display: none; }
   .v3-room-header__code { max-width: 58px; padding-inline: 4px; white-space: nowrap; }
   .v3-room-header__code strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; }
-  .v3-room-header__invite { display: none; }
   .v3-room-header__viewer, .v3-room-header__timer { display: none; }
   .v3-room-header__room-state-full, .v3-room-header__connection span, .v3-room-header__sync span, .v3-room-header__phase-full { display: none; }
   .v3-room-header__room-state-compact, .v3-room-header__phase-compact { display: inline; }
@@ -899,8 +898,7 @@ button.ww-role-card { width: 100%; color: inherit; cursor: pointer; }
   .v3-room-header__code { padding: 0; }
   .v3-room-header__code > span { display: none; }
   .v3-room-header__code strong { font-size: 14px; }
-  .v3-room-header__copy, .v3-room-header__home { min-height: 38px; padding: 0 9px; font-size: 12px; }
-  .v3-room-header__invite { display: none; }
+  .v3-room-header__code, .v3-room-header__home { min-height: 38px; padding: 0 9px; font-size: 12px; }
   .v3-room-header__status { justify-content: flex-end; gap: 4px; }
   .v3-room-header__status .v3-badge { min-height: 22px; }
   .v3-room-header__connection { width: 32px; min-width: 32px; justify-content: center; padding-inline: 0; font-size: 0; }
@@ -979,9 +977,9 @@ button.ww-role-card { width: 100%; color: inherit; cursor: pointer; }
 }
 
 @media (max-width: 419px) {
-  .v3-room-header__home span, .v3-room-header__copy span { display: none; }
-  .v3-room-header__copy { width: 38px; padding: 0; font-size: 0; }
-  .v3-room-header__copy svg { width: 16px; }
+  .v3-room-header__home span, .v3-room-header__code > span { display: none; }
+  .v3-room-header__code { width: 38px; padding: 0; font-size: 0; }
+  .v3-room-header__code svg { width: 16px; }
   .v3-room-header__home { width: 38px; padding: 0; font-size: 0; }
   .v3-target-grid, .v3-spectate-identity-list, .v3-identity-list { grid-template-columns: 1fr; }
   .v3-action-panel__footer { grid-template-columns: 1fr; }
@@ -993,10 +991,10 @@ button.ww-role-card { width: 100%; color: inherit; cursor: pointer; }
   .v3-room-header__primary { gap: 2px; }
   .v3-room-header__code-group { gap: 1px; }
   .v3-room-header__home { width: 30px; min-width: 30px; min-height: 34px; padding: 0; font-size: 0; }
-  .v3-room-header__home span, .v3-room-header__copy span { display: none; }
+  .v3-room-header__home span, .v3-room-header__code > span { display: none; }
   .v3-room-header__code { max-width: 44px; }
   .v3-room-header__code strong { overflow: hidden; font-size: 12px; letter-spacing: .02em; text-overflow: ellipsis; }
-  .v3-room-header__copy { width: 27px; min-width: 27px; min-height: 34px; padding: 0; font-size: 0; }
+  .v3-room-header__code { width: 27px; min-width: 27px; min-height: 34px; padding: 0; font-size: 0; }
   .v3-room-header__actions { gap: 3px; }
   .v3-room-header__status { min-width: 0; flex: 1 1 auto; gap: 3px; }
   .v3-room-header__room-state { min-width: 0; padding-inline: 4px; font-size: 10px; }

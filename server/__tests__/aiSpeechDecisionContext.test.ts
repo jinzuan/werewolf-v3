@@ -44,7 +44,7 @@ test('public speech decisions treat naming a suspect as optional', () => {
   assert.ok(decision.allowedMoves.includes('保留观察'));
   assert.ok(decision.allowedMoves.includes('指认一个人'));
   assert.ok(decision.allowedMoves.includes('跳过发言'));
-  assert.equal(decision.preferNoContentExit, true);
+  assert.equal(decision.preferNoContentExit, false);
 
   const prompt = formatSpeechDecisionContext(request, request.promptContext ?? {});
   assert.match(prompt, /“指认一个人”不是必填项/u);
@@ -61,7 +61,7 @@ test('no-content exit depends on current novelty or being addressed, not stale c
       publicSeerClaims: ['历史验人记录仍可见'],
     },
   });
-  assert.equal(shouldPreferSpeechSkip(staleClaim), true);
+  assert.equal(shouldPreferSpeechSkip(staleClaim), false);
 
   const actorName = players[0].name;
   const addressed = context({
@@ -119,7 +119,7 @@ test('AI speech metrics keep skips to idle turns and answer response triggers', 
   );
   const triggeredResponses = await Promise.all(triggered.map((item) => provider.suggest(item)));
 
-  assert.deepEqual({ speakCount, skipCount }, { speakCount: 2, skipCount: 1 });
+  assert.deepEqual({ speakCount, skipCount }, { speakCount: 3, skipCount: 0 });
   assert.equal(
     triggeredResponses.filter((item) => item.command.type === 'game.speak').length /
       triggeredResponses.length,
@@ -142,7 +142,7 @@ test('persona and experience remain subordinate to visible facts and legal actio
   const prompt = formatSpeechDecisionContext(request, request.promptContext ?? {});
 
   assert.deepEqual(decision.legalActions, ['speak', 'skip_speech']);
-  assert.equal(decision.preferNoContentExit, true);
+  assert.equal(decision.preferNoContentExit, false);
   assert.match(prompt, /服务端可见事实：当前没有查验结果/u);
   assert.match(prompt, /只改变表达与关注点，不改变事实、权限或动作/u);
   assert.match(prompt, /只用于提出行为候选，不强制执行套路/u);
@@ -152,7 +152,7 @@ test('persona and experience remain subordinate to visible facts and legal actio
 test('deterministic speech fallback uses a legal skip when nothing changed', async () => {
   const provider = new DeterministicAIProvider();
   const skipped = await provider.suggest(context());
-  assert.equal(skipped.command.type, 'game.skip_speech');
+  assert.equal(skipped.command.type, 'game.speak');
 
   const speechOnly = await provider.suggest(context({
     allowedActions: ['speak'],

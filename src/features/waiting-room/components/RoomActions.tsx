@@ -1,4 +1,4 @@
-import { AlertOctagon, ArrowRightLeft, CheckCircle, LogOut, Play, RotateCcw, Settings2, ShieldAlert, UserPlus } from 'lucide-react';
+import { AlertOctagon, ArrowRightLeft, CheckCircle, LogOut, Play, RotateCcw, Settings2, ShieldAlert } from 'lucide-react';
 import { useState } from 'react';
 import type {
   AllowedRoomAction,
@@ -20,7 +20,6 @@ interface RoomActionsProps {
   onBeginReadyCheck: () => void;
   onCancelReadyCheck: () => void;
   onStartGame: () => void;
-  onInvite: () => void;
   onOpenSettings: () => void;
   onLocateProblem: () => void;
   onTransferHost: (memberId: string) => void;
@@ -36,7 +35,6 @@ export function RoomActions({
   onBeginReadyCheck,
   onCancelReadyCheck,
   onStartGame,
-  onInvite,
   onOpenSettings,
   onLocateProblem,
   onTransferHost,
@@ -160,17 +158,6 @@ export function RoomActions({
           >
             <Settings2 size={17} aria-hidden="true" />
             房间设置
-          </Button>
-        ) : null}
-
-        {can('invite') ? (
-          <Button
-            variant="secondary"
-            disabled={locked || busy('invite')}
-            onClick={onInvite}
-          >
-            <UserPlus size={17} aria-hidden="true" />
-            邀请玩家
           </Button>
         ) : null}
 

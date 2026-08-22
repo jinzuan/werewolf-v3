@@ -136,10 +136,10 @@ export function WaitingRoomPage() {
     return true;
   }, [navigate, refreshRoom, room, session]);
 
-  const onCopyInvite = useCallback(async () => {
+  const onCopyInvite = useCallback(async (intent: 'play' | 'watch' = 'play') => {
     if (!room || !session || !isActionAllowed(room, 'invite')) return;
     const joinToken = session.credentials.joinToken;
-    const invite = `${joinInviteUrl(window.location.origin, room.code, 'play')}\n\n房间码：${room.code}\n邀请口令：${joinToken}`;
+    const invite = `${joinInviteUrl(window.location.origin, room.code, intent)}\n\n房间码：${room.code}\n邀请类型：${intent === 'watch' ? '观战' : '玩家'}\n邀请口令：${joinToken}`;
     try {
       await copyText(invite);
       setInviteFallback(null);
@@ -241,7 +241,6 @@ export function WaitingRoomPage() {
           onBeginReadyCheck={() => runSeatMutation(beginReadyCheck)}
           onCancelReadyCheck={cancel}
           onStartGame={start}
-          onInvite={() => void onCopyInvite()}
           onOpenSettings={() => setConfigEditorOpen(true)}
           onLocateProblem={() => document.getElementById('start-check-title')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
           onTransferHost={transferHost}
@@ -257,6 +256,8 @@ export function WaitingRoomPage() {
             onBecomeSpectator={() => runSeatMutation(becomeSpectator)}
             onRequestSeat={() => runSeatMutation(requestSeat)}
             onKickPlayer={(memberId) => runSeatMutation(() => kickPlayer(memberId))}
+            onInvitePlayer={() => void onCopyInvite('play')}
+            onInviteSpectator={() => void onCopyInvite('watch')}
           />
           <aside className="waiting-room__side" aria-label="房间摘要与开局检查">
             <RoomConfigSummary

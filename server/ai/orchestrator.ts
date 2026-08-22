@@ -21,6 +21,7 @@ import { defaultAILogger, type AILogger } from './types';
 import { randomElement } from './randomSelection';
 import { recommendedWolfTarget } from './memory';
 import { shouldPreferSpeechSkip } from './speechDecisionContext';
+import { fallbackSpeechContent, fallbackWolfSpeechContent } from './fallbackSpeech';
 
 export interface AIOrchestratorOptions {
   timeoutMs?: number;
@@ -494,7 +495,7 @@ export class AIOrchestrator {
         command: {
           type: 'game.wolf_speak',
           payload: {
-            content: `第${context.promptContext?.dayNumber ?? '?'}天仍有${alive.length}名玩家存活，先结合公开发言和投票变化继续判断。`,
+            content: fallbackWolfSpeechContent(context),
           },
         },
         reason: 'deterministic wolf speech fallback',
@@ -520,9 +521,9 @@ export class AIOrchestrator {
         command: {
           type: 'game.speak',
           payload: {
-            content: isLastWordsContext(context)
-              ? lastWordsFallbackContent(context)
-              : `第${context.promptContext?.dayNumber ?? '?'}天当前有${alive.length}名玩家存活，我会结合已公开的信息继续观察并说明判断。`,
+              content: isLastWordsContext(context)
+                ? lastWordsFallbackContent(context)
+              : fallbackSpeechContent(context),
           },
         },
         reason: isLastWordsContext(context)

@@ -1,4 +1,4 @@
-import { Check, CircleHelp, Copy, Home, RefreshCw, Settings, UserPlus, Wifi } from 'lucide-react';
+import { Check, CircleHelp, Copy, Home, RefreshCw, Settings, Wifi } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -39,7 +39,7 @@ export function RoomHeader({ children, ...status }: RoomHeaderProps) {
   const syncStatus = useV3Store((state) => state.syncStatus);
   const recovering = useV3Store((state) => state.recovering);
   const { scene } = useRoomShell();
-  const [copyState, setCopyState] = useState<'idle' | 'code' | 'invite'>('idle');
+  const [copyState, setCopyState] = useState<'idle' | 'code'>('idle');
   const [rulesOpen, setRulesOpen] = useState(false);
   const copyTimer = useRef<number | null>(null);
 
@@ -62,8 +62,6 @@ export function RoomHeader({ children, ...status }: RoomHeaderProps) {
           ? 'play'
           : 'waiting';
 
-  const canInvite = room.viewer.allowedRoomActions.includes('invite') &&
-    Boolean(session.credentials.joinToken);
   const compactRoomStatus = room.status === 'waiting'
     ? '等待'
     : room.status === 'playing'
@@ -72,7 +70,7 @@ export function RoomHeader({ children, ...status }: RoomHeaderProps) {
   const compactPhase = status.phase
     ?.replace(/^第\s*(\d+)\s*(天|夜)\s*·\s*/u, '第$1$2·')
     .replace(/（第\s*(\d+)\/(\d+)\s*轮）/u, ' $1/$2轮');
-  const rememberCopy = (kind: 'code' | 'invite') => {
+  const rememberCopy = (kind: 'code') => {
     setCopyState(kind);
     if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
     copyTimer.current = window.setTimeout(() => setCopyState('idle'), 2_000);
@@ -85,19 +83,6 @@ export function RoomHeader({ children, ...status }: RoomHeaderProps) {
       setCopyState('idle');
     }
   };
-  const copyInvite = async () => {
-    if (!canInvite) return;
-    const url = new URL('/rooms/join', window.location.origin);
-    url.searchParams.set('code', room.code);
-    url.searchParams.set('intent', 'play');
-    try {
-      await copyText(`${url.toString()}\n\n房间码：${room.code}\n邀请口令：${session.credentials.joinToken}`);
-      rememberCopy('invite');
-    } catch {
-      setCopyState('idle');
-    }
-  };
-
   return (
     <>
       <header className="v3-room-header" data-room-view={segment} data-scene={scene}>
@@ -106,12 +91,10 @@ export function RoomHeader({ children, ...status }: RoomHeaderProps) {
           <Home size={16} /><span>返回大厅</span>
         </Link>
         <div className="v3-room-header__code-group">
-          <div className="v3-room-header__code" aria-label={`房间码 ${room.code}`}>
+          <Button variant="quiet" className="v3-room-header__code" onClick={() => void copyCode()} aria-label={`复制房间码 ${room.code}`} title="点击复制房间码">
             <span>房间码</span><strong className="v3-numeric">{room.code}</strong>
-          </div>
-          <Button variant="quiet" className="v3-room-header__copy" onClick={() => void copyCode()}>
             {copyState === 'code' ? <Check size={16} /> : <Copy size={16} />}
-            <span>{copyState === 'code' ? '已复制' : '复制'}</span>
+            <span>{copyState === 'code' ? '已复制' : '点击复制'}</span>
           </Button>
         </div>
       </div>
@@ -120,12 +103,6 @@ export function RoomHeader({ children, ...status }: RoomHeaderProps) {
         <strong>{room.name}</strong>
       </div>
       <div className="v3-room-header__actions">
-        {canInvite ? (
-          <Button variant="secondary" className="v3-room-header__invite" onClick={() => void copyInvite()}>
-            {copyState === 'invite' ? <Check size={16} /> : <UserPlus size={16} />}
-            {copyState === 'invite' ? '邀请已复制' : '邀请'}
-          </Button>
-        ) : null}
         <div className="v3-room-header__status">
           <Badge tone="info" className="v3-room-header__room-state" title={`房间状态：${roomStatusLabel(room.status)}`}>
             <span className="v3-room-header__room-state-full">{roomStatusLabel(room.status)}</span>

@@ -422,7 +422,10 @@ export class RoomPolicy {
     const actions = new Set<AllowedRoomAction>();
 
     actions.add('leave');
-    if (isHost && (status === 'waiting' || status === 'ready_check')) {
+    if (
+      (status === 'waiting' || status === 'ready_check') &&
+      (isHost || room.config.allowPublicSpectators === true)
+    ) {
       actions.add('invite');
     }
     if (isHost && status === 'waiting' && !room.configLocked) {

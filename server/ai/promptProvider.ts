@@ -1,7 +1,7 @@
 import type { AIPrompt } from './promptBuilder';
 import { parseAIOutput } from './outputParser';
 import { buildPromptPipeline } from './promptPipeline';
-import { RepeatPolicy } from './repeatPolicy';
+import { RepeatPolicy, repeatSceneFromContext } from './repeatPolicy';
 import { inspectSpeechStyle } from './speechStyleGate';
 import type {
   AIProvider,
@@ -83,15 +83,8 @@ export class PromptAIProvider implements AIProvider {
           }
           throw new Error(`AI_SPEECH_STYLE_${style.issues.join('_')}`);
         }
-        const repeat = this.repeatPolicy.inspect(
-          {
-            gameId: context.gameId,
-            playerId: context.playerId,
-            phase: context.phase,
-            stage: context.stage,
-          },
-          parsed.speechText,
-        );
+        const scene = repeatSceneFromContext(context);
+        const repeat = this.repeatPolicy.inspect(scene, parsed.speechText);
         if (repeat.repeated) {
           if (attempt < this.maxCorrectionAttempts) {
             correction = repeat.guidance;
@@ -99,15 +92,7 @@ export class PromptAIProvider implements AIProvider {
           }
           throw new Error('AI_REPETITION_DETECTED');
         }
-        this.repeatPolicy.record(
-          {
-            gameId: context.gameId,
-            playerId: context.playerId,
-            phase: context.phase,
-            stage: context.stage,
-          },
-          parsed.speechText,
-        );
+        this.repeatPolicy.record(scene, parsed.speechText);
       }
 
       return {

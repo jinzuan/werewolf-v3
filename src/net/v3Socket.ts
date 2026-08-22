@@ -498,7 +498,11 @@ export const createV3Room = (
   createRequestId: string,
 ): Promise<ClientAck<CreateRoomAck extends ProtocolAck<infer P> ? P : never>> =>
   emitAck(
-    openRoomConnection(),
+    // A create request must never reuse a socket that is still bound to the
+    // previous room identity. The old socket could accept the command locally
+    // while the server still associates it with the old actor, which surfaces
+    // as a spurious IDENTITY_MISMATCH immediately after creating a room.
+    openRoomConnection({}, true),
     'v3:command',
     roomReadRequest(
       actorId,
@@ -515,7 +519,9 @@ export const joinV3Room = (
   joinRequestId: string,
 ): Promise<ClientAck<JoinRoomAck extends ProtocolAck<infer P> ? P : never>> =>
   emitAck(
-    openRoomConnection(),
+    // Joining is also an identity boundary. Always use a fresh unauthenticated
+    // transport so a previous room lease cannot reject the new join.
+    openRoomConnection({}, true),
     'v3:command',
     roomReadRequest(
       actorId,

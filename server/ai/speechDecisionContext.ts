@@ -35,7 +35,7 @@ export interface SpeechDecisionContext {
 type SpeechDecisionRequestContext = Pick<
   AIRequestContext,
   'players' | 'playerId' | 'allowedCommandTypes' | 'promptContext'
-> & Partial<Pick<AIRequestContext, 'allowedActions' | 'projectedContext'>>;
+> & Partial<Pick<AIRequestContext, 'allowedActions' | 'projectedContext' | 'phase' | 'stage'>>;
 
 const nonEmpty = (items: readonly string[] | undefined): string[] =>
   (items ?? []).map((item) => item.trim()).filter(Boolean);
@@ -55,7 +55,9 @@ const actorWasAddressed = (
   const actor = context.players.find((player) => player.id === context.playerId);
   if (!actor) return false;
   return speeches.slice(-4).some((speech) =>
-    speech.includes(actor.name) || speech.includes(context.playerId),
+    !speech.startsWith(`${actor.name}：`) &&
+    !speech.startsWith(`${actor.name}:`) &&
+    (speech.includes(actor.name) || speech.includes(context.playerId)),
   );
 };
 
@@ -97,11 +99,24 @@ export const buildSpeechDecisionContext = (
   const hasUrgentRoleConflict = newInformation.some((item) =>
     /对跳|预言家|查杀|金水|身份声明|跳了?身份|自称.{0,6}(?:预言家|女巫|猎人|守卫)/u.test(item),
   );
+  // The first pass through a free-discussion queue is valuable even when the
+  // event stream has not changed yet. Only permit a no-content exit after the
+  // actor has already spoken in this round; otherwise every AI sees the same
+  // empty novelty list and collectively skips the discussion.
+  const hasSpokenInThisRound = currentRoundSpeeches.some((speech) => {
+    const actor = context.players.find((player) => player.id === context.playerId);
+    return Boolean(actor && (
+      speech.startsWith(`${actor.name}：`) ||
+      speech.startsWith(`${actor.name}:`)
+    ));
+  });
+  const isLastWords = context.phase === 'lastWords' || context.stage === 'last_words';
   const preferNoContentExit = canSkip &&
     newInformation.length === 0 &&
     !wasAddressed &&
     !requiresResponse &&
     !hasUrgentRoleConflict &&
+    (hasSpokenInThisRound || isLastWords) &&
     !meaningfulNovelty(promptContext.requiredNovelty);
 
   const publicMoves: SpeechDecisionMove[] = [
