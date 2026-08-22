@@ -195,20 +195,24 @@
 
 @media (min-width: 1280px) {
   .waiting-room__actions {
-    grid-template-columns: minmax(210px, 240px) minmax(0, 1fr) auto;
+    grid-template-columns: minmax(190px, 220px) minmax(0, 1fr) minmax(300px, 460px);
     grid-template-areas: 'heading flow secondary';
     align-items: center;
     min-height: 88px;
     padding-block: 12px;
   }
-  .waiting-room__action-flow { min-height: var(--ww-height-action); display: flex; align-items: center; }
-  .waiting-room__action-list--flow { flex-wrap: wrap; align-items: center; }
+  .waiting-room__action-flow { min-width: 0; min-height: var(--ww-height-action); display: flex; align-items: center; }
+  .waiting-room__action-list--flow { width: 100%; flex-wrap: nowrap; align-items: center; }
+  .waiting-room__action-list--flow > .v3-button { flex: 0 0 180px; }
+  .waiting-room__start-control { min-width: 0; flex: 1 1 auto; }
+  .waiting-room__start-action { min-width: 160px; flex: 0 0 160px; }
+  .waiting-room__start-meta { min-width: 0; flex: 1 1 auto; }
   .waiting-room__action-list--secondary {
     flex-direction: row;
     align-items: center;
     justify-content: flex-end;
     flex-wrap: wrap;
-    max-width: 560px;
+    max-width: 460px;
   }
   .waiting-room__action-list--secondary .v3-button {
     width: auto;
