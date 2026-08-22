@@ -31,7 +31,7 @@ import './waiting-room.css';
 
 type DirectRoomAction = Extract<
   AllowedRoomAction,
-  'update_config' | 'transfer_host' | 'dissolve' | 'leave'
+  'update_config' | 'leave'
 >;
 
 const pendingActionForCommand = (
@@ -48,10 +48,6 @@ const pendingActionForCommand = (
       return 'start_game';
     case 'room.update_config':
       return 'update_config';
-    case 'room.transfer_host':
-      return 'transfer_host';
-    case 'room.dissolve':
-      return 'dissolve';
     case 'room.leave':
       return 'leave';
     default:
@@ -91,9 +87,7 @@ export function WaitingRoomPage() {
   const requestSeat = useV3Store((state) => state.requestSeat);
   const kickPlayer = useV3Store((state) => state.kickPlayer);
   const respondSeatRequest = useV3Store((state) => state.respondSeatRequest);
-  const transferHostAction = useV3Store((state) => state.transferHost);
   const leaveRoomMutation = useV3Store((state) => state.leaveRoomMutation);
-  const dissolveRoom = useV3Store((state) => state.dissolveRoom);
   const refreshRoom = useV3Store((state) => state.refreshRoom);
   const aiSummary = useV3Store((state) => state.aiConfigSummary);
   const aiConfigStatus = useV3Store((state) => state.aiConfigStatus);
@@ -188,12 +182,6 @@ export function WaitingRoomPage() {
       if (success) setAIEditorOpen(false);
     });
   };
-  const transferHost = (memberId: string) => {
-    void runDirectMutation('transfer_host', () => transferHostAction(memberId));
-  };
-  const dissolve = () => {
-    void runDirectMutation('dissolve', dissolveRoom);
-  };
   const leave = () => {
     void runDirectMutation('leave', leaveRoomMutation);
   };
@@ -250,9 +238,6 @@ export function WaitingRoomPage() {
           onCancelReadyCheck={cancel}
           onStartGame={start}
           onOpenSettings={() => setConfigEditorOpen(true)}
-          onLocateProblem={() => document.getElementById('start-check-title')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
-          onTransferHost={transferHost}
-          onDissolve={dissolve}
           onLeave={leave}
         />
 

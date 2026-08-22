@@ -1,5 +1,4 @@
-import { AlertOctagon, ArrowRightLeft, CheckCircle, LogOut, Play, RotateCcw, Settings2, ShieldAlert } from 'lucide-react';
-import { useState } from 'react';
+import { CheckCircle, LogOut, Play, RotateCcw, Settings2, ShieldAlert } from 'lucide-react';
 import type {
   AllowedRoomAction,
   RoomMemberViewV31,
@@ -8,9 +7,7 @@ import type {
 import { Badge } from '../../../ui/Badge';
 import { Button } from '../../../ui/Button';
 import { Card } from '../../../ui/Card';
-import { Modal } from '../../../ui/Modal';
 import { isActionAllowed, startCheckReason } from '../selectors';
-import { viewerPlayerId } from '../../../v3/session';
 
 interface RoomActionsProps {
   room: RoomViewV31;
@@ -21,9 +18,6 @@ interface RoomActionsProps {
   onCancelReadyCheck: () => void;
   onStartGame: () => void;
   onOpenSettings: () => void;
-  onLocateProblem: () => void;
-  onTransferHost: (memberId: string) => void;
-  onDissolve: () => void;
   onLeave: () => void;
 }
 
@@ -36,18 +30,13 @@ export function RoomActions({
   onCancelReadyCheck,
   onStartGame,
   onOpenSettings,
-  onLocateProblem,
-  onTransferHost,
-  onDissolve,
   onLeave,
 }: RoomActionsProps) {
-  const [dangerOpen, setDangerOpen] = useState(false);
   const locked = room.status === 'starting';
   const isHost = currentMember?.isHost === true;
   const isPlayer = room.viewer.kind === 'player' && currentMember?.kind === 'player';
   const ready = currentMember?.ready === true;
   const can = (action: AllowedRoomAction) => isActionAllowed(room, action);
-  const viewerId = viewerPlayerId(room.viewer);
   const failedChecks = room.startCheck.items
     .filter((item) => !item.passed);
   const playerMembers = room.members.filter((member) => member.kind === 'player');
@@ -57,13 +46,6 @@ export function RoomActions({
       ? `暂不可用：${failedChecks.map(startCheckReason).join('；')}`
       : '当前阶段暂不能执行该操作。';
   };
-  const transferTargets = room.members.filter(
-    (member) =>
-      member.kind === 'player' &&
-      !member.isAI &&
-      member.id !== viewerId &&
-      member.connected,
-  );
   const busy = (action: AllowedRoomAction): boolean => pendingAction === action;
 
   return (
@@ -117,7 +99,6 @@ export function RoomActions({
               {!can('start_game') ? (
                 <p id="start-game-reason" className="waiting-room__action-blocker" role="status">
                   <span>{blockedReasonFor()}</span>
-                  <Button variant="quiet" onClick={onLocateProblem}>查看问题</Button>
                 </p>
               ) : <span className="waiting-room__start-ready">开局条件已满足</span>}
             </div>
@@ -168,18 +149,7 @@ export function RoomActions({
             onClick={onLeave}
           >
             <LogOut size={17} aria-hidden="true" />
-            {busy('leave') ? '正在离开…' : '离开房间'}
-          </Button>
-        ) : null}
-
-        {isHost && (can('transfer_host') || can('dissolve')) ? (
-          <Button
-            variant="quiet"
-            disabled={locked}
-            onClick={() => setDangerOpen(true)}
-          >
-            <AlertOctagon size={17} aria-hidden="true" />
-            更多房主操作
+            {busy('leave') ? '正在返回大厅…' : '返回大厅'}
           </Button>
         ) : null}
       </div>
@@ -190,49 +160,6 @@ export function RoomActions({
         </p>
       ) : null}
 
-      <Modal
-        open={dangerOpen}
-        title="房主高级操作"
-        context="这些操作会影响整个房间，请确认目标和后果。"
-        onClose={() => setDangerOpen(false)}
-      >
-        <div className="waiting-room__danger-menu">
-          {can('transfer_host') ? (
-            <div>
-              <h3><ArrowRightLeft size={17} aria-hidden="true" /> 转让房主</h3>
-              {transferTargets.length ? transferTargets.map((member) => (
-                <Button
-                  key={member.id}
-                  variant="secondary"
-                  disabled={busy('transfer_host')}
-                  onClick={() => {
-                    setDangerOpen(false);
-                    onTransferHost(member.id);
-                  }}
-                >
-                  转让给 {member.name}
-                </Button>
-              )) : <p>暂无符合条件的在线真人玩家。</p>}
-            </div>
-          ) : null}
-          {can('dissolve') ? (
-            <div className="waiting-room__danger-block">
-              <h3><AlertOctagon size={17} aria-hidden="true" /> 解散房间</h3>
-              <p>房间和当前等待状态会被关闭，成员需要重新加入其他房间。</p>
-              <Button
-                variant="danger"
-                disabled={busy('dissolve')}
-                onClick={() => {
-                  setDangerOpen(false);
-                  onDissolve();
-                }}
-              >
-                {busy('dissolve') ? '正在解散…' : '确认解散房间'}
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      </Modal>
     </Card>
   );
 }

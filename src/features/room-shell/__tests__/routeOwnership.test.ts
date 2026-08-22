@@ -13,9 +13,8 @@ test('room pages delegate mutations to authority actions and keep scene ownershi
   assert.doesNotMatch(waitingRoom, /useV3Store\.getState\(\)/);
   assert.doesNotMatch(waitingRoom, /v3Socket/);
   assert.match(waitingRoom, /updateRoomConfig/);
-  assert.match(waitingRoom, /transferHostAction/);
   assert.match(waitingRoom, /leaveRoomMutation/);
-  assert.match(waitingRoom, /dissolveRoom/);
+  assert.doesNotMatch(waitingRoom, /更多房主操作|查看问题/);
   assert.doesNotMatch(appShell, /useV3Store/);
   assert.match(appShell, /useRoomShell/);
   assert.match(layout, /sceneForRoom/);

@@ -1,7 +1,7 @@
 import { Check, CircleHelp, Copy, Home, RefreshCw, Settings, Wifi } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Badge } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { copyText } from '../../lib/copyText';
@@ -36,9 +36,11 @@ export interface RoomHeaderProps extends TopStatusBarProps {
 export function RoomHeader({ children, ...status }: RoomHeaderProps) {
   const room = useV3Store((state) => state.room);
   const session = useV3Store((state) => state.session);
+  const leaveRoomMutation = useV3Store((state) => state.leaveRoomMutation);
   const syncStatus = useV3Store((state) => state.syncStatus);
   const recovering = useV3Store((state) => state.recovering);
   const { scene } = useRoomShell();
+  const navigate = useNavigate();
   const [copyState, setCopyState] = useState<'idle' | 'code'>('idle');
   const [rulesOpen, setRulesOpen] = useState(false);
   const copyTimer = useRef<number | null>(null);
@@ -83,11 +85,16 @@ export function RoomHeader({ children, ...status }: RoomHeaderProps) {
       setCopyState('idle');
     }
   };
+  const handleHomeClick = async (event: MouseEvent<HTMLAnchorElement>): Promise<void> => {
+    if (room.status !== 'waiting' && room.status !== 'ready_check') return;
+    event.preventDefault();
+    if (await leaveRoomMutation()) navigate('/lobby', { replace: true });
+  };
   return (
     <>
       <header className="v3-room-header" data-room-view={segment} data-scene={scene}>
       <div className="v3-room-header__primary">
-        <Link className="v3-button v3-button--quiet v3-room-header__home" to="/lobby">
+        <Link className="v3-button v3-button--quiet v3-room-header__home" to="/lobby" onClick={(event) => { void handleHomeClick(event); }}>
           <Home size={16} /><span>返回大厅</span>
         </Link>
         <div className="v3-room-header__code-group">

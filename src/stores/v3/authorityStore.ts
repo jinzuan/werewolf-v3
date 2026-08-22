@@ -1468,6 +1468,20 @@ export const useV3Store = create<V3Store>()((set, get) => {
       }),
 
     leaveRoomMutation: async () => {
+      const current = get();
+      const viewer = current.room?.members.find((member) => member.id === current.session?.actorId);
+      if (current.room && viewer?.isHost) {
+        const otherHumanPlayers = current.room.members.filter((member) =>
+          member.kind === 'player' && !member.isAI && member.id !== viewer.id,
+        );
+        // A host leaving an AI-only room must close it rather than leaving an
+        // orphaned host id behind. With other human players, pass ownership to
+        // a connected player first; the server also has a safe fallback for an
+        // offline human when the leave command is committed.
+        if (otherHumanPlayers.length === 0) return get().dissolveRoom();
+        const nextHost = otherHumanPlayers.find((member) => member.connected);
+        if (nextHost && !await get().transferHost(nextHost.id)) return false;
+      }
       const success = await runRoomMutation({
         type: 'room.leave',
         payload: {},
