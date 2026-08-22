@@ -972,6 +972,9 @@ export function GamePage() {
                             {player.order.toString().padStart(2, '0')}
                           </span>
                           <strong>{playerName(player.id)}</strong>
+                          {activeAction === 'vote' ? (
+                            <small className="v3-vote-count">{voteRound?.voteCounts[player.id] ?? 0}票</small>
+                          ) : null}
                           {seerCheckedAlignment(player.id) ? (
                             <small className="v3-target-grid__seer-check">
                               已查验·{seerCheckedAlignment(player.id) === 'wolf' ? '狼人' : '好人'}

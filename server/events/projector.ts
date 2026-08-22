@@ -196,6 +196,10 @@ const projectOwnVoteSubmission = (
     viewer.playerId,
   );
   const target = flow.votes[viewer.playerId];
+  const voteCounts = Object.values(flow.votes).reduce<Record<string, number>>((counts, targetId) => {
+    if (typeof targetId === 'string') counts[targetId] = (counts[targetId] ?? 0) + 1;
+    return counts;
+  }, {});
   const submittedCount = voterIds.filter((playerId) =>
     Object.prototype.hasOwnProperty.call(flow.votes, playerId),
   ).length;
@@ -207,6 +211,7 @@ const projectOwnVoteSubmission = (
     submittedCount,
     totalVoters: voterIds.length,
     waitingFor: Math.max(0, voterIds.length - submittedCount),
+    voteCounts,
   };
 };
 

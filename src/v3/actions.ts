@@ -77,6 +77,7 @@ export interface VoteRoundProjection {
   submittedCount: number;
   totalVoters: number;
   waitingFor: number;
+  voteCounts: Record<string, number>;
 }
 
 const latestEvent = (
@@ -225,6 +226,7 @@ export const currentVoteRoundProjection = (
       (typeof latestVote?.payload.waitingFor === 'number'
         ? latestVote.payload.waitingFor
         : 0),
+    voteCounts: snapshotSubmission?.voteCounts ?? {},
   };
 };
 

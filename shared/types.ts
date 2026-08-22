@@ -52,6 +52,8 @@ export interface ProjectedAuthorityFields {
     submittedCount: number;
     totalVoters: number;
     waitingFor: number;
+    /** Aggregate target counts only; voter identities remain private. */
+    voteCounts?: Record<string, number>;
   } | null;
 }
 

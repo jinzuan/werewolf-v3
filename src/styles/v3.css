@@ -698,6 +698,7 @@ button.v3-player-seat { width: 100%; cursor: pointer; }
 .v3-target-grid button.is-selected { border-color: var(--v3-seat-color, var(--ww-action-primary)); background: color-mix(in srgb, var(--v3-seat-color, var(--ww-action-primary)) 18%, var(--ww-bg-subtle)); }
 .v3-target-grid button > span:first-child { color: var(--ww-text-muted); font-family: var(--ww-font-family-number); }
 .v3-target-grid button strong { overflow: hidden; color: var(--ww-text-strong); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.v3-vote-count { color: var(--ww-text-muted); font-size: 11px; white-space: nowrap; }
 .v3-target-grid__seer-check { grid-column: 2; color: #E8B666; }
 .v3-action-panel__footer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--ww-space-3); margin-top: var(--ww-space-4); padding-top: var(--ww-space-3); border-top: 1px solid var(--ww-border-default); }
 .v3-action-panel__footer > span { min-width: 0; color: var(--ww-text-muted); font-size: var(--ww-text-caption-size); overflow-wrap: anywhere; }

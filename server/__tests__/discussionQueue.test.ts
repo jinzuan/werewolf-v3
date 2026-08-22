@@ -248,6 +248,7 @@ test('waiting queue entries gain deterministic timeout priority and voting overw
     submittedCount: 1,
     totalVoters: voting.players.length,
     waitingFor: voting.players.length - 1,
+    voteCounts: { [targetA]: 1 },
   });
   assert.deepEqual(otherVoteSnapshot.gameState.voteSubmission, {
     submitted: false,
@@ -255,6 +256,7 @@ test('waiting queue entries gain deterministic timeout priority and voting overw
     submittedCount: 1,
     totalVoters: voting.players.length,
     waitingFor: voting.players.length - 1,
+    voteCounts: { [targetA]: 1 },
   });
   const changed = await dispatch(voteSession, voting.players[0].id, {
     type: 'game.vote',
