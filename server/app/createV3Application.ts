@@ -123,7 +123,6 @@ const createModernApplication = async (
             return writeFilePromise(file, value, encoding);
           },
         } satisfies Partial<AsyncAtomicFileOperations>,
-        },
       }
       : {}),
   };
