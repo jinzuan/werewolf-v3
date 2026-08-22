@@ -38,12 +38,20 @@ const stableIndex = (value: string): number => {
 export const fallbackWolfSpeechContent = (context: AIRequestContext): string => {
   const prompt = context.promptContext;
   const alive = context.players.filter((player) => player.isAlive);
-  const recent = cleanFact(prompt?.currentRoundSpeeches?.at(-1));
-  const target = alive[(context.stageRevision + stableIndex(context.playerId)) % Math.max(1, alive.length)];
+  const recent = cleanFact(
+    prompt?.wolfTeamDisagreement ||
+      prompt?.currentRoundSpeeches?.at(-1) ||
+      prompt?.wolfPrivateChat?.at(-1),
+  );
+  const legalTargets = prompt?.legalTargets?.length
+    ? prompt.legalTargets
+    : alive.map((player) => ({ id: player.id, name: player.name }));
+  const target = legalTargets[(context.stageRevision + stableIndex(context.playerId)) % Math.max(1, legalTargets.length)];
+  const round = prompt?.wolfDiscussionRound ?? 1;
   const variants = [
-    `现在有${alive.length}名玩家存活，我倾向先观察${target?.name ?? '目标'}的公开反应，${recent || '不要让票型过早暴露我们的方向'}。`,
-    `现在有${alive.length}名玩家存活，这轮先别急着统一说法；${recent || '可以让一人保留怀疑，其他人再根据场上反应调整'}。`,
-    `现在有${alive.length}名玩家存活，我会把${target?.name ?? '这名玩家'}列为重点观察对象，先听他回应，再决定是否跟进。`,
+    `狼队第${round}/2轮讨论，我建议先考虑击杀${target?.name ?? '目标'}；${recent || '请队友说明是否有更稳妥的刀口'}。`,
+    `今晚要先定击杀目标，不要聊白天站边。${target?.name ?? '这个目标'}可以优先评估，${recent || '如果反对请直接报出替代目标'}。`,
+    `现在有${alive.length}名玩家存活，我把${target?.name ?? '这名玩家'}列为今晚的击杀候选，理由是公开信息和存活收益；请队友补充风险或改报目标。`,
   ];
   return variants[(context.stageRevision + stableIndex(context.playerId)) % variants.length];
 };
