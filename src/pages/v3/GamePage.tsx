@@ -604,7 +604,7 @@ export function GamePage() {
           <div className="v3-wolf-team__list">
             {wolfTeammates.map((teammate) => (
               <div className="v3-wolf-team__card" key={teammate.id}>
-                <img src={avatarForPlayer(teammate.id)} alt="" aria-hidden="true" />
+                <img src={avatarForPlayer(teammate.id).src} alt="" aria-hidden="true" />
                 <span><strong>{playerName(teammate.id)}</strong><small>{teammate.order.toString().padStart(2, '0')}号 · {teammate.isAI ? 'AI' : '真人'}</small></span>
               </div>
             ))}
