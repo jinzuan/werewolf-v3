@@ -123,7 +123,7 @@ export function WaitingRoomPage() {
     setPageError(null);
     if (!await operation()) return false;
 
-    if (action === 'leave' || action === 'dissolve') {
+    if (action === 'leave') {
       navigate('/lobby', { replace: true });
     } else {
       await refreshRoom();
