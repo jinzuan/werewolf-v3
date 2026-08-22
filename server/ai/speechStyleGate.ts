@@ -255,7 +255,7 @@ const rewriteInstructionFor = (issues: readonly SpeechStyleIssue[]): string => {
     firstCheckBoundary,
     scoreBoundary,
     pressureBoundary,
-    '保留原立场和已有事实，改成 2-3 句桌上聊天，一次只推进一个具体点；删掉模板腔和空泛附和，不要解释改写过程。',
+    '保留原立场和已有事实，按信息量改成一句或 1-3 句桌上聊天；短说是允许的，不要为了凑长度扩写。一次只推进一个具体点，删掉模板腔和空泛附和，不要解释改写过程。',
   ].filter(Boolean).join(' ');
 };
 

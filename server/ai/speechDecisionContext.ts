@@ -183,6 +183,11 @@ export const formatSpeechDecisionContext = (
     : context.stage === 'speech'
       ? '当前是服务端轮流发言：不要催促尚未轮到的玩家，也不要把“谁还没说话”当作本轮主线；按队列回应上一位发言即可。只有自由讨论阶段才检查谁尚未发言。'
       : '公共发言优先回应上一条具体发言，再补充自己的判断。';
+  const lengthGuidance = decision.requiresResponse
+    ? '表达长度自适应：回应一个具体问题通常 1-2 句；有冲突时再补第 3 句。不要凑字数。'
+    : decision.newInformation.length === 0
+      ? '表达长度自适应：没有新信息时一句话也足够，可以直接短说、保留或过，不要为了显得像分析而扩写。'
+      : '表达长度自适应：优先 1-2 句说清事实、判断和下一步；只有多个冲突需要拆开时才展开。';
 
   if (mode === 'compact') {
     return [
@@ -197,6 +202,7 @@ export const formatSpeechDecisionContext = (
       '术语按事实使用；“加分/减分”必须同时说明具体玩家和改变信任的公开事实，只是软判断。',
       noContentGuidance,
       channelGuidance,
+      lengthGuidance,
     ].join('\n');
   }
 
@@ -221,5 +227,6 @@ export const formatSpeechDecisionContext = (
     '“加分/减分”只是软判断：若使用，必须同时说清对象和导致信任变化的公开事实；它不是服务端分数，不自动等于金水、查杀或定狼。更自然时直接说“这让我更愿意信他/让我对他降一点信任”。',
     noContentGuidance,
     channelGuidance,
+    lengthGuidance,
   ].join('\n');
 };
