@@ -194,6 +194,19 @@
 }
 
 @media (min-width: 1280px) {
+  .waiting-room__actions {
+    grid-template-columns: minmax(210px, 240px) minmax(0, 1fr) minmax(220px, 280px);
+    grid-template-areas: 'heading flow secondary' 'heading notice secondary';
+  }
+  .waiting-room__action-list--secondary {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+  }
+  .waiting-room__action-list--secondary .v3-button {
+    width: 100%;
+    justify-content: flex-start;
+  }
   .waiting-room__board { grid-template-columns: minmax(0, 1fr) minmax(320px, 390px); }
 }
 
