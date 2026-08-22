@@ -110,16 +110,23 @@ const createModernApplication = async (
   const testClock = options.testClock ?? defaultTestClock;
   const now = options.clock ?? (testClock ? () => testClock.now : Date.now);
   const testFaults = { provider: false, write: false };
-  const persistence = options.enableTestControl
-    ? {
+  const persistence = {
+    // Cloud games can legitimately accumulate a long event history. Keep the
+    // secure file boundary, but make the deployment limit explicit instead of
+    // letting a normal long game crash the service at the small test default.
+    maxBytes: Number(process.env.WW_PERSISTENCE_MAX_BYTES ?? 512 * 1024 * 1024),
+    ...(options.enableTestControl
+      ? {
         operations: {
           writeFile: async (file: string, value: string, encoding: 'utf8') => {
             if (testFaults.write) throw new Error('TEST_WRITE_FAILURE');
             return writeFilePromise(file, value, encoding);
           },
         } satisfies Partial<AsyncAtomicFileOperations>,
+        },
       }
-    : {};
+      : {}),
+  };
 
   await ensureSecureDirectory(runtime.dataDir);
   await Promise.all([
