@@ -178,29 +178,37 @@ export const formatSpeechDecisionContext = (
     : decision.requiresResponse
       ? `当前有必须处理的点名、追问、质疑、对跳或票型变化：${list(decision.responseTriggers, '已检测')}。优先 speak 准确回应，不得无理由 skip_speech。`
       : '轮到你时先推进一件有价值的事：探查、追问、回应、暂时站边或信息交换均可；不强迫指认。';
+  const channelGuidance = decision.channel === 'wolf_private'
+    ? '这是狼人私聊：只讨论今晚是否空刀、击杀候选、刀口收益与女巫风险；不要把白天站边或公开发言模板搬进狼聊。首夜没有公开信息时可以提出候选并说明理由，不能假装已经知道神职身份。'
+    : context.stage === 'speech'
+      ? '当前是服务端轮流发言：不要催促尚未轮到的玩家，也不要把“谁还没说话”当作本轮主线；按队列回应上一位发言即可。只有自由讨论阶段才检查谁尚未发言。'
+      : '公共发言优先回应上一条具体发言，再补充自己的判断。';
 
   if (mode === 'compact') {
     return [
-      '【公共发言决策上下文（仅供模型内部选择动作，不展示分析过程）】',
+      `【${decision.channel === 'wolf_private' ? '狼人私聊' : '公共发言'}决策上下文（仅供模型内部选择动作，不展示分析过程）】`,
       `阶段任务：${decision.stageTask}；合法动作：${decision.legalActions.join('、') || '无'}；合法目标：${targets.join('、') || '无需目标'}`,
       `平等候选：${decision.allowedMoves.join('、')}。“指认一个人”不是必填项；没有点名仍是合法发言。`,
       `新增信息：${list(decision.newInformation, '无')}；被点名：${decision.wasAddressed ? '是' : '否'}；必须回应：${decision.requiresResponse ? '是' : '否'}。`,
+      `本轮逐条发言（先读再回应）：${list(decision.currentRoundSpeeches, '暂无')}`,
       `近期已说主张/证据：${list([...decision.recentClaims, ...decision.recentEvidence], '无')}。避免复述。`,
       '已回答不等于没回答；先承认回应，再说新矛盾或保留。首夜查验是盲选，不追问事后动机，不虚构私聊或验人链。',
       `表达倾向：${decision.persona}。只改变说法，不改变事实、权限或动作；经验只作候选，与当前事实冲突时忽略。`,
       '术语按事实使用；“加分/减分”必须同时说明具体玩家和改变信任的公开事实，只是软判断。',
       noContentGuidance,
+      channelGuidance,
     ].join('\n');
   }
 
   return [
-    '【公共发言决策上下文（仅供模型内部选择动作，不得向玩家展示分析过程或本结构）】',
+    `【${decision.channel === 'wolf_private' ? '狼人私聊' : '公共发言'}决策上下文（仅供模型内部选择动作，不得向玩家展示分析过程或本结构）】`,
     `服务端阶段与任务：${context.phase}/${context.stage ?? '无子阶段'}；${decision.stageTask}`,
     `服务端合法动作：${decision.legalActions.join('、') || '无'}；合法目标：${targets.join('、') || '当前动作无需目标'}`,
     `当前角色私有可见事实：${list(privateFacts, '无新增私有事实')}`,
     `本轮可选主动作：${decision.allowedMoves.join('；')}。这些动作地位相同；“指认一个人”不是必填项。`,
     '指认门槛：只有当前可见的具体证据足够、阶段需要归票/推进，或有人明确要求你回应时才指认。没有点名仍是合法有效发言；首轮信息报告尤其不强迫报狼坑。',
     `本轮真正的新信息：${list(decision.newInformation, '无新增信息')}`,
+    `本轮逐条发言（必须先读取上一条，再决定是否回应）：${list(decision.currentRoundSpeeches, '暂无发言')}`,
     `你最近已经说过的主张：${list(decision.recentClaims, '无')}`,
     `你最近已经用过的证据：${list(decision.recentEvidence, '无结构化记录；仍须避免复述近期发言')}`,
     `是否被最近发言点名：${decision.wasAddressed ? '是，应准确回应被问到的部分' : '否'}`,
@@ -212,5 +220,6 @@ export const formatSpeechDecisionContext = (
     '术语建议：金水、查杀、对跳、站边、狼坑、警上/警下、悍跳、倒钩、切割、反水、票型、平安夜等只在事实适配时使用，不为显得专业硬塞。',
     '“加分/减分”只是软判断：若使用，必须同时说清对象和导致信任变化的公开事实；它不是服务端分数，不自动等于金水、查杀或定狼。更自然时直接说“这让我更愿意信他/让我对他降一点信任”。',
     noContentGuidance,
+    channelGuidance,
   ].join('\n');
 };

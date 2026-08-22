@@ -17,14 +17,19 @@ export const fallbackSpeechContent = (context: AIRequestContext): string => {
   const recent = cleanFact(
     prompt?.newInformationSinceLastTurn?.at(-1) ?? prompt?.currentRoundSpeeches?.at(-1),
   );
+  const latestSpeech = prompt?.currentRoundSpeeches?.at(-1) ?? '';
+  const latestSpeaker = latestSpeech.match(/^\s*[^：:]{1,24}/u)?.[0]?.trim();
   const day = prompt?.dayNumber ?? '?';
   const targetName = target?.name ?? '场上玩家';
   const subject = recent || `目前有${alive.length}名玩家存活`;
+  const responseLead = latestSpeaker && recent
+    ? `先回应${latestSpeaker}刚才的发言：${recent}`
+    : subject;
   const variants = [
-    `第${day}天我先关注${targetName}：${subject}。我会听他下一轮解释，再决定是否调整判断。`,
-    `第${day}天我暂时把票型和${targetName}放在一起看。${subject}，现在不急着下定论，但需要他回应具体矛盾。`,
-    `第${day}天从公开信息看，${subject}。我对${targetName}保留怀疑，想先确认他的发言和投票是否一致。`,
-    `第${day}天这一轮我不复述前面的结论：${subject}。我会继续观察${targetName}的立场变化，再给出更明确的判断。`,
+    `第${day}天我先回应${latestSpeaker ?? '上一位玩家'}：${responseLead}。我暂时关注${targetName}，再听他解释后调整判断。`,
+    `第${day}天我接着桌面信息说：${responseLead}。我把${targetName}列为观察位，但现在不急着下定论。`,
+    `第${day}天从刚才的发言看，${responseLead}。我对${targetName}保留怀疑，想确认他的发言和投票是否一致。`,
+    `第${day}天我不重复前面的结论，只补充一点：${responseLead}。我会继续观察${targetName}的立场变化。`,
   ];
   return variants[(context.stageRevision + stableIndex(actor?.id ?? context.playerId)) % variants.length];
 };

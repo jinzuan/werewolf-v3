@@ -111,6 +111,7 @@ export function GamePage() {
   });
   const [roleRevealed, setRoleRevealed] = useState(false);
   const [roleInfoOpen, setRoleInfoOpen] = useState(false);
+  const [compactEvents, setCompactEvents] = useState(false);
   const [voteEditing, setVoteEditing] = useState(false);
   const chatInputRef = useRef<HTMLInputElement | null>(null);
   const chatListRef = useRef<HTMLDivElement | null>(null);
@@ -211,7 +212,6 @@ export function GamePage() {
   const draftScopeKey = [
     snapshot?.gameId ?? 'no-game',
     state?.day ?? 0,
-    state?.stageRevision ?? 0,
     actionKey,
     voteRound?.key ?? 'no-vote',
   ].join(':');
@@ -294,6 +294,24 @@ export function GamePage() {
     () => visibleEvents.filter((event) => !isSpeechEvent(event)),
     [visibleEvents],
   );
+  const displaySystemEvents = useMemo(() => {
+    if (!compactEvents) return systemEvents;
+    const lowSignal = new Set([
+      'game.state_updated',
+      'role.confirmed',
+      'role.confirmation_completed',
+      'wolf.discussion_round_started',
+    ]);
+    return systemEvents.filter((event) => !lowSignal.has(event.eventType));
+  }, [compactEvents, systemEvents]);
+  const latestNightSummary = useMemo(() => {
+    const event = [...visibleEvents].reverse().find((candidate) =>
+      candidate.eventType === 'night.resolved' || candidate.eventType === 'night.resolution_detail',
+    );
+    return event
+      ? describeEvent(event, playerName, { viewer: snapshot?.viewer ?? undefined })
+      : null;
+  }, [playerName, snapshot?.viewer, visibleEvents]);
   const discussionSpokenPlayerIds = useMemo(() => [...new Set(visibleEvents
     .filter((event) => {
       if (
@@ -329,10 +347,19 @@ export function GamePage() {
       : event.phase === 'role_confirm'
         ? '身份确认'
         : '对局进程';
+    const eventTone = event.eventType.startsWith('wolf.')
+      ? 'wolf'
+      : event.eventType.startsWith('day.vote') || event.eventType.includes('exil')
+        ? 'vote'
+        : event.eventType.startsWith('seer.') || event.eventType.startsWith('witch.')
+          ? 'role'
+          : event.eventType.startsWith('night.')
+            ? 'night'
+            : 'system';
     return (
       <Fragment key={event.eventId}>
         <DayDivider event={event} previous={items[index - 1] ?? null} fallbackDay={state?.day ?? 1} />
-        <div className={`v3-event-item${actorColorClass}`}>
+        <div className={`v3-event-item v3-event-tone-${eventTone}${actorColorClass}`}>
           <div className="v3-event-item__meta">
             <time>{formatEventTime(event.occurredAt)}</time>
             <span>{stageName}</span>
@@ -376,6 +403,9 @@ export function GamePage() {
 
   const isRoleConfirmation = state?.phase === 'role_confirm';
   const canConfirmRole = isRoleConfirmation && allowedActions.includes('confirm_role');
+  const wolfTeammates = myPlayer?.role === 'wolf'
+    ? players.filter((player) => player.role === 'wolf' && player.id !== myId)
+    : [];
 
   useEffect(() => {
     if (!isRoleConfirmation || !myPlayer?.role) {
@@ -568,6 +598,19 @@ export function GamePage() {
           description={ROLE_DESCRIPTIONS[myPlayer.role]}
         />
       )}
+      {wolfTeammates.length > 0 ? (
+        <section className="v3-wolf-team" aria-label="狼队队友">
+          <div className="v3-wolf-team__heading"><strong>狼队队友</strong><span>私密可见</span></div>
+          <div className="v3-wolf-team__list">
+            {wolfTeammates.map((teammate) => (
+              <div className="v3-wolf-team__card" key={teammate.id}>
+                <img src={avatarForPlayer(teammate.id)} alt="" aria-hidden="true" />
+                <span><strong>{playerName(teammate.id)}</strong><small>{teammate.order.toString().padStart(2, '0')}号 · {teammate.isAI ? 'AI' : '真人'}</small></span>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </Card>
   ) : null;
 
@@ -663,6 +706,11 @@ export function GamePage() {
                     : '等待'}
               </strong>
             </div>
+            {latestNightSummary ? (
+              <div className="v3-stage-summary__notice" role="status" aria-live="polite">
+                <span>昨夜结果</span><strong>{latestNightSummary}</strong>
+              </div>
+            ) : null}
           </section>
           <div
             className="v3-mobile-match-surface v3-game-workspace"
@@ -1009,15 +1057,18 @@ export function GamePage() {
             <div className="v3-event-details__summary">
               <span>事件与系统通知</span>
               <span className="v3-event-counts">
-                <Badge tone="info" className="v3-event-count--desktop">{systemEvents.length}</Badge>
+                <Button variant="quiet" className="v3-event-compact-toggle" aria-pressed={compactEvents} onClick={() => setCompactEvents((current) => !current)}>
+                  {compactEvents ? '显示全部' : '精简'}
+                </Button>
+                <Badge tone="info" className="v3-event-count--desktop">{displaySystemEvents.length}</Badge>
                 <Badge tone="info" className="v3-event-count--mobile">{mobileTimelineEvents.length}</Badge>
               </span>
             </div>
             <div className="v3-event-list v3-event-list--desktop">
-              {renderSystemEvents(systemEvents)}
+              {renderSystemEvents(displaySystemEvents)}
             </div>
             <div ref={timelineListRef} className="v3-event-list v3-event-list--mobile">
-              {renderSystemEvents(mobileTimelineEvents)}
+              {renderSystemEvents(compactEvents ? mobileTimelineEvents.filter((event) => event.eventType !== 'game.state_updated') : mobileTimelineEvents)}
             </div>
           </section>
             </div>
