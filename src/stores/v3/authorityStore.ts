@@ -365,6 +365,7 @@ export interface V3Store {
 }
 
 let recoveryPromise: Promise<boolean> | null = null;
+let consecutiveRecoveryFailures = 0;
 let roomRefreshPromise: Promise<void> | null = null;
 let catalogRefreshPromise: Promise<boolean> | null = null;
 
@@ -385,6 +386,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
   });
 
   const clearAuthority = (reason: string | null = null): void => {
+    consecutiveRecoveryFailures = 0;
     resetV3Connection();
     bufferedGameMessages = [];
     persistSessionIdentity(null);
@@ -689,6 +691,15 @@ export const useV3Store = create<V3Store>()((set, get) => {
         return false;
       }
       set({ recovering: true, authorityStatus: 'resolving', error: null, syncStatus: 'syncing', syncError: null });
+      const failRecovery = (message: string): false => {
+        consecutiveRecoveryFailures += 1;
+        if (consecutiveRecoveryFailures >= 2) {
+          clearAuthority('房间连接多次失败，已退出当前房间，请从大厅重新进入。');
+        } else {
+          set({ recovering: false, authorityStatus: 'error', error: message, syncStatus: 'error', syncError: message });
+        }
+        return false;
+      };
       try {
         resetV3Connection();
         const response = await resumeV3Room(
@@ -704,7 +715,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
           if (response.code === 'UNAUTHENTICATED' || response.code === 'ROOM_NOT_FOUND') {
             clearAuthority(message);
           } else {
-            set({ recovering: false, authorityStatus: 'error', error: message, syncStatus: 'error', syncError: message });
+            return failRecovery(message);
           }
           return false;
         }
@@ -751,18 +762,19 @@ export const useV3Store = create<V3Store>()((set, get) => {
         });
 
         const projected = await recoverGameProjection();
+        if (!projected) return failRecovery(get().syncError ?? get().error ?? '房间连接暂时不可用，请稍候。');
+        consecutiveRecoveryFailures = 0;
         set({
           recovering: false,
-          authorityStatus: projected ? 'authorized' : 'error',
-          error: projected ? null : get().error,
-          syncStatus: projected ? 'synced' : 'error',
-          syncError: projected ? null : get().syncError ?? get().error,
+          authorityStatus: 'authorized',
+          error: null,
+          syncStatus: 'synced',
+          syncError: null,
         });
-        return projected;
+        return true;
       } catch (error) {
         const message = recoveryExceptionMessage(error);
-        set({ recovering: false, authorityStatus: 'error', error: message, syncStatus: 'error', syncError: message });
-        return false;
+        return failRecovery(message);
       }
     })().finally(() => {
       recoveryPromise = null;
