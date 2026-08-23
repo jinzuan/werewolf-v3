@@ -302,6 +302,7 @@ export class RoomService {
   private readonly endedRoomTtlMs: number;
   private readonly roomSweepIntervalMs: number;
   private readonly startupGraceMs: number;
+  private readonly aiTimeoutMs: number;
   private startupGraceUntil = 0;
   private readonly now: () => number;
   private readonly sweepLogger?: RoomServiceOptions['sweepLogger'];
@@ -343,6 +344,10 @@ export class RoomService {
     this.endedRoomTtlMs = options.endedRoomTtlMs ?? 24 * 60 * 60 * 1000;
     this.roomSweepIntervalMs = options.roomSweepIntervalMs ?? 60 * 1000;
     this.startupGraceMs = options.startupGraceMs ?? 5_000;
+    const configuredAITimeout = options.aiTimeoutMs ?? Number(process.env.WW_AI_TIMEOUT_MS ?? '12000');
+    this.aiTimeoutMs = Number.isFinite(configuredAITimeout) && configuredAITimeout > 0
+      ? configuredAITimeout
+      : 12_000;
     this.now = options.clock ?? Date.now;
     this.sweepLogger = options.sweepLogger;
     this.reviewPipeline = options.reviewPipeline;
@@ -352,7 +357,7 @@ export class RoomService {
       getSession: (roomCode) => this.sessions.get(roomCode.toUpperCase()),
       providerForRoom: (room) => this.providerForRoom(room),
       insightStore: this.insightStore,
-      timeoutMs: options.aiTimeoutMs,
+      timeoutMs: this.aiTimeoutMs,
       now: options.session?.now,
       telemetry: this.aiTelemetry,
       logger: this.aiLogger,
@@ -2431,7 +2436,7 @@ export class RoomService {
     selected.maxTokens = roomConfig.maxTokens;
     if (providerConfig.apiType === 'local') providerConfig.local.apiUrl = roomConfig.endpoint;
     const provider = this.aiProviderFactory(providerConfig, {
-      timeoutMs: this.options.aiTimeoutMs,
+      timeoutMs: this.aiTimeoutMs,
       endpointPolicy: this.endpointPolicy,
       endpoint: roomConfig.endpoint,
       logger: this.aiLogger,
@@ -2795,12 +2800,21 @@ export class RoomService {
     return candidate;
   }
 
-  private startAI(roomCode: string, autoRoom = false): void {
+  private async startAI(roomCode: string, autoRoom = false): Promise<void> {
     if (
       this.closed ||
       this.options.autoDrive === false ||
       (!autoRoom && this.options.autoDrive !== true)
     ) return;
+    if (autoRoom) {
+      const room = await this.repository.get(roomCode);
+      const hasConnectedViewer = room?.members.some((member) =>
+        this.connectionRegistry.isConnected(roomCode, member.id),
+      ) === true;
+      // A quick-computer room is viewer-driven. Do not keep an abandoned
+      // full-AI game consuming the Ling queue after every browser closes.
+      if (!hasConnectedViewer) return;
+    }
     void this.coordinator.scheduleEligibleAI({ roomCode, autoRoom });
   }
 }
