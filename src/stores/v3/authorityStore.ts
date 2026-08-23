@@ -366,6 +366,19 @@ export interface V3Store {
 
 let recoveryPromise: Promise<boolean> | null = null;
 let consecutiveRecoveryFailures = 0;
+const ROOM_RECOVERY_TIMEOUT_MS = 10_000;
+
+const withRecoveryTimeout = <T>(promise: Promise<T>): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const timer = globalThis.setTimeout(
+      () => reject(new Error('ROOM_RECOVERY_TIMEOUT')),
+      ROOM_RECOVERY_TIMEOUT_MS,
+    );
+    promise.then(
+      (value) => { globalThis.clearTimeout(timer); resolve(value); },
+      (error) => { globalThis.clearTimeout(timer); reject(error); },
+    );
+  });
 let roomRefreshPromise: Promise<void> | null = null;
 let catalogRefreshPromise: Promise<boolean> | null = null;
 
@@ -702,14 +715,14 @@ export const useV3Store = create<V3Store>()((set, get) => {
       };
       try {
         resetV3Connection();
-        const response = await resumeV3Room(
+        const response = await withRecoveryTimeout(resumeV3Room(
           before.actorId,
           before.actorName,
           before.roomCode,
           before.roomId,
           before.credentials.resumeToken,
           before.lastSeenSeq,
-        );
+        ));
         if (response.ok === false) {
           const message = responseMessage(response);
           if (response.code === 'UNAUTHENTICATED' || response.code === 'ROOM_NOT_FOUND') {
@@ -761,7 +774,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
             sameGame ? current.events : [],
         });
 
-        const projected = await recoverGameProjection();
+        const projected = await withRecoveryTimeout(recoverGameProjection());
         if (!projected) return failRecovery(get().syncError ?? get().error ?? '房间连接暂时不可用，请稍候。');
         consecutiveRecoveryFailures = 0;
         set({
@@ -1244,7 +1257,13 @@ export const useV3Store = create<V3Store>()((set, get) => {
       // Leave through the server first so hosts transfer cleanly and an active
       // player's role is recorded as an exit instead of becoming a ghost seat.
       if (get().session && get().room) {
-        await get().leaveRoomMutation();
+        // A dead transport must never make the new-room button wait for the
+        // full socket ACK timeout. The server-side leave remains idempotent;
+        // a late result cannot affect the newly-created identity.
+        await Promise.race([
+          get().leaveRoomMutation().catch(() => false),
+          new Promise<boolean>((resolve) => globalThis.setTimeout(() => resolve(false), 2_500)),
+        ]);
       }
       const pending = readPendingCreate() ?? {
         createRequestId: newActorId(),
@@ -1517,6 +1536,12 @@ export const useV3Store = create<V3Store>()((set, get) => {
 
     leaveRoomMutation: async () => {
       const current = get();
+      const sessionAtStart = current.session;
+      const stillOwnsRoom = (): boolean => Boolean(
+        sessionAtStart &&
+        get().session?.roomId === sessionAtStart.roomId &&
+        get().session?.actorId === sessionAtStart.actorId,
+      );
       const viewer = current.room?.members.find((member) => member.id === current.session?.actorId);
       if (current.room && viewer?.isHost) {
         const otherHumanPlayers = current.room.members.filter((member) =>
@@ -1534,16 +1559,22 @@ export const useV3Store = create<V3Store>()((set, get) => {
         type: 'room.leave',
         payload: {},
       });
-      if (success) clearAuthority();
+      if (success && stillOwnsRoom()) clearAuthority();
       return success;
     },
 
     dissolveRoom: async () => {
+      const sessionAtStart = get().session;
       const success = await runRoomMutation({
         type: 'room.dissolve',
         payload: { confirm: true },
       });
-      if (success) clearAuthority();
+      if (
+        success &&
+        sessionAtStart &&
+        get().session?.roomId === sessionAtStart.roomId &&
+        get().session?.actorId === sessionAtStart.actorId
+      ) clearAuthority();
       return success;
     },
 

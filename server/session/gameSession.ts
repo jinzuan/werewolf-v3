@@ -111,6 +111,20 @@ const graphemeLength = (value: string): number => {
     : [...value].length;
 };
 
+/** Keep public/domain history plus only the latest full session snapshot. */
+const compactStoredEvents = (events: readonly StoredEvent[]): StoredEvent[] => {
+  let latestStateIndex = -1;
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    if (events[index].event.eventType === 'game.state_updated') {
+      latestStateIndex = index;
+      break;
+    }
+  }
+  return events.filter(
+    ({ event }, index) => event.eventType !== 'game.state_updated' || index === latestStateIndex,
+  );
+};
+
 const createDefaultScheduler = (keepTimersRefed = false): SessionScheduler => ({
   set: (delayMs, callback) => {
     const handle = setTimeout(callback, delayMs);
@@ -326,7 +340,13 @@ export class GameSession {
   }
 
   serialize(): SessionSnapshot {
-    return { state: structuredClone(this.state) };
+    const state = structuredClone(this.state);
+    // Command receipts contain their own event arrays and grow much faster
+    // than game state. The event stream rebuilds this cache during recovery,
+    // so persisting it in rooms.json only creates quadratic files and stalls
+    // unrelated Socket.IO handshakes.
+    state.processedCommands = {};
+    return { state };
   }
 
   async initialize(): Promise<void> {
@@ -553,14 +573,16 @@ export class GameSession {
 
   private async storedEvents(): Promise<StoredEvent[]> {
     if (!this.eventCacheLoaded) {
-      this.storedEventCache = await this.eventStore.read(this.streamId());
+      this.storedEventCache = compactStoredEvents(await this.eventStore.read(this.streamId()));
       this.eventCacheLoaded = true;
     } else {
       const delta = await this.eventStore.read(
         this.streamId(),
         this.storedEventCache.at(-1)?.event.sequence ?? 0,
       );
-      if (delta.length > 0) this.storedEventCache = [...this.storedEventCache, ...delta];
+      if (delta.length > 0) {
+        this.storedEventCache = compactStoredEvents([...this.storedEventCache, ...delta]);
+      }
     }
     // Callers only read this cache and the visibility projector clones every
     // event that it returns. Cloning the complete cache here duplicated every
@@ -2553,7 +2575,7 @@ export class GameSession {
           `Game stream ${this.streamId()} cannot replay an older state-event format from a stale room snapshot.`,
         );
       }
-      this.storedEventCache = stored;
+      this.storedEventCache = compactStoredEvents(stored);
       this.eventCacheLoaded = true;
       return;
     }
@@ -2599,7 +2621,7 @@ export class GameSession {
 
     this.state = recovered;
     this.migrateSnapshot();
-    this.storedEventCache = stored;
+    this.storedEventCache = compactStoredEvents(stored);
     this.eventCacheLoaded = true;
   }
 

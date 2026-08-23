@@ -477,19 +477,11 @@ export class RoomService {
       if (!room.session || (room.status !== 'playing' && room.status !== 'ended')) {
         continue;
       }
-      if (this.sessions.has(room.code)) {
-        this.startAI(room.code, room.config?.mode === 'quick_computer');
-        continue;
-      }
-      const recoverySnapshot = clone(room.session);
-      const session = this.createSession(room, room.players, this.eventStore, recoverySnapshot);
-      // initialize() reconciles the room cache with the event stream. It also
-      // creates the initial event when a durable playing intent was committed
-      // just before a process crashed.
-      await session.initialize();
-      session.restoreScheduling();
-      this.sessions.set(room.code, session);
-      this.startAI(room.code, room.config?.mode === 'quick_computer');
+      // Full-AI sessions can be very large. Restore them lazily when a real
+      // viewer reconnects instead of loading every abandoned room at startup.
+      if (room.config?.mode === 'quick_computer') continue;
+      await this.ensureRestoredSession(room);
+      this.startAI(room.code, false);
     }
     return this.sessions.size;
   }
@@ -778,6 +770,21 @@ export class RoomService {
     leases.add(connectionId);
     this.connectionLeases.set(key, leases);
     this.connectionRegistry.bind(room.code, member.id, connectionId);
+    if (room.session && (room.status === 'playing' || room.status === 'ended')) {
+      await this.ensureRestoredSession(room);
+      if (room.status === 'playing') this.startAI(room.code, room.config?.mode === 'quick_computer');
+    }
+  }
+
+  private async ensureRestoredSession(room: RoomRecord): Promise<GameSession | undefined> {
+    const existing = this.sessions.get(room.code);
+    if (existing) return existing;
+    if (!room.session || (room.status !== 'playing' && room.status !== 'ended')) return undefined;
+    const session = this.createSession(room, room.players, this.eventStore, clone(room.session));
+    await session.initialize();
+    session.restoreScheduling();
+    this.sessions.set(room.code, session);
+    return session;
   }
 
   async identity(roomCode: string, actorId: string, resumeToken: string): Promise<SocketIdentity> {

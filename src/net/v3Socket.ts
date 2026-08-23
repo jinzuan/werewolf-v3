@@ -239,6 +239,11 @@ const openRoomConnection = (auth?: SocketAuth, forceFresh = false): Socket => {
   currentAuth = { ...nextAuth };
   roomSocket = io(getServerEndpoint(), {
     auth: nextAuth,
+    // Room identities must never multiplex through the public/lobby Manager.
+    // A create/join/resume operation replaces credentials and therefore needs
+    // a genuinely new Engine.IO transport, not only a new Socket wrapper.
+    forceNew: true,
+    multiplex: false,
     transports: ['websocket', 'polling'],
     reconnection: true,
     reconnectionAttempts: Infinity,
