@@ -11,7 +11,7 @@ import type {
 } from '../../shared/reviewContract';
 import { isEvidenceBackedInsight } from '../../shared/experienceReview';
 import type { Role } from '../../shared/types';
-import { InMemoryInsightStore, type InsightStore, type ServerInsightRecord } from './insightStore';
+import { INSIGHT_SCHEMA_VERSION, InMemoryInsightStore, type InsightStore, type ServerInsightRecord } from './insightStore';
 import { projectReview } from './reviewProjector';
 import type {
   CanonicalReviewArchive,
@@ -100,13 +100,7 @@ export class RulesReviewGenerator implements ReviewGenerator {
       );
       const evidence = roleEvent ?? vote ?? ended;
       if (!evidence) return [];
-      const anchor = evidence.event.eventType === 'day.exiled' || evidence.event.eventType === 'day.no_exile'
-        ? '公开投票结果'
-        : evidence.event.eventType === 'seer.result'
-          ? '查验结果'
-          : evidence.event.eventType === 'wolf.kill_locked'
-            ? '狼刀决定'
-            : '行动记录';
+      const anchor = anchorFor(evidence);
       const evidenceDay = typeof (evidence.event.payload as { day?: unknown }).day === 'number'
         ? (evidence.event.payload as { day: number }).day
         : 1;
@@ -359,20 +353,20 @@ export class ReviewPipeline {
             evidenceEventIds: insight.evidence.map((ref) => ref.eventId),
             gameId: job.gameId,
             createdAt: insight.createdAt,
-            schemaVersion: 2,
+            schemaVersion: INSIGHT_SCHEMA_VERSION,
             scope: 'agent',
             playerId: insight.playerId,
             experienceInstanceId: insight.experienceInstanceId,
           });
         } else {
           await this.insightStore.add({
-          id: insight.id,
-          role: insight.role,
-          text: insight.text,
-          evidenceEventIds: insight.evidence.map((ref) => ref.eventId),
-          gameId: job.gameId,
-          createdAt: insight.createdAt,
-            schemaVersion: 2,
+            id: insight.id,
+            role: insight.role,
+            text: insight.text,
+            evidenceEventIds: insight.evidence.map((ref) => ref.eventId),
+            gameId: job.gameId,
+            createdAt: insight.createdAt,
+            schemaVersion: INSIGHT_SCHEMA_VERSION,
             scope: 'shared',
           } satisfies ServerInsightRecord);
         }

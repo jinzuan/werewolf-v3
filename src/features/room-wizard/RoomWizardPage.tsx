@@ -36,11 +36,9 @@ import {
   ROLE_LABELS,
   roleSetupTotal,
   serverIssuesToWizardIssues,
-  stepIndex,
   validateWizardStep,
   wizardPathForStep,
   writeWizardDraft,
-  WIZARD_STEPS,
   type WizardDraft,
   type WizardIssue,
   type WizardStep,
@@ -122,63 +120,6 @@ const codeFallbackStep = (code: string): WizardStep => {
   if (code === 'RULESET_UNAVAILABLE') return 'players';
   return 'roles';
 };
-
-function _WizardStepper({
-  current,
-  draft,
-  catalog,
-  serverIssues,
-  onNavigate,
-}: {
-  current: WizardStep;
-  draft: WizardDraft;
-  catalog: RoomCreationCatalog;
-  serverIssues: WizardIssue[];
-  onNavigate: (step: WizardStep) => void;
-}) {
-  const currentIndex = stepIndex(current);
-  return (
-    <nav aria-label="创建房间步骤" style={{ marginBottom: 'var(--ww-space-6)' }}>
-      <div style={{ ...row, alignItems: 'stretch' }}>
-        {WIZARD_STEPS.map((item, index) => {
-          const local = item.id === 'roles'
-            ? validateWizardStep(draft, 'roles', catalog)
-            : issuesForStep(draft, item.id, catalog);
-          const errorCount = (item.id === 'roles' ? local : local.filter((candidate) => candidate.step === item.id)).length +
-            (item.id === 'roles' ? serverIssues.length : serverIssues.filter((candidate) => candidate.step === item.id).length);
-          const canClick = index <= currentIndex || WIZARD_STEPS.slice(0, index).every(
-            (prior) => validateWizardStep(draft, prior.id, catalog).length === 0,
-          );
-          return (
-            <span key={item.id} style={{ display: 'contents' }}>
-              <button
-                type="button"
-                className="v3-button v3-button--quiet"
-                aria-current={item.id === current ? 'step' : undefined}
-                disabled={!canClick}
-                onClick={() => onNavigate(item.id)}
-                style={{
-                  flex: '1 1 140px',
-                  justifyContent: 'flex-start',
-                  border: item.id === current ? '1.5px solid var(--ww-action-primary)' : '1.5px solid transparent',
-                  background: item.id === current ? 'var(--ww-bg-subtle)' : undefined,
-                }}
-              >
-                <span aria-hidden="true">{index + 1}</span>
-                <span>{item.label}</span>
-                {errorCount > 0 ? <Badge tone="danger">{errorCount}项</Badge> : <Check size={15} aria-label="已完成" />}
-              </button>
-              {index < WIZARD_STEPS.length - 1 ? <span aria-hidden="true" style={{ alignSelf: 'center', color: 'var(--ww-border-default)' }}>—</span> : null}
-            </span>
-          );
-        })}
-      </div>
-      <p style={{ margin: 'var(--ww-space-3) 0 0', color: 'var(--ww-text-muted)', fontSize: 'var(--ww-text-caption-size)' }}>
-        当前步骤：{WIZARD_STEPS[currentIndex].label}；标出的项目需要处理后才能继续。
-      </p>
-    </nav>
-  );
-}
 
 function RoomPreview({ draft }: { draft: WizardDraft }) {
   const expectedComputerSeats = draft.aiFillPolicy === 'fill_to_max'
@@ -629,7 +570,7 @@ function RulesStep({
           <div style={css('gap')}>
             {draft.mode !== 'human' ? <p style={{ margin: 0, color: 'var(--ww-text-muted)' }}>创建后可在等待房的“电脑玩家设置”中配置模型与安全凭据。</p> : null}
             <label style={row}><input type="checkbox" checked={draft.allowPublicSpectators} onChange={(event) => update({ allowPublicSpectators: event.target.checked })} />允许观战及玩家协助邀请<FieldError issue={issueFor('allowPublicSpectators')} /></label>
-            <label style={row}><input type="checkbox" checked={draft.reviewEnabled} onChange={(event) => update({ reviewEnabled: event.target.checked })} />对局结束后开启复盘<FieldError issue={issueFor('reviewEnabled')} /></label>
+            <label style={row}><input type="checkbox" checked={draft.reviewEnabled} onChange={(event) => update({ reviewEnabled: event.target.checked, ...(event.target.checked ? { reviewMode: 'ai' } : {}) })} />对局结束后开启 AI 三轮复盘<FieldError issue={issueFor('reviewEnabled')} /></label>
             {draft.reviewEnabled ? (
               <label style={row}><input type="checkbox" checked={draft.reviewMode === 'ai'} onChange={(event) => update({ reviewMode: event.target.checked ? 'ai' : 'rules' })} />使用 AI 生成复盘总结<span style={{ color: 'var(--ww-text-muted)' }}>无 LLM Key 时自动保留上帝视角，不显示 AI 文案。</span></label>
             ) : null}
@@ -637,101 +578,6 @@ function RulesStep({
         </details>
       </Card>
       {showActions ? <WizardActions onBack={onBack} onNext={onNext} nextLabel="查看确认" /> : null}
-    </div>
-  );
-}
-
-function ConfirmStep({
-  draft,
-  issues,
-  busy,
-  onBack,
-  onEdit,
-  onCreate,
-  compact = false,
-}: {
-  draft: WizardDraft;
-  issues: WizardIssue[];
-  busy: boolean;
-  onBack: () => void;
-  onEdit: (step: WizardStep) => void;
-  onCreate: () => void;
-  compact?: boolean;
-}) {
-  const issueFor = (step: WizardStep) => issues.find((candidate) => candidate.step === step || (step === 'players' && candidate.step === 'rules') || (step === 'roles' && candidate.step === 'confirm'));
-  const expectedComputerSeats = draft.aiFillPolicy === 'fill_to_max' ? Math.max(0, draft.maxPlayers - draft.minHumanPlayers) : draft.computerSeats;
-  return (
-    <div style={css('gap')}>
-      {!compact ? <Card data-wizard-block="players" tabIndex={-1}>
-        <div style={{ ...row, justifyContent: 'space-between' }}><div><h2 style={{ margin: 0 }}>房间与人数</h2><p style={{ margin: 'var(--ww-space-2) 0 0' }}>{draft.roomName} · {modeLabel[draft.mode]} · {draft.maxPlayers}个席位</p><p style={{ margin: 0, color: 'var(--ww-text-muted)' }}>{expectedComputerSeats}个电脑席 · 至少{draft.minHumanPlayers}名真人</p>{draft.mode !== 'human' ? <p style={{ margin: 0, color: 'var(--ww-text-muted)' }}>电脑玩家参数将在等待房由受权房主配置。</p> : null}</div><Button variant="quiet" onClick={() => onEdit('players')}>修改</Button></div>
-        <FieldError issue={issueFor('players')} />
-      </Card> : null}
-      {!compact ? <Card data-wizard-block="roleSetup" tabIndex={-1}>
-        <div style={{ ...row, justifyContent: 'space-between' }}><div><h2 style={{ margin: 0 }}>角色配置</h2><p style={{ margin: 'var(--ww-space-2) 0 0' }}>{ROLE_KEYS.map((role) => `${ROLE_LABELS[role]}${draft.roleSetup[role]}`).join(' · ')}</p><p style={{ margin: 0, color: 'var(--ww-text-muted)' }}>共{roleSetupTotal(draft.roleSetup)}个角色 · 规则版本 {draft.rulesetVersion || '未选择'}</p></div><Button variant="quiet" onClick={() => onEdit('roles')}>修改</Button></div>
-        <FieldError issue={issueFor('roles')} />
-      </Card> : null}
-      {!compact ? <Card data-wizard-block="rules" tabIndex={-1}>
-        <div style={{ ...row, justifyContent: 'space-between' }}><div><h2 style={{ margin: 0 }}>房间规则</h2><p style={{ margin: 'var(--ww-space-2) 0 0' }}>{draft.visibility === 'listed' ? '大厅可见' : '仅凭邀请'} · {strategyLabel[draft.aiFillPolicy]} · {draft.allowPublicSpectators ? '允许观战及玩家协助邀请' : '不开放观战及玩家协助邀请'} · {draft.reviewEnabled ? (draft.reviewMode === 'ai' ? '开启 AI 复盘' : '开启复盘') : '关闭复盘'}</p><p style={{ margin: 0, color: 'var(--ww-text-muted)' }}>所有在线真人玩家准备后，由房主开局。</p></div><Button variant="quiet" onClick={() => onEdit('players')}>修改</Button></div>
-        <FieldError issue={issueFor('players')} />
-      </Card> : null}
-      <Card tone="raised" data-wizard-block="confirm" tabIndex={-1}>
-        {compact ? <>
-          <strong>规则版本：{draft.rulesetVersion || '未选择'} · {draft.roomName || '未命名房间'} · {draft.maxPlayers}个席位</strong>
-          {draft.mode !== 'human' ? <p style={{ margin: 'var(--ww-space-2) 0 0', color: 'var(--ww-text-muted)' }}>创建后可在等待房的“电脑玩家设置”中配置电脑玩家。</p> : null}
-        </> : null}
-        <strong>{draft.mode === 'quick_computer' ? '创建后立即开局，你将进入全知监控。' : '创建后进入等待房，邀请朋友入座。'}</strong>
-        <div className="v3-wizard-confirm-actions" style={{ ...row, justifyContent: 'space-between', marginTop: 'var(--ww-space-4)' }}>
-          <Button variant="secondary" onClick={onBack} disabled={busy}><ArrowLeft size={17} />返回修改</Button>
-          <Button size="action" onClick={onCreate} disabled={busy}>{busy ? '正在创建……' : draft.mode === 'quick_computer' ? '创建并开始电脑局' : '创建并进入等待房'}<ArrowRight size={17} /></Button>
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-function _PlayersAndRulesStep({
-  draft,
-  catalog,
-  issues,
-  update,
-  onNext,
-}: {
-  draft: WizardDraft;
-  catalog: RoomCreationCatalog;
-  issues: WizardIssue[];
-  update: (patch: Partial<WizardDraft>) => void;
-  onNext: () => void;
-}) {
-  return (
-    <div style={css('gap')}>
-      <PlayersStep draft={draft} catalog={catalog} issues={issues} update={update} onNext={onNext} showActions={false} />
-      <RulesStep draft={draft} issues={issues} update={update} onBack={() => undefined} onNext={onNext} showActions={false} />
-      <WizardActions onNext={onNext} nextLabel="继续选择角色" />
-    </div>
-  );
-}
-
-function _RolesAndConfirmStep({
-  draft,
-  catalog,
-  issues,
-  busy,
-  update,
-  onBack,
-  onCreate,
-}: {
-  draft: WizardDraft;
-  catalog: RoomCreationCatalog;
-  issues: WizardIssue[];
-  busy: boolean;
-  update: (patch: Partial<WizardDraft>) => void;
-  onBack: () => void;
-  onCreate: () => void;
-}) {
-  return (
-    <div style={css('gap')}>
-      <RolesStep draft={draft} catalog={catalog} issues={issues} update={update} onBack={onBack} onNext={onBack} showActions={false} />
-      <ConfirmStep draft={draft} issues={issues} busy={busy} onBack={onBack} onEdit={(step) => step === 'players' ? onBack() : undefined} onCreate={onCreate} compact />
     </div>
   );
 }
