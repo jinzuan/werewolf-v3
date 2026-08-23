@@ -204,7 +204,7 @@ const isTransportFailure = (response: ClientAck): response is TransportFailure =
 
 const responseMessage = (response: ClientAck): string =>
   isTransportFailure(response)
-    ? response.code === 'TRANSPORT_REPLACED'
+    ? ['TRANSPORT_REPLACED', 'TRANSPORT_UNAVAILABLE', 'CONNECT_TIMEOUT', 'ACK_TIMEOUT'].includes(response.code)
       ? '房间连接正在恢复，请稍候。'
       : response.message || '连接暂时不可用，请重试。'
     : getErrorMessage(response.code);
