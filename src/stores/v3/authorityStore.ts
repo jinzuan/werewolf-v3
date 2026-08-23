@@ -1228,6 +1228,12 @@ export const useV3Store = create<V3Store>()((set, get) => {
     },
 
     createRoomWithOptions: async (options) => {
+      // Creating a new room is an explicit replacement of the current room.
+      // Leave through the server first so hosts transfer cleanly and an active
+      // player's role is recorded as an exit instead of becoming a ghost seat.
+      if (get().session && get().room) {
+        await get().leaveRoomMutation();
+      }
       const pending = readPendingCreate() ?? {
         createRequestId: newActorId(),
         actorId: newActorId(),

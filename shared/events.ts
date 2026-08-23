@@ -20,6 +20,7 @@ export const DOMAIN_EVENT_TYPES = [
   'role.confirmation_completed',
   'game.state_updated',
   'game.ended',
+  'player.exited',
   'stage.timed_out',
   'guardian.completed',
   'seer.result',

@@ -56,3 +56,16 @@ test('wolf skip advances the private discussion without creating filler chat', a
   assert.equal(session.serialize().state.gameState.wolfCurrentSpeaker, wolves[1].id);
   session.dispose();
 });
+
+test('leaving an active game records a public exit and marks the player dead', async () => {
+  const players = createPlayers();
+  const session = new GameSession('room-exit', players, new InMemoryEventStore());
+  await initializeSession(session, players);
+  const target = players.find((player) => player.role === 'villager')!;
+  assert.equal(await session.markPlayerExited(target.id, 'exit-test'), true);
+  const state = session.serialize().state;
+  assert.equal(state.players.find((player) => player.id === target.id)?.isAlive, false);
+  const events = await session.eventsFor({ kind: 'spectator', spectatorId: 'monitor', omniscient: true });
+  assert.ok(events.some((event) => event.eventType === 'player.exited'));
+  session.dispose();
+});

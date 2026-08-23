@@ -1547,6 +1547,11 @@ export class RoomService {
   ): Promise<RoomView | undefined> {
     const room = await this.requireRoom(identity.roomCode);
     this.policy.assertAllowed(room, identity.actorId, 'leave');
+    if (room.status === 'playing') {
+      // Leaving an active game is a gameplay event, not just a roster edit.
+      // Persist the public exit/death before removing the room membership.
+      await this.sessions.get(room.code)?.markPlayerExited(identity.actorId, commandId);
+    }
     let committedReceipt: CommandReceipt | undefined;
     let committedTombstone: RoomTombstone | undefined;
     try {
@@ -1554,7 +1559,9 @@ export class RoomService {
         assertIdentityRoom(identity, draft);
         this.policy.assertAllowed(draft, identity.actorId, 'leave');
         draft.members = draft.members.filter((member) => member.id !== identity.actorId);
-        draft.players = draft.players.filter((player) => player.id !== identity.actorId);
+        if (draft.status !== 'playing') {
+          draft.players = draft.players.filter((player) => player.id !== identity.actorId);
+        }
         if (draft.hostId === identity.actorId) {
           const nextHost = draft.members.find(
             (member) => member.kind === 'player' && !member.isAI,

@@ -17,6 +17,7 @@ export const DOMAIN_EVENT_MESSAGE_KEYS = {
   'role.confirmation_completed': 'role_confirmation_completed',
   'game.state_updated': 'state_updated',
   'game.ended': 'game_ended',
+  'player.exited': 'player_exited',
   'stage.timed_out': 'stage_timed_out',
   'guardian.completed': 'guardian_completed',
   'seer.result': 'seer_result',
@@ -57,6 +58,7 @@ export const DOMAIN_EVENT_MESSAGES = {
   'role.confirmation_completed': '所有玩家已确认身份，首夜开始。',
   'game.state_updated': UNKNOWN_EVENT_MESSAGE,
   'game.ended': '对局结束，{winner}获胜。',
+  'player.exited': '{target}退出游戏。',
   'stage.timed_out': '{stage}行动时间已结束。',
   'guardian.completed': '你已守护{target}。',
   'seer.result': '查验结果：{target}属于{alignment}。',
@@ -227,6 +229,8 @@ export const describeEvent = (
       return UNKNOWN_EVENT_MESSAGE;
     case 'game.ended':
       return `对局结束，${winnerLabel(payload.winner)}获胜。`;
+    case 'player.exited':
+      return `${target}退出游戏。`;
     case 'stage.timed_out':
       return `${stageFrom(payload)}行动时间已结束。`;
     case 'guardian.completed':

@@ -33,6 +33,8 @@ const roomStateDetail = (status: RoomStatus, readyCount: number, playerCount: nu
 export function LobbyPage() {
   const navigate = useNavigate();
   const connected = useV3Store((state) => state.connected);
+  const activeSession = useV3Store((state) => state.session);
+  const activeRoom = useV3Store((state) => state.room);
   const error = useV3Store((state) => state.error);
   const rooms = useV3Store((state) => state.rooms);
   const refreshRooms = useV3Store((state) => state.refreshRooms);
@@ -86,6 +88,14 @@ export function LobbyPage() {
           <h1 id="lobby-hero-title">邀请朋友，点亮一局狼人杀</h1>
           <p>可以邀请真人，也可以直接开启一局全 AI 对局。</p>
           <div className="v3-lobby-hero__actions">
+            {activeSession ? (
+              <Button
+                variant="secondary"
+                onClick={() => navigate(roomPath(activeRoom?.code ?? activeSession.roomCode), { replace: true })}
+              >
+                <DoorOpen size={17} />回到房间
+              </Button>
+            ) : null}
             <Button size="action" disabled={creating || loading} onClick={() => void createDefaultRoom()}>
               {creating ? <LoaderCircle className="v3-spin" size={17} /> : null}
               {creating ? '正在创建…' : '创建房间'}{creating ? null : <ArrowRight size={17} />}

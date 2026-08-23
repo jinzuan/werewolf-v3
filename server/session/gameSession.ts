@@ -426,6 +426,51 @@ export class GameSession {
     return run;
   }
 
+  /**
+   * Mark a player who left an active game as dead without granting last words.
+   * RoomService uses this seam before removing the room membership so the
+   * public timeline can say “退出游戏” while the remaining AI turns continue.
+   */
+  markPlayerExited(playerId: string, operationId: string = randomUUID()): Promise<boolean> {
+    const run = this.queue.then(async () => {
+      const player = this.state.players.find((candidate) => candidate.id === playerId);
+      if (!player || !player.isAlive || this.state.gameState.phase === 'ended') return false;
+      const before = structuredClone(this.state);
+      const correlationId = `exit:${operationId}`;
+      player.isAlive = false;
+      this.state.roleConfirmations[playerId] = true;
+      const events: DomainEvent[] = [
+        this.event(
+          'player.exited',
+          { playerId, reason: 'left_game' },
+          'public_timeline',
+          undefined,
+          correlationId,
+          playerId,
+        ),
+      ];
+      const wasCurrentActor = this.state.gameState.allowedActors.some(
+        (entry) => entry.playerId === playerId,
+      );
+      if (wasCurrentActor) events.push(...this.applyTimeout(correlationId));
+      else events.push(...this.finishIfWon(correlationId));
+      if (this.stageRevision === before.gameState.stageRevision) this.advanceRevision();
+      this.syncAuthorityFields(false);
+      this.state.aiMemories = updateAIMemoryBoards(this.state.aiMemories, events, this.state.players);
+      this.setDeadline();
+      try {
+        await this.append([...events, this.stateEvent(correlationId)]);
+        await this.changed();
+        return true;
+      } catch (error) {
+        this.state = before;
+        throw error;
+      }
+    });
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
   async eventsFor(viewer: ViewerContext, afterSequence = 0) {
     const stored = (await this.storedEvents()).filter(({ event }) => event.sequence > afterSequence);
     return stored
