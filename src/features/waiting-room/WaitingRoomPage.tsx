@@ -99,7 +99,10 @@ export function WaitingRoomPage() {
   const [seatRequestOpen, setSeatRequestOpen] = useState(false);
   const [approvedSeatRequest, setApprovedSeatRequest] = useState<RoomSeatRequestView | null>(null);
   const [inviteFallback, setInviteFallback] = useState<string | null>(null);
+  // Keep copy feedback inside the button so the waiting-room grid never jumps.
   const [inviteCopied, setInviteCopied] = useState<'play' | 'watch' | null>(null);
+  // The target name is presentation context; credentials and provider config
+  // remain room-scoped and are still persisted only by the server.
   const [aiTargetName, setAITargetName] = useState<string | null>(null);
   const copyTimer = useRef<number | null>(null);
 

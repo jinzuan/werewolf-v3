@@ -570,6 +570,7 @@ function RulesStep({
           <div style={css('gap')}>
             {draft.mode !== 'human' ? <p style={{ margin: 0, color: 'var(--ww-text-muted)' }}>创建后可在等待房的“电脑玩家设置”中配置模型与安全凭据。</p> : null}
             <label style={row}><input type="checkbox" checked={draft.allowPublicSpectators} onChange={(event) => update({ allowPublicSpectators: event.target.checked })} />允许观战及玩家协助邀请<FieldError issue={issueFor('allowPublicSpectators')} /></label>
+            {/* Enabling the single checkbox opts into the three-pass AI review. */}
             <label style={row}><input type="checkbox" checked={draft.reviewEnabled} onChange={(event) => update({ reviewEnabled: event.target.checked, ...(event.target.checked ? { reviewMode: 'ai' } : {}) })} />对局结束后开启 AI 三轮复盘<FieldError issue={issueFor('reviewEnabled')} /></label>
             {draft.reviewEnabled ? (
               <label style={row}><input type="checkbox" checked={draft.reviewMode === 'ai'} onChange={(event) => update({ reviewMode: event.target.checked ? 'ai' : 'rules' })} />使用 AI 生成复盘总结<span style={{ color: 'var(--ww-text-muted)' }}>无 LLM Key 时自动保留上帝视角，不显示 AI 文案。</span></label>

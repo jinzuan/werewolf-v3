@@ -934,6 +934,8 @@ export const useV3Store = create<V3Store>()((set, get) => {
     // Never send a room mutation while the browser is still changing socket
     // identity. In particular, a freshly-created host must wait for the
     // authoritative room state instead of receiving a misleading auth error.
+    // Leaving is the recovery escape hatch: even a stale sync banner must not
+    // trap the user in the waiting room. The server still validates the lease.
     const leavingRoom = command.type === 'room.leave' || command.type === 'room.dissolve';
     if (
       current.authorityStatus !== 'authorized' ||

@@ -1634,6 +1634,8 @@ export class RoomService {
         throw this.error('ACTION_NOT_ALLOWED', 'room.error.become_spectator_not_allowed');
       }
       if (member.id === room.hostId) {
+        // Seat-kind changes are authority changes too: transfer ownership
+        // before removing the current host from the player roster.
         const nextHost = room.members.find((candidate) =>
           candidate.id !== member.id && candidate.kind === 'player' && !candidate.isAI,
         );

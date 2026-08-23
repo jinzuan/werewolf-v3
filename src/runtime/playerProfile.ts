@@ -69,6 +69,8 @@ export const writePlayerProfile = (
   profile: { nickname: string; bio: string; avatarId: string },
   storage: WriteStorage | null = browserStorage(),
 ): { nickname: string; bio: string; avatarId: PlayerAvatarId } => {
+  // This profile is a local convenience cache. Room creation/join reads the
+  // normalized avatar and nickname, while the bio never becomes authority data.
   const normalized = {
     nickname: normalizePlayerNickname(profile.nickname),
     bio: normalizePlayerBio(profile.bio),

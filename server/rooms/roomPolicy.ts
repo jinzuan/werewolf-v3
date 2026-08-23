@@ -452,6 +452,8 @@ export class RoomPolicy {
     const anotherHumanPlayer = room.members.some((candidate) =>
       candidate.id !== member.id && human(candidate) && candidate.kind === 'player',
     );
+    // A host may leave the player side only when another human can inherit
+    // host authority; otherwise the room would have no legal host to start it.
     if ((status === 'waiting' || status === 'ready_check') && isHumanPlayer && (!isHost || anotherHumanPlayer)) {
       actions.add('become_spectator');
       actions.add('request_seat');
