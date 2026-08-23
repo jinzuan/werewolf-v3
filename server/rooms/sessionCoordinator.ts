@@ -248,8 +248,14 @@ export class SessionCoordinator {
           ? state.dayFlow.lastWordsRemaining
           : undefined,
       experience: [
-        experienceLibrary.getReference(actor.role, session.stageRevision),
-        this.options.insightStore ? await this.options.insightStore.getPromptReference(actor.role) : '',
+        session.aiExperienceFor(actor.id)?.baseText ?? experienceLibrary.getReference(actor.role, session.stageRevision),
+        this.options.insightStore
+          ? await this.options.insightStore.getPromptReference(
+              actor.role,
+              actor.id,
+              session.aiExperienceFor(actor.id)?.experienceInstanceId,
+            )
+          : '',
       ].filter(Boolean).join('\n\n'),
     });
     const orchestrator = new AIOrchestrator(provider, this.options.now, {
@@ -295,7 +301,10 @@ const waitForDelay = (delayMs: number, signal: AbortSignal): Promise<boolean> =>
       resolve(false);
       return;
     }
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timer: ReturnType<typeof setTimeout> = setTimeout(() => {
+      cleanup();
+      resolve(true);
+    }, delayMs);
     const cleanup = (): void => {
       if (timer !== undefined) clearTimeout(timer);
       signal.removeEventListener('abort', onAbort);
@@ -304,9 +313,5 @@ const waitForDelay = (delayMs: number, signal: AbortSignal): Promise<boolean> =>
       cleanup();
       resolve(false);
     };
-    timer = setTimeout(() => {
-      cleanup();
-      resolve(true);
-    }, delayMs);
     signal.addEventListener('abort', onAbort, { once: true });
   });

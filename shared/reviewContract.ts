@@ -14,6 +14,7 @@ export type ReviewJobStatus = (typeof REVIEW_JOB_STATUSES)[number];
 export type ReviewAudience = 'public' | 'team' | 'role';
 export type ReviewTeam = 'wolf' | 'good';
 export type ReviewGenerationMode = 'ai' | 'rules';
+export type ReviewRound = 'team' | 'global' | 'self';
 
 export type ReviewDeathCause = 'night_kill' | 'vote' | 'poison' | 'hunter_shot';
 
@@ -29,6 +30,9 @@ export interface ReviewMessage {
   operationId: string;
   text: string;
   audience: ReviewAudience;
+  /** Which of the three post-game passes produced this message. */
+  round?: ReviewRound;
+  playerId?: string;
   team?: ReviewTeam;
   role?: Role;
   evidence: ReviewEvidenceRef[];
@@ -38,7 +42,12 @@ export interface ReviewInsight {
   id: string;
   operationId: string;
   role: Role;
+  /** Self reviews are scoped to one AI, never to the whole role. */
+  round?: ReviewRound;
+  playerId?: string;
+  experienceInstanceId?: string;
   text: string;
+  experienceUpdate?: string;
   evidence: ReviewEvidenceRef[];
   createdAt: number;
 }
@@ -90,4 +99,8 @@ export interface ReviewArchivePlayer {
   isAI: boolean;
   isAlive: boolean;
   order: number;
+  /** Server-only assignment references used by the self-review pass. */
+  experienceInstanceId?: string;
+  experienceAssetId?: string;
+  experienceText?: string;
 }

@@ -27,10 +27,16 @@ export interface ExperienceAsset extends ExperienceManifestEntry {
   content: string;
 }
 
+export interface ExperienceAssignment {
+  assetId: string;
+  text: string;
+}
+
 export interface ExperienceLibrary {
   manifest: ExperienceManifest;
   assets: ExperienceAsset[];
   getReference(role: Role, stageRevision: number): string;
+  getAssignment(role: Role, stableKey: string): ExperienceAssignment;
 }
 
 export const EXPECTED_EXPERIENCE_FILE_COUNT = 33;
@@ -58,6 +64,12 @@ const failManifest = (message: string): never => {
 
 const digest = (content: Buffer): string =>
   createHash('sha256').update(content).digest('hex');
+
+const stableIndex = (value: string, modulo: number): number => {
+  if (modulo <= 0) return 0;
+  const hash = createHash('sha256').update(value).digest();
+  return hash.readUInt32BE(0) % modulo;
+};
 
 const parseManifest = (manifestPath: string): ExperienceManifest => {
   if (!existsSync(manifestPath)) {
@@ -173,6 +185,15 @@ export function loadExperienceLibrary(
       return [pick(roleAssets), pick(commonAssets)]
         .filter((content): content is string => content !== null)
         .join('\n\n');
+    },
+    getAssignment(role, stableKey) {
+      const roleAssets = assets.filter((asset) => asset.role === role);
+      const fallback = assets.find((asset) => asset.role === 'common') ?? assets[0];
+      const asset = roleAssets[stableIndex(`${role}:${stableKey}`, roleAssets.length)] ?? fallback;
+      return {
+        assetId: asset?.path ?? `role:${role}:default`,
+        text: asset?.content ?? '',
+      };
     },
   };
 }

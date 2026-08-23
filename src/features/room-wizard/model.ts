@@ -135,8 +135,8 @@ export const createInitialDraft = (
     rulesetVersion: preset?.rulesetVersion ?? '',
     readyPolicy: 'all_connected_humans',
     allowPublicSpectators: false,
-    reviewEnabled: true,
-    reviewMode: 'rules',
+    reviewEnabled: false,
+    reviewMode: 'ai',
   };
 };
 

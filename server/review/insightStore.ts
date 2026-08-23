@@ -8,7 +8,7 @@ import {
   withFileLock,
 } from '../filePersistence';
 
-export const INSIGHT_SCHEMA_VERSION = 1 as const;
+export const INSIGHT_SCHEMA_VERSION = 2 as const;
 export const MAX_INSIGHTS_PER_ROLE = 8;
 
 export interface ServerInsightRecord {
@@ -19,13 +19,17 @@ export interface ServerInsightRecord {
   gameId: string;
   createdAt: number;
   schemaVersion: typeof INSIGHT_SCHEMA_VERSION;
+  /** Shared is the legacy role pool; agent records belong to one AI instance. */
+  scope?: 'shared' | 'agent';
+  playerId?: string;
+  experienceInstanceId?: string;
 }
 
 export interface InsightStore {
-  list(role?: Role): Promise<ServerInsightRecord[]>;
+  list(role?: Role, playerId?: string): Promise<ServerInsightRecord[]>;
   add(record: ServerInsightRecord): Promise<{ record: ServerInsightRecord; added: boolean }>;
-  clear(role?: Role): Promise<void>;
-  getPromptReference(role: Role): Promise<string>;
+  clear(role?: Role, playerId?: string): Promise<void>;
+  getPromptReference(role: Role, playerId?: string, experienceInstanceId?: string): Promise<string>;
 }
 
 const clone = <T>(value: T): T => structuredClone(value);
@@ -37,39 +41,61 @@ const similarity = (left: string, right: string): number => {
   return union === 0 ? 0 : intersection / union;
 };
 
+const scopeOf = (record: ServerInsightRecord): 'shared' | 'agent' =>
+  record.scope === 'agent' || record.playerId ? 'agent' : 'shared';
+
+const belongsTo = (
+  record: ServerInsightRecord,
+  role?: Role,
+  playerId?: string,
+  experienceInstanceId?: string,
+): boolean => {
+  if (role && record.role !== role) return false;
+  if (playerId && (record.playerId !== playerId || scopeOf(record) !== 'agent')) return false;
+  if (experienceInstanceId && record.experienceInstanceId !== experienceInstanceId) return false;
+  return true;
+};
+
+const retentionKey = (record: ServerInsightRecord): string =>
+  `${scopeOf(record)}:${record.role}:${record.playerId ?? ''}:${record.experienceInstanceId ?? ''}`;
+
 export class InMemoryInsightStore implements InsightStore {
   private records: ServerInsightRecord[] = [];
 
-  async list(role?: Role): Promise<ServerInsightRecord[]> {
-    return clone(role ? this.records.filter((item) => item.role === role) : this.records);
+  async list(role?: Role, playerId?: string): Promise<ServerInsightRecord[]> {
+    return clone(this.records.filter((item) => belongsTo(item, role, playerId)));
   }
 
   async add(record: ServerInsightRecord): Promise<{ record: ServerInsightRecord; added: boolean }> {
-    const sameGame = this.records.find(
-      (item) => item.gameId === record.gameId && item.role === record.role,
-    );
+    const sameGame = this.records.find((item) =>
+      item.gameId === record.gameId && retentionKey(item) === retentionKey(record));
     if (sameGame) return { record: clone(sameGame), added: false };
-    const sameRole = this.records.filter((item) => item.role === record.role);
-    if (sameRole.some((item) => similarity(item.text, record.text) >= 0.6)) {
+    const sameScope = this.records.filter((item) => retentionKey(item) === retentionKey(record));
+    if (sameScope.some((item) => similarity(item.text, record.text) >= 0.6)) {
       return { record: clone(record), added: false };
     }
     // Keep insertion order while enforcing the per-role retention cap.
-    const byRole = new Map<Role, ServerInsightRecord[]>();
+    const byRole = new Map<string, ServerInsightRecord[]>();
     for (const item of [...this.records, clone(record)]) {
-      const list = byRole.get(item.role) ?? [];
+      const list = byRole.get(retentionKey(item)) ?? [];
       list.push(item);
-      byRole.set(item.role, list.slice(-MAX_INSIGHTS_PER_ROLE));
+      byRole.set(retentionKey(item), list.slice(-MAX_INSIGHTS_PER_ROLE));
     }
     this.records = [...byRole.values()].flat();
     return { record: clone(record), added: true };
   }
 
-  async clear(role?: Role): Promise<void> {
-    this.records = role ? this.records.filter((item) => item.role !== role) : [];
+  async clear(role?: Role, playerId?: string): Promise<void> {
+    this.records = role || playerId
+      ? this.records.filter((item) => !belongsTo(item, role, playerId))
+      : [];
   }
 
-  async getPromptReference(role: Role): Promise<string> {
-    const records = await this.list(role);
+  async getPromptReference(role: Role, playerId?: string, experienceInstanceId?: string): Promise<string> {
+    const records = (await this.list(role)).filter((item) =>
+      scopeOf(item) === 'shared' ||
+      (item.playerId === playerId && item.experienceInstanceId === experienceInstanceId),
+    );
     if (records.length === 0) return '';
     return [
       '【历史经验，非本局事实】',
@@ -99,30 +125,29 @@ export class FileInsightStore implements InsightStore {
     };
   }
 
-  list(role?: Role): Promise<ServerInsightRecord[]> {
+  list(role?: Role, playerId?: string): Promise<ServerInsightRecord[]> {
     return this.enqueue(() => withFileLock(this.filePath, async () => {
       const records = await this.load();
-      return clone(role ? records.filter((item) => item.role === role) : records);
+      return clone(records.filter((item) => belongsTo(item, role, playerId)));
     }));
   }
 
   add(record: ServerInsightRecord): Promise<{ record: ServerInsightRecord; added: boolean }> {
     return this.enqueue(() => withFileLock(this.filePath, async () => {
       const records = await this.load();
-      const sameGame = records.find(
-        (item) => item.gameId === record.gameId && item.role === record.role,
-      );
+      const sameGame = records.find((item) =>
+        item.gameId === record.gameId && retentionKey(item) === retentionKey(record));
       if (sameGame) return { record: clone(sameGame), added: false };
-      const sameRole = records.filter((item) => item.role === record.role);
-      if (sameRole.some((item) => similarity(item.text, record.text) >= 0.6)) {
+      const sameScope = records.filter((item) => retentionKey(item) === retentionKey(record));
+      if (sameScope.some((item) => similarity(item.text, record.text) >= 0.6)) {
         return { record: clone(record), added: false };
       }
       const next = [...records, clone(record)];
-      const byRole = new Map<Role, ServerInsightRecord[]>();
+      const byRole = new Map<string, ServerInsightRecord[]>();
       for (const item of next) {
-        const list = byRole.get(item.role) ?? [];
+        const list = byRole.get(retentionKey(item)) ?? [];
         list.push(item);
-        byRole.set(item.role, list.slice(-MAX_INSIGHTS_PER_ROLE));
+        byRole.set(retentionKey(item), list.slice(-MAX_INSIGHTS_PER_ROLE));
       }
       const nextRecords = [...byRole.values()].flat();
       await this.write(nextRecords);
@@ -131,18 +156,25 @@ export class FileInsightStore implements InsightStore {
     }));
   }
 
-  clear(role?: Role): Promise<void> {
+  clear(role?: Role, playerId?: string): Promise<void> {
     return this.enqueue(() => withFileLock(this.filePath, async () => {
       const records = await this.load();
-      const nextRecords = role ? records.filter((item) => item.role !== role) : [];
+      const nextRecords = role || playerId
+        ? records.filter((item) => !belongsTo(item, role, playerId))
+        : [];
       await this.write(nextRecords);
       this.records = nextRecords;
     }));
   }
 
-  getPromptReference(role: Role): Promise<string> {
+  getPromptReference(role: Role, playerId?: string, experienceInstanceId?: string): Promise<string> {
     return this.enqueue(() => withFileLock(this.filePath, async () => {
-      const records = (await this.load()).filter((item) => item.role === role);
+      const records = (await this.load()).filter((item) =>
+        item.role === role && (
+          scopeOf(item) === 'shared' ||
+          (item.playerId === playerId && item.experienceInstanceId === experienceInstanceId)
+        ),
+      );
       if (records.length === 0) return '';
       return [
         '【历史经验，非本局事实】',

@@ -17,6 +17,16 @@ export interface AuthorityGameState extends GameState {
   dayStage: DayStage | null;
 }
 
+/** One AI's private, server-owned experience instance for this game. */
+export interface AIExperienceAssignment {
+  experienceInstanceId: string;
+  assetId: string;
+  role: import('../../shared/types').Role;
+  baseText: string;
+  updatedText?: string;
+  revision: number;
+}
+
 export interface DayFlowState {
   stage: DayStage | null;
   voteRound: 1 | 2;
@@ -66,6 +76,8 @@ export interface SessionState {
   aiMemories: AIMemoryBoards;
   /** Per-AI voice profiles; private IDs never enter Player or public projections. */
   aiPersonas: AIPersonaAssignments;
+  /** Per-AI experience assignments; never projected to other players. */
+  aiExperiences: Record<string, AIExperienceAssignment>;
   sequence: number;
   streamVersion: number;
 }

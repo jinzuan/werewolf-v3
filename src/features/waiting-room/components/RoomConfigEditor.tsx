@@ -185,9 +185,10 @@ export function RoomConfigEditor({
                 onChange={(event) => setDraft((current) => ({
                   ...current,
                   reviewEnabled: event.target.checked,
+                  ...(event.target.checked ? { reviewMode: 'ai' as const } : {}),
                 }))}
               />
-              <span>对局结束后开启复盘</span>
+              <span>对局结束后开启 AI 三轮复盘</span>
             </label>
             {draft.reviewEnabled ? (
               <label className="waiting-room__editor-check">

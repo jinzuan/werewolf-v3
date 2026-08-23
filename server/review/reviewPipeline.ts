@@ -7,6 +7,7 @@ import type {
   ReviewMessage,
   ReviewTeam,
   ReviewGenerationMode,
+  ReviewRound,
 } from '../../shared/reviewContract';
 import { isEvidenceBackedInsight } from '../../shared/experienceReview';
 import type { Role } from '../../shared/types';
@@ -24,6 +25,8 @@ export interface ReviewMessageDraft {
   team?: ReviewTeam;
   role?: Role;
   evidenceEventIds: string[];
+  round?: ReviewRound;
+  playerId?: string;
   operationId?: string;
 }
 
@@ -31,6 +34,10 @@ export interface ReviewInsightDraft {
   role: Role;
   text: string;
   evidenceEventIds: string[];
+  round?: ReviewRound;
+  playerId?: string;
+  experienceInstanceId?: string;
+  experienceUpdate?: string;
   operationId?: string;
 }
 
@@ -78,11 +85,12 @@ export class RulesReviewGenerator implements ReviewGenerator {
       ? [{
           text: '本局复盘基于服务端完整事件流生成，结果与时间线已归档。',
           audience: 'public',
+          round: 'global',
           evidenceEventIds: [endedRef.eventId],
         }]
       : [];
     const roles = [...new Set(input.archive.players.map((player) => player.role).filter((role): role is Role => role !== null))];
-    const insights = roles.flatMap((role) => {
+    const insights: ReviewInsightDraft[] = roles.flatMap((role) => {
       const roleEvent = [...input.events].reverse().find(({ event }) =>
         event.visibility === 'public_timeline' ||
         (event.visibility === 'role_private' && (event.audienceIds ?? []).some((id) =>
@@ -104,21 +112,63 @@ export class RulesReviewGenerator implements ReviewGenerator {
         : 1;
       return [{
         role,
-        text: `复盘第${evidenceDay}天${anchor}时，应把服务端记录与后续行动一起核对。`,
+        round: 'team',
+        text: `复盘第${evidenceDay}天${anchor}时，阵营应把已知信息与后续行动一起核对。`,
         evidenceEventIds: [evidence.event.eventId],
       }];
     });
     if (voteRef && roles.length > 0) {
       messages.push({
-        text: '公开投票与行动记录已保留，后续判断应以已发生的服务端事件为依据。',
+        text: '公开投票与行动记录已保留，下一局先核对事实，再决定是否收紧判断。',
         audience: 'team',
         team: 'good',
+        round: 'team',
         evidenceEventIds: [voteRef.eventId],
+      });
+    }
+    const aiPlayers = input.archive.players.filter((player) => player.isAI && player.role);
+    for (const player of aiPlayers) {
+      const visible = input.events.filter(({ event }) =>
+        event.visibility === 'public_timeline' ||
+        (event.visibility === 'role_private' && (event.audienceIds ?? []).includes(player.id)) ||
+        (player.role === 'wolf' && event.visibility === 'wolf_private' && (event.audienceIds ?? []).includes(player.id)),
+      );
+      const evidence = visible.at(-1) ?? ended;
+      if (!evidence) continue;
+      const day = typeof (evidence.event.payload as { day?: unknown }).day === 'number'
+        ? (evidence.event.payload as { day: number }).day
+        : 1;
+      const anchor = anchorFor(evidence);
+      messages.push({
+        text: '个人复盘已生成：保留可验证事实，下一局只更新自己的经验版本。',
+        audience: 'role',
+        role: player.role!,
+        round: 'self',
+        evidenceEventIds: [evidence.event.eventId],
+      });
+      insights.push({
+        role: player.role!,
+        playerId: player.id,
+        experienceInstanceId: player.experienceInstanceId,
+        round: 'self' as const,
+        text: `第${day}天${anchor}后，应复核自己的行动与结果。`,
+        experienceUpdate: `第${day}天${anchor}后，先核对行动结果再调整判断。`,
+        evidenceEventIds: [evidence.event.eventId],
       });
     }
     return { messages, insights };
   }
 }
+
+const anchorFor = (evidence: StoredEvent): string => {
+  switch (evidence.event.eventType) {
+    case 'day.exiled':
+    case 'day.no_exile': return '公开投票';
+    case 'seer.result': return '查验结果';
+    case 'wolf.kill_locked': return '狼刀决定';
+    default: return '行动记录';
+  }
+};
 
 /** Compatibility name for older in-process tests; production selects rules mode explicitly. */
 export class DeterministicReviewGenerator extends RulesReviewGenerator {}
@@ -250,7 +300,7 @@ export class ReviewPipeline {
   async clearInsights(viewer: ViewerContext, role?: Role): Promise<void> {
     if (viewer.kind !== 'player') throw new Error('REVIEW_INSIGHT_CLEAR_FORBIDDEN');
     if (role && role !== viewer.role) throw new Error('REVIEW_INSIGHT_CLEAR_FORBIDDEN');
-    await this.insightStore.clear(viewer.role);
+    await this.insightStore.clear(viewer.role, viewer.playerId);
   }
 
   private async processOnce(gameId: string): Promise<ReviewJobRecord | undefined> {
@@ -293,22 +343,39 @@ export class ReviewPipeline {
         .map((draft, index) => this.validMessage(draft, index, eventsById))
         .filter((message): message is ReviewMessage => message !== undefined);
       const insights: ReviewInsight[] = [];
-      const insightRoles = new Set<Role>();
+      const insightKeys = new Set<string>();
       for (const [index, draft] of generated.insights.entries()) {
-        if (insightRoles.has(draft.role)) continue;
+        const key = `${draft.round ?? 'team'}:${draft.playerId ?? draft.role}`;
+        if (insightKeys.has(key)) continue;
         const insight = this.validInsight(draft, index, eventsById, job);
         if (!insight) continue;
-        insightRoles.add(draft.role);
+        insightKeys.add(key);
         insights.push(insight);
-        await this.insightStore.add({
+        if (insight.round === 'self' && insight.playerId && insight.experienceInstanceId && insight.experienceUpdate) {
+          await this.insightStore.add({
+            id: `${insight.id}:experience`,
+            role: insight.role,
+            text: insight.experienceUpdate,
+            evidenceEventIds: insight.evidence.map((ref) => ref.eventId),
+            gameId: job.gameId,
+            createdAt: insight.createdAt,
+            schemaVersion: 2,
+            scope: 'agent',
+            playerId: insight.playerId,
+            experienceInstanceId: insight.experienceInstanceId,
+          });
+        } else {
+          await this.insightStore.add({
           id: insight.id,
           role: insight.role,
           text: insight.text,
           evidenceEventIds: insight.evidence.map((ref) => ref.eventId),
           gameId: job.gameId,
           createdAt: insight.createdAt,
-          schemaVersion: 1,
-        } satisfies ServerInsightRecord);
+            schemaVersion: 2,
+            scope: 'shared',
+          } satisfies ServerInsightRecord);
+        }
       }
       return this.repository.save({
         ...job,
@@ -338,6 +405,9 @@ export class ReviewPipeline {
     const ended = [...events].reverse().find(({ event }) => event.eventType === 'game.ended');
     if (!ended) throw new Error('REVIEW_GAME_NOT_ENDED');
     const state = [...events].reverse().find(({ event }) => event.eventType === 'game.state_updated');
+    const sessionState = state?.event.payload && typeof state.event.payload === 'object'
+      ? (state.event.payload as { sessionState?: { aiExperiences?: Record<string, { experienceInstanceId?: string; assetId?: string; baseText?: string; updatedText?: string }> } }).sessionState
+      : undefined;
     const players = Array.isArray(state?.event.payload.players)
       ? (state!.event.payload.players as ReviewArchivePlayer[]).map((player) => ({
           id: player.id,
@@ -346,6 +416,15 @@ export class ReviewPipeline {
           isAI: Boolean(player.isAI),
           isAlive: Boolean(player.isAlive),
           order: Number(player.order ?? 0),
+          ...(sessionState?.aiExperiences?.[player.id]?.experienceInstanceId
+            ? {
+                experienceInstanceId: sessionState.aiExperiences[player.id].experienceInstanceId,
+                experienceAssetId: sessionState.aiExperiences[player.id].assetId,
+                experienceText: sessionState.aiExperiences[player.id].updatedText
+                  ?? sessionState.aiExperiences[player.id].baseText
+                  ?? '',
+              }
+            : {}),
         }))
       : [];
     const winner = ended.event.payload.winner === 'wolf' || ended.event.payload.winner === 'good'
@@ -386,6 +465,8 @@ export class ReviewPipeline {
       audience: draft.audience,
       ...(draft.team ? { team: draft.team } : {}),
       ...(draft.role ? { role: draft.role } : {}),
+      ...(draft.round ? { round: draft.round } : {}),
+      ...(draft.playerId ? { playerId: draft.playerId } : {}),
       evidence: refs,
     };
   }
@@ -400,6 +481,11 @@ export class ReviewPipeline {
     if (!ROLE_ORDER.includes(draft.role) || !insightText || !Array.isArray(draft.evidenceEventIds)) return undefined;
     const playerNames = job.archive.players.map((player) => player.name.trim()).filter((name) => name.length >= 2);
     if (playerNames.some((name) => insightText.includes(name))) return undefined;
+    if (draft.round === 'self' && (!draft.playerId || !draft.experienceInstanceId)) return undefined;
+    if (draft.round === 'self') {
+      const owner = job.archive.players.find((player) => player.id === draft.playerId && player.isAI);
+      if (!owner || owner.role !== draft.role || owner.experienceInstanceId !== draft.experienceInstanceId) return undefined;
+    }
     const refs = this.refs(draft.evidenceEventIds, eventsById);
     if (refs.length === 0) return undefined;
     // An event id alone is not a transferable lesson. Require a concrete
@@ -412,7 +498,11 @@ export class ReviewPipeline {
       id: `review-insight:${job.gameId}:${draft.role}:${index}`,
       operationId: draft.operationId ?? `review-insight:${job.operationId}:${draft.role}`,
       role: draft.role,
+      ...(draft.round ? { round: draft.round } : {}),
+      ...(draft.playerId ? { playerId: draft.playerId } : {}),
+      ...(draft.experienceInstanceId ? { experienceInstanceId: draft.experienceInstanceId } : {}),
       text: insightText,
+      ...(draft.experienceUpdate ? { experienceUpdate: text(draft.experienceUpdate) } : {}),
       evidence: refs,
       createdAt: job.archive.endedAt,
     };

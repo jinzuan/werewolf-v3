@@ -199,6 +199,7 @@ const evidenceFor = (
 const messageVisible = (message: ReviewMessage, viewer: ViewerContext): boolean => {
   if (isOmniscient(viewer) || message.audience === 'public') return true;
   if (viewer.kind !== 'player') return false;
+  if (message.playerId) return message.playerId === viewer.playerId;
   if (message.audience === 'role') return message.role === viewer.role;
   return message.team === teamOf(viewer.role);
 };
@@ -239,7 +240,9 @@ export const projectReview = (
     }));
   const insights = job.insights
     .filter((insight) =>
-      omniscient || viewer.kind === 'player' && insight.role === viewer.role,
+      omniscient || viewer.kind === 'player' && (
+        insight.playerId ? insight.playerId === viewer.playerId : insight.role === viewer.role
+      ),
     )
     .map((insight) => ({
       ...clone(insight),

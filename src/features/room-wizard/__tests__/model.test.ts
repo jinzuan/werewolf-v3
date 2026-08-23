@@ -107,7 +107,7 @@ test('options use the frozen CreateRoomOptionsV31 field contract', () => {
   assert.equal(options.catalogVersion, catalog.catalogVersion);
   assert.equal(options.roleSetup.wolf, 4);
   assert.equal(options.readyPolicy, 'all_connected_humans');
-  assert.equal(options.reviewEnabled, true);
+  assert.equal(options.reviewEnabled, false);
 });
 
 test('room creation options never carry browser-managed AI configuration', () => {

@@ -113,6 +113,13 @@ export function MatchResultPage() {
   const winner = resultWinner(snapshot, events);
   const playerName = (id: string | null) =>
     players.find((player) => player.id === id)?.name ?? '未知目标';
+  const reviewMessages = review?.messages ?? [];
+  const reviewInsights = review?.insights ?? [];
+  const teamMessages = reviewMessages.filter((message) => (message.round ?? 'global') === 'team');
+  const globalMessages = reviewMessages.filter((message) => (message.round ?? 'global') === 'global');
+  const selfMessages = reviewMessages.filter((message) => message.round === 'self');
+  const teamInsights = reviewInsights.filter((insight) => (insight.round ?? 'team') === 'team');
+  const selfInsights = reviewInsights.filter((insight) => insight.round === 'self');
 
   return (
     <AppShell title="结果与复盘" eyebrow={room.name} connected={connected}>
@@ -230,14 +237,31 @@ export function MatchResultPage() {
         ) : review.generationMode === 'ai' && review.messages.length === 0 && review.insights.length === 0 ? (
           <p className="v3-inline-note">未配置 LLM Key，已降级为纯上帝视角复盘；完整身份、行动和死因时间线仍可查看。</p>
         ) : (
-          <div className="v3-summary-list v3-result-ai-copy">
-            {review.messages.map((message, index) => (
-              <div key={message.id}><BookOpen size={16} /><span><strong>{index === 0 ? 'AI 总结' : index === 1 ? '关键转折' : '总结发言'}：</strong>{message.text}</span></div>
-            ))}
-            {review.insights.map((insight) => (
-              <div key={insight.id}><BookOpen size={16} /><span>角色心得：{insight.text}</span></div>
-            ))}
-            {review.messages.length === 0 && review.insights.length === 0 && (
+          <div className="v3-result-review-sections">
+            <section className="v3-result-review-section">
+              <div className="v3-panel-heading"><div><span>第一轮</span><h3>阵营团队复盘</h3></div><Badge tone="info">协作与失误</Badge></div>
+              <div className="v3-summary-list v3-result-ai-copy">
+                {teamMessages.map((message) => <div key={message.id}><BookOpen size={16} /><span>{message.text}</span></div>)}
+                {teamInsights.map((insight) => <div key={insight.id}><BookOpen size={16} /><span>{insight.text}</span></div>)}
+                {teamMessages.length === 0 && teamInsights.length === 0 && <p className="v3-inline-note">当前视角没有可展示的阵营复盘。</p>}
+              </div>
+            </section>
+            <section className="v3-result-review-section">
+              <div className="v3-panel-heading"><div><span>第二轮</span><h3>全局公开复盘</h3></div><Badge tone="info">票型与突破口</Badge></div>
+              <div className="v3-summary-list v3-result-ai-copy">
+                {globalMessages.map((message) => <div key={message.id}><BookOpen size={16} /><span>{message.text}</span></div>)}
+                {globalMessages.length === 0 && <p className="v3-inline-note">当前没有公开复盘结论。</p>}
+              </div>
+            </section>
+            <section className="v3-result-review-section">
+              <div className="v3-panel-heading"><div><span>第三轮</span><h3>我的 AI 自我复盘</h3></div><Badge tone="success">只更新自己的经验</Badge></div>
+              <div className="v3-summary-list v3-result-ai-copy">
+                {selfMessages.map((message) => <div key={message.id}><BookOpen size={16} /><span>{message.text}</span></div>)}
+                {selfInsights.map((insight) => <div key={insight.id}><BookOpen size={16} /><span>{insight.text}{insight.experienceUpdate ? ` · 经验更新：${insight.experienceUpdate}` : ''}</span></div>)}
+                {selfMessages.length === 0 && selfInsights.length === 0 && <p className="v3-inline-note">当前视角没有可展示的个人复盘。</p>}
+              </div>
+            </section>
+            {reviewMessages.length === 0 && reviewInsights.length === 0 && (
               <p className="v3-inline-note">当前视角没有可展示的复盘结论。</p>
             )}
           </div>

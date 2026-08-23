@@ -72,11 +72,14 @@ import type {
   AuthorityGameState,
   CommandResult,
   DayFlowState,
+  AIExperienceAssignment,
   SessionOptions,
   SessionScheduler,
   SessionSnapshot,
   SessionState,
 } from './types';
+import { experienceLibrary } from '../ai/experienceLibrary';
+import { createHash } from 'node:crypto';
 
 const DEFAULT_STAGE_DURATION_MS = 30_000;
 
@@ -250,6 +253,7 @@ export class GameSession {
           players.map(({ id, isAI }) => ({ id, isAI })),
           this.personaRandomIndex,
         ),
+        aiExperiences: {},
         sequence: 0,
         streamVersion: 0,
       };
@@ -289,6 +293,12 @@ export class GameSession {
   /** Return only the requesting AI's private, role-independent voice profile. */
   aiPersonaFor(playerId: string): AIPersonaProfile | undefined {
     return getAIPersonaProfile(this.state.aiPersonas[playerId]);
+  }
+
+  /** Return only the requesting AI's private experience assignment. */
+  aiExperienceFor(playerId: string): AIExperienceAssignment | undefined {
+    const assignment = this.state.aiExperiences[playerId];
+    return assignment ? structuredClone(assignment) : undefined;
   }
 
   /**
@@ -2619,6 +2629,7 @@ export class GameSession {
       processedCommandIds?: string[];
       dayFlow?: DayFlowState;
       aiPersonas?: AIPersonaAssignments;
+      aiExperiences?: Record<string, AIExperienceAssignment>;
     };
     legacy.processedCommands ??= {};
     delete legacy.processedCommandIds;
@@ -2704,6 +2715,41 @@ export class GameSession {
       aiSeats,
       this.personaRandomIndex,
     );
+    const existingExperiences = legacy.aiExperiences ?? {};
+    const aiExperiences: Record<string, AIExperienceAssignment> = {};
+    const roleSeatCounts = new Map<Role, number>();
+    for (const player of this.state.players.filter(({ isAI }) => isAI === true)) {
+      if (!player.role) continue;
+      const existing = existingExperiences[player.id];
+      if (
+        existing &&
+        existing.role === player.role &&
+        typeof existing.experienceInstanceId === 'string' &&
+        typeof existing.assetId === 'string' &&
+        typeof existing.baseText === 'string'
+      ) {
+        aiExperiences[player.id] = existing;
+        continue;
+      }
+      const roleIndex = roleSeatCounts.get(player.role) ?? 0;
+      roleSeatCounts.set(player.role, roleIndex + 1);
+      const assignment = experienceLibrary.getAssignment(
+        player.role,
+        `${this.state.roomId}:${player.role}:${roleIndex}:${player.id}`,
+      );
+      const experienceInstanceId = `exp:${createHash('sha256')
+        .update(`${this.state.gameId}:${player.id}:${assignment.assetId}`)
+        .digest('hex')
+        .slice(0, 24)}`;
+      aiExperiences[player.id] = {
+        experienceInstanceId,
+        assetId: assignment.assetId,
+        role: player.role,
+        baseText: assignment.text,
+        revision: 0,
+      };
+    }
+    this.state.aiExperiences = aiExperiences;
     // Older snapshots used top-level phases for day sub-stages. The runtime
     // keeps one authoritative day stage and exposes the old phase only to
     // readers that still understand the compatibility shape.
