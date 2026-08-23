@@ -490,6 +490,12 @@ export class AIOrchestrator {
         reason: 'randomized legal wolf target fallback',
       };
     }
+    if (allowed.has('skip_speech') && shouldPreferSpeechSkip(context)) {
+      return {
+        command: { type: 'game.skip_speech', payload: {} },
+        reason: 'no new wolf discussion point; skip instead of repetition',
+      };
+    }
     if (allowed.has('wolf_speak')) {
       return {
         command: {

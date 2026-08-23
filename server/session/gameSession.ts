@@ -713,7 +713,7 @@ export class GameSession {
     command: GameCommand,
     correlationId: string,
   ): DomainEvent[] | null {
-    if (command.type === 'game.wolf_speak') {
+    if (command.type === 'game.wolf_speak' || command.type === 'game.skip_speech') {
       if (
         actor.role !== 'wolf' ||
         this.state.night.stage !== 'wolf_discussion' ||
@@ -721,20 +721,20 @@ export class GameSession {
       ) {
         return null;
       }
-      const events = [
-        this.event(
-          'wolf.message',
-          {
-            actorId: actor.id,
-            round: this.state.gameState.wolfDiscussionRound,
-            content: command.payload.content,
-          },
-          'wolf_private',
-          this.alivePlayers('wolf').map((player) => player.id),
-          correlationId,
-          actor.id,
-        ),
-      ];
+      const events = command.type === 'game.wolf_speak'
+        ? [this.event(
+            'wolf.message',
+            {
+              actorId: actor.id,
+              round: this.state.gameState.wolfDiscussionRound,
+              content: command.payload.content,
+            },
+            'wolf_private',
+            this.alivePlayers('wolf').map((player) => player.id),
+            correlationId,
+            actor.id,
+          )]
+        : [];
       const order = this.state.gameState.wolfSpeakerOrder.filter((id) =>
         this.state.players.some((player) => player.id === id && player.isAlive && player.role === 'wolf'),
       );
@@ -2011,7 +2011,7 @@ export class GameSession {
             .filter((player) => player.id === this.state.gameState.wolfCurrentSpeaker)
             .map((player) => ({
               playerId: player.id,
-              actions: ['wolf_speak'],
+              actions: ['wolf_speak', 'skip_speech'],
             }));
         case 'wolf_vote':
           return alive('wolf')

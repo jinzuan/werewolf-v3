@@ -72,12 +72,16 @@ const isRegularSpeechAction = (action: string): boolean =>
  * the authority action list.
  */
 const aiActionsForTask = (action: string): GameAction[] =>
-  isRegularSpeechAction(action)
+  action === 'wolf_speak'
+    ? ['wolf_speak', 'skip_speech']
+    : isRegularSpeechAction(action)
     ? ['speak', 'skip_speech']
     : [action as GameAction];
 
 const aiCommandTypesForTask = (action: string): GameCommand['type'][] =>
-  isRegularSpeechAction(action)
+  action === 'wolf_speak'
+    ? ['game.wolf_speak', 'game.skip_speech']
+    : isRegularSpeechAction(action)
     ? ['game.speak', 'game.skip_speech']
     : [commandTypeForAction(action as GameAction)];
 

@@ -91,8 +91,7 @@ export const buildSpeechDecisionContext = (
   const wasAddressed = actorWasAddressed(context, currentRoundSpeeches);
   const responseTriggers = responseTriggersFrom(newInformation, wasAddressed);
   const requiresResponse = responseTriggers.length > 0;
-  const canSkip = channel === 'public' &&
-    context.allowedCommandTypes.includes('game.skip_speech');
+  const canSkip = context.allowedCommandTypes.includes('game.skip_speech');
   // Historical role claims remain useful context, but they must not make every
   // later turn look urgent forever. Only a role conflict that is genuinely new
   // since this actor last spoke should suppress the no-content exit.
@@ -110,13 +109,14 @@ export const buildSpeechDecisionContext = (
       speech.startsWith(`${actor.name}:`)
     ));
   });
+  const wolfHasPriorDiscussion = channel === 'wolf_private' && currentRoundSpeeches.length > 0;
   const isLastWords = context.phase === 'lastWords' || context.stage === 'last_words';
   const preferNoContentExit = canSkip &&
     newInformation.length === 0 &&
     !wasAddressed &&
     !requiresResponse &&
     !hasUrgentRoleConflict &&
-    (hasSpokenInThisRound || isLastWords) &&
+    (hasSpokenInThisRound || wolfHasPriorDiscussion || isLastWords) &&
     !meaningfulNovelty(promptContext.requiredNovelty);
 
   const publicMoves: SpeechDecisionMove[] = [
@@ -132,13 +132,21 @@ export const buildSpeechDecisionContext = (
   if (legalActions.includes('request_speech')) publicMoves.push('申请插队');
   if (canSkip) publicMoves.push('跳过发言');
 
+  const privateMoves: SpeechDecisionMove[] = [
+    '报告当前已知信息',
+    '暂时站边并说明依据',
+    '认可一个具体判断',
+    '提出一个尚未回答的具体问题',
+    '保留观察',
+    '指认一个人',
+  ];
+  if (canSkip) privateMoves.push('跳过发言');
+
   return {
     channel,
     stageTask: promptContext.phaseTask || '只执行当前服务端允许的动作。',
     legalActions,
-    allowedMoves: channel === 'public'
-      ? publicMoves
-      : ['报告当前已知信息', '暂时站边并说明依据', '认可一个具体判断', '提出一个尚未回答的具体问题', '保留观察', '指认一个人'],
+    allowedMoves: channel === 'public' ? publicMoves : privateMoves,
     newInformation,
     recentClaims,
     recentEvidence,
@@ -179,7 +187,7 @@ export const formatSpeechDecisionContext = (
       ? `当前有必须处理的点名、追问、质疑、对跳或票型变化：${list(decision.responseTriggers, '已检测')}。优先 speak 准确回应，不得无理由 skip_speech。`
       : '轮到你时先推进一件有价值的事：探查、追问、回应、暂时站边或信息交换均可；不强迫指认。';
   const channelGuidance = decision.channel === 'wolf_private'
-    ? '这是狼人私聊：只讨论今晚是否空刀、击杀候选、刀口收益与女巫风险；不要把白天站边或公开发言模板搬进狼聊。首夜没有公开信息时可以提出候选并说明理由，不能假装已经知道神职身份。'
+    ? '这是狼人私聊：只讨论今晚是否空刀、击杀候选、刀口收益与女巫风险；不要把白天站边或公开发言模板搬进狼聊。首夜没有公开信息时可以提出候选并说明理由，不能假装已经知道神职身份。若前面已经说清且你没有新分歧、新风险或新目标，直接选择 skip_speech；有新增时只补充新增部分，不复述共同结论。'
     : context.stage === 'speech'
       ? '当前是服务端轮流发言：不要催促尚未轮到的玩家，也不要把“谁还没说话”当作本轮主线；按队列回应上一位发言即可。只有自由讨论阶段才检查谁尚未发言。'
       : '公共发言优先回应上一条具体发言，再补充自己的判断。';

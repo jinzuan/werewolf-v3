@@ -96,6 +96,17 @@ export class DeterministicAIProvider implements AIProvider {
         reason: 'randomized legal wolf target',
       };
     }
+    if (allowed.has('game.skip_speech') && shouldPreferSpeechSkip(context)) {
+      return {
+        command: {
+          type: 'game.skip_speech' as const,
+          payload: context.phase === 'lastWords' || context.stage === 'last_words'
+            ? { reason: '没有新的信息可补充' }
+            : {},
+        },
+        reason: 'rules-degraded wolf discussion skip without new information',
+      };
+    }
     if (allowed.has('game.wolf_speak')) {
       return {
         command: {

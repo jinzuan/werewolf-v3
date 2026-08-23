@@ -23,6 +23,14 @@ export interface RepeatCheck {
 
 const MAX_HISTORY_PER_SCENE = 12;
 const SIMILARITY_THRESHOLD = 0.72;
+const WOLF_BOILERPLATE_MARKERS = [
+  /公开信息(?:和票型)?为零|没有公开信息/u,
+  /首夜(?:猜测|无信息|盲刀)/u,
+  /不空刀/u,
+  /神职(?:边|信息位)/u,
+  /统一(?:锁票|方案|结论)/u,
+  /备选/u,
+];
 
 const sceneKey = (scene: RepeatScene): string =>
   [scene.gameId, scene.playerId, scene.phase, scene.stage ?? 'none'].join(':');
@@ -89,6 +97,9 @@ const isSpeechCommand = (
 ): commandType is 'game.speak' | 'game.wolf_speak' =>
   commandType === 'game.speak' || commandType === 'game.wolf_speak';
 
+const wolfBoilerplateScore = (value: string): number =>
+  WOLF_BOILERPLATE_MARKERS.filter((marker) => marker.test(value)).length;
+
 export class RepeatPolicy {
   private readonly records = new Map<string, RepeatRecord[]>();
   private readonly channelRecords = new Map<string, RepeatRecord[]>();
@@ -124,15 +135,24 @@ export class RepeatPolicy {
           .filter((record) => speechSimilarity(record.text, text) >= SIMILARITY_THRESHOLD)
           .length
       : 0;
+    const wolfTemplateRepeated = scene.channel === 'wolf_private' &&
+      wolfBoilerplateScore(text) >= 2 &&
+      channelHistory.some((record) =>
+        record.playerId !== scene.playerId &&
+        wolfBoilerplateScore(record.text) >= 2 &&
+        speechSimilarity(record.text, text) >= 0.42,
+      );
     const repeated =
-      bestSimilarity >= SIMILARITY_THRESHOLD || consecutive >= 2;
+      bestSimilarity >= SIMILARITY_THRESHOLD || consecutive >= 2 || wolfTemplateRepeated;
     return {
       repeated,
       similarity: bestSimilarity,
       consecutive,
       matchedText,
       guidance: repeated
-        ? '换一种说法：不要复述旧结论。补充一个尚未使用的具体证据、回应刚出现的新信息，或提出一个能获得新信息的具体问题，并明确下一步行动。'
+        ? scene.channel === 'wolf_private'
+          ? '狼聊已有相同方案：如果没有新分歧、新风险、新目标或需要回应的队友，直接输出 skip_speech；不要换词复述“首夜无信息/不空刀/围绕神职”等共识。若确有新增，只说新增部分。'
+          : '换一种说法：不要复述旧结论。补充一个尚未使用的具体证据、回应刚出现的新信息，或提出一个能获得新信息的具体问题，并明确下一步行动。'
         : '',
     };
   }
@@ -157,6 +177,7 @@ export class RepeatPolicy {
       playerId: context.playerId,
       phase: context.phase,
       stage: context.stage,
+      channel: context.allowedCommandTypes.includes('game.wolf_speak') ? 'wolf_private' : 'public',
     };
     const result = this.inspect(scene, text);
     if (!result.repeated) this.record(scene, text);
