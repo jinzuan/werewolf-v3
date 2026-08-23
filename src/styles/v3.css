@@ -801,7 +801,10 @@ button.ww-role-card { width: 100%; color: inherit; cursor: pointer; }
 .v3-ai-monitor-banner__stats { display: inline-flex; align-items: center; gap: 14px; margin-inline-start: auto; color: var(--ww-text-muted); font-size: var(--ww-text-caption-size); }
 .v3-ai-monitor-banner__stats span { display: inline-flex; align-items: baseline; gap: 4px; }
 .v3-ai-monitor-banner__stats strong { color: var(--ww-text-strong); font-family: var(--ww-font-family-number); font-size: 15px; }
+.v3-page--ai-monitor { width: 100%; max-width: none; padding-inline: clamp(16px, 2.4vw, 40px); }
+.v3-page--ai-monitor .v3-mobile-match-surface { min-height: 0; display: flex; flex: 1 1 auto; flex-direction: column; }
 .v3-ai-monitor-layout { grid-template-columns: minmax(280px, .82fr) minmax(560px, 1.8fr) minmax(280px, .82fr); gap: 14px; }
+.v3-page--ai-monitor .v3-ai-monitor-layout { min-height: calc(100dvh - 190px); grid-template-rows: minmax(0, 1fr) auto; }
 .v3-ai-monitor-layout > .v3-match-layout__left > .v3-card,
 .v3-ai-monitor-layout > .v3-match-layout__right > .v3-card { height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .v3-ai-monitor-layout > .v3-match-layout__left .v3-identity-list { min-height: 0; flex: 1 1 auto; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; overflow-y: auto; padding-inline-end: 4px; scrollbar-gutter: stable; }
@@ -992,6 +995,7 @@ button.ww-role-card { width: 100%; color: inherit; cursor: pointer; }
   .v3-stage-summary > .v3-stage-summary__turn, .v3-stage-summary > .v3-stage-summary__action { display: flex; align-items: baseline; gap: 4px; }
   .v3-stage-summary__turn strong, .v3-stage-summary__action strong { min-width: 0; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
   .v3-page--match { padding: 10px var(--page-gutter) 0; }
+  .v3-page--ai-monitor { width: 100%; padding-inline: var(--page-gutter); overflow-y: auto; }
   .v3-mobile-match-surface { width: 100%; height: auto; min-height: 0; display: flex; flex: 1 1 auto; flex-direction: column; padding-bottom: var(--v3-mobile-nav-height); }
   .v3-match-layout, .v3-spectate-layout, .v3-monitor-layout { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: 'center' 'right' 'left' 'footer'; gap: 10px; }
   .v3-match-layout__left, .v3-match-layout__center, .v3-match-layout__right, .v3-match-layout__footer { min-width: 0; min-height: 0; overflow: visible; }

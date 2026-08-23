@@ -144,7 +144,7 @@ export function MonitorPage() {
 
   if (!omniscient) {
     return (
-      <AppShell title="对局监控" connected={connected}>
+      <AppShell title="对局监控" connected={connected} pageClassName="v3-page--match v3-page--ai-monitor">
         <Card className="v3-empty-state">
           <EyeOff size={24} />
           <strong>当前会话没有全知观战授权</strong>
@@ -156,7 +156,7 @@ export function MonitorPage() {
 
   if (!snapshot) {
     return (
-      <AppShell title="对局监控" connected={connected}>
+      <AppShell title="对局监控" connected={connected} pageClassName="v3-page--match v3-page--ai-monitor">
         <Card className="v3-empty-state">
           <Radio size={24} />
           <strong>正在恢复监控信息</strong>
@@ -170,6 +170,7 @@ export function MonitorPage() {
     <AppShell
       title={room?.name ?? '快速电脑局'}
       eyebrow="对局监控"
+      pageClassName="v3-page--match v3-page--ai-monitor"
       phase={phaseLabel(snapshot.gameState)}
       countdown={(() => {
         const value = formatCountdown(remainingServerMs(
