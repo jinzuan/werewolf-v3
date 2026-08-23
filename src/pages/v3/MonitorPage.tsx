@@ -188,9 +188,14 @@ export function MonitorPage() {
       ) ?? undefined}
       connected={connected}
     >
-      <div className="v3-playback-bar">
+      <div className="v3-playback-bar v3-ai-monitor-banner">
         <Badge tone="purple"><Radio size={13} />全知监控</Badge>
-        <span className="v3-inline-note">已授权查看完整对局信息</span>
+        <span className="v3-inline-note">AI 导演台 · 已授权查看完整对局信息</span>
+        <div className="v3-ai-monitor-banner__stats" aria-label="对局监控摘要">
+          <span><strong>{players.filter((player) => player.isAlive).length}</strong> 存活</span>
+          <span><strong>{chatMessages.length}</strong> 条发言</span>
+          <span><strong>{events.length}</strong> 条事件</span>
+        </div>
       </div>
 
       <div className="v3-mobile-match-surface">
@@ -201,7 +206,7 @@ export function MonitorPage() {
         onChange={(section) => setMobileSection(section as MonitorMobileSection)}
       />
       <MatchShell
-        className="v3-monitor-layout"
+        className="v3-monitor-layout v3-ai-monitor-layout"
         desktop
         mobileSection={mobileSection}
         left={
