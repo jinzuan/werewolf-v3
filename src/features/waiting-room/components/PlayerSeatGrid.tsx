@@ -10,6 +10,7 @@ import {
   memberReadyLabel,
   selectPlayerSeats,
   selectUnassignedPlayers,
+  selectViewerMember,
 } from '../selectors';
 import { viewerPlayerId } from '../../../v3/session';
 import { SpectatorList } from './SpectatorList';
@@ -50,7 +51,7 @@ export function PlayerSeatGrid({
     ? undefined
     : seats.find((seat) => seat.seatIndex === selectedSeat)?.member ?? undefined;
   const viewerId = viewerPlayerId(room.viewer);
-  const currentMember = room.members.find((member) => member.id === viewerId);
+  const currentMember = selectViewerMember(room);
   const isHost = currentMember?.isHost === true;
   const closeMenu = () => setSelectedSeat(null);
   const run = (action: (() => void) | undefined) => {

@@ -4,7 +4,6 @@ import type {
   RoomViewV31,
   StartCheckItem,
 } from '../../../shared/roomContract';
-import { viewerPlayerId } from '../../v3/session';
 
 export const WAITING_ROOM_STATUSES = [
   'waiting',
@@ -83,16 +82,19 @@ export const selectSpectators = (
 ): RoomMemberViewV31[] =>
   room.members.filter((member) => member.kind === 'spectator');
 
+/** Resolve the current room member for both players and omniscient hosts. */
+export const selectViewerMember = (
+  room: RoomViewV31,
+): RoomMemberViewV31 | undefined => room.members.find(
+  (member) => member.id === room.viewer.actorId,
+);
+
 /** A spectator has no player member, even if an ID happens to collide. */
 export const selectViewerPlayerMember = (
   room: RoomViewV31,
 ): RoomMemberViewV31 | undefined => {
-  const playerId = viewerPlayerId(room.viewer);
-  return playerId === null
-    ? undefined
-    : room.members.find(
-        (member) => member.kind === 'player' && member.id === playerId,
-      );
+  const member = selectViewerMember(room);
+  return member?.kind === 'player' ? member : undefined;
 };
 
 export const isActionAllowed = (

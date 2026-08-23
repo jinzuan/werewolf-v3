@@ -24,7 +24,7 @@ import { copyText } from '../../lib/copyText';
 import {
   isActionAllowed,
   isWaitingRoomStatus,
-  selectViewerPlayerMember,
+  selectViewerMember,
   WAITING_STATUS_LABELS,
 } from './selectors';
 import './waiting-room.css';
@@ -154,7 +154,7 @@ export function WaitingRoomPage() {
 
   if (!room || !session || !isWaitingRoomStatus(room.status)) return null;
 
-  const currentMember = selectViewerPlayerMember(room);
+  const currentMember = selectViewerMember(room);
   const isHost = currentMember?.isHost === true;
   const pendingAction = pendingActionForCommand(pendingRoomCommand);
   const error = pageError ?? storeError;
