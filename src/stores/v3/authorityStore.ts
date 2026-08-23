@@ -204,7 +204,9 @@ const isTransportFailure = (response: ClientAck): response is TransportFailure =
 
 const responseMessage = (response: ClientAck): string =>
   isTransportFailure(response)
-    ? response.message || '连接暂时不可用，请重试。'
+    ? response.code === 'TRANSPORT_REPLACED'
+      ? '房间连接正在恢复，请稍候。'
+      : response.message || '连接暂时不可用，请重试。'
     : getErrorMessage(response.code);
 
 const recoveryExceptionMessage = (error: unknown): string =>
@@ -773,7 +775,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
     const cleanups = [
       subscribeV3Connection((connected) => {
         set({ connected, ...(connected ? {} : { syncStatus: 'syncing', syncError: null }) });
-        if (connected && get().session && !get().recovering) void recover();
+        if (connected && get().session && !get().recovering && !get().pendingRoomCommand) void recover();
       }),
       subscribeV3ReconnectLifecycle(() => {
         const current = get();
@@ -782,7 +784,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
         // recovery against the previous identity.
         if (current.loading || current.authorityStatus === 'resolving') return;
         set({ syncStatus: 'syncing', syncError: null });
-        if (current.session && !current.recovering) void recover();
+        if (current.session && !current.recovering && !current.pendingRoomCommand) void recover();
       }),
       subscribeV3Messages((message) => {
         if (message.type !== 'room.closed') return;
@@ -859,6 +861,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
           (response.code === 'PUSH_FAILED' || response.code === 'IDENTITY_MISMATCH') &&
           get().session &&
           !get().recovering &&
+          !get().pendingRoomCommand &&
           !get().loading
         ) {
           set({ error: null, syncStatus: 'syncing', syncError: null });
