@@ -449,7 +449,10 @@ export class RoomPolicy {
     if ((status === 'waiting' || status === 'ready_check') && member.kind === 'spectator') {
       actions.add('claim_seat');
     }
-    if ((status === 'waiting' || status === 'ready_check') && isHumanPlayer && !isHost) {
+    const anotherHumanPlayer = room.members.some((candidate) =>
+      candidate.id !== member.id && human(candidate) && candidate.kind === 'player',
+    );
+    if ((status === 'waiting' || status === 'ready_check') && isHumanPlayer && (!isHost || anotherHumanPlayer)) {
       actions.add('become_spectator');
       actions.add('request_seat');
     }

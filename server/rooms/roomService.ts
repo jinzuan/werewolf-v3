@@ -1633,6 +1633,13 @@ export class RoomService {
       if (!member || member.kind !== 'player' || member.isAI) {
         throw this.error('ACTION_NOT_ALLOWED', 'room.error.become_spectator_not_allowed');
       }
+      if (member.id === room.hostId) {
+        const nextHost = room.members.find((candidate) =>
+          candidate.id !== member.id && candidate.kind === 'player' && !candidate.isAI,
+        );
+        if (!nextHost) throw this.error('ACTION_NOT_ALLOWED', 'room.error.become_spectator_not_allowed');
+        room.hostId = nextHost.id;
+      }
       member.kind = 'spectator';
       member.seatIndex = null;
       member.ready = null;

@@ -9,9 +9,10 @@ interface SpectatorListProps {
   room: RoomViewV31;
   embedded?: boolean;
   onInvite?: () => void;
+  inviteCopied?: boolean;
 }
 
-export function SpectatorList({ room, embedded = false, onInvite }: SpectatorListProps) {
+export function SpectatorList({ room, embedded = false, onInvite, inviteCopied = false }: SpectatorListProps) {
   const spectators = selectSpectators(room);
   const content = (
     <>
@@ -24,7 +25,7 @@ export function SpectatorList({ room, embedded = false, onInvite }: SpectatorLis
           <h2 id="spectator-title">观战席</h2>
         </div>
         <span className="waiting-room__section-heading-actions">
-          {onInvite ? <Button variant="quiet" onClick={onInvite}><UserPlus size={15} /><span className="waiting-room__invite-label-full">邀请观战</span><span className="waiting-room__invite-label-compact">邀请</span></Button> : null}
+          {onInvite ? <Button variant="quiet" onClick={onInvite}><UserPlus size={15} /><span className="waiting-room__invite-label-full">{inviteCopied ? '已复制' : '邀请观战'}</span><span className="waiting-room__invite-label-compact">{inviteCopied ? '已复制' : '邀请'}</span></Button> : null}
           <Badge tone="info">{spectators.length} 人</Badge>
         </span>
       </div>
@@ -58,7 +59,7 @@ export function SpectatorList({ room, embedded = false, onInvite }: SpectatorLis
       <summary>
         <span><Eye size={17} aria-hidden="true" />观战席</span>
         <span className="waiting-room__section-heading-actions">
-          {onInvite ? <Button variant="quiet" onClick={(event) => { event.preventDefault(); onInvite(); }}><UserPlus size={15} /><span className="waiting-room__invite-label-full">邀请观战</span><span className="waiting-room__invite-label-compact">邀请</span></Button> : null}
+          {onInvite ? <Button variant="quiet" onClick={(event) => { event.preventDefault(); onInvite(); }}><UserPlus size={15} /><span className="waiting-room__invite-label-full">{inviteCopied ? '已复制' : '邀请观战'}</span><span className="waiting-room__invite-label-compact">{inviteCopied ? '已复制' : '邀请'}</span></Button> : null}
           <Badge tone="info">{spectators.length} 人</Badge>
         </span>
       </summary>

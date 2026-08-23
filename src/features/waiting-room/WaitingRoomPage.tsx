@@ -71,7 +71,6 @@ const scrollToCheckTarget = (item: StartCheckItem): void => {
 export function WaitingRoomPage() {
   const navigate = useNavigate();
   const connected = useV3Store((state) => state.connected);
-  const loading = useV3Store((state) => state.loading);
   const storeError = useV3Store((state) => state.error);
   const pendingRoomCommand = useV3Store((state) => state.pendingRoomCommand);
   const room = useV3Store((state) => state.room);
@@ -100,7 +99,8 @@ export function WaitingRoomPage() {
   const [seatRequestOpen, setSeatRequestOpen] = useState(false);
   const [approvedSeatRequest, setApprovedSeatRequest] = useState<RoomSeatRequestView | null>(null);
   const [inviteFallback, setInviteFallback] = useState<string | null>(null);
-  const [inviteFeedback, setInviteFeedback] = useState<string | null>(null);
+  const [inviteCopied, setInviteCopied] = useState<'play' | 'watch' | null>(null);
+  const [aiTargetName, setAITargetName] = useState<string | null>(null);
   const copyTimer = useRef<number | null>(null);
 
   useEffect(() => () => {
@@ -139,11 +139,11 @@ export function WaitingRoomPage() {
       await copyText(invite);
       setInviteFallback(null);
       setPageError(null);
-      setInviteFeedback(intent === 'watch' ? '已复制观战邀请链接。' : '已复制玩家邀请链接。');
+      setInviteCopied(intent);
       if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
-      copyTimer.current = window.setTimeout(() => setInviteFeedback(null), 2_400);
+      copyTimer.current = window.setTimeout(() => setInviteCopied(null), 2_400);
     } catch {
-      setInviteFeedback(null);
+      setInviteCopied(null);
       setInviteFallback(invite);
       setPageError('自动复制失败，已打开邀请信息；请手动复制后发送给朋友。');
     }
@@ -173,7 +173,8 @@ export function WaitingRoomPage() {
       if (success) setConfigEditorOpen(false);
     });
   };
-  const openAIConfigEditor = () => {
+  const openAIConfigEditor = (member?: { name: string }) => {
+    setAITargetName(member?.name ?? null);
     setAIEditorOpen(true);
     void loadAIConfig();
   };
@@ -183,7 +184,9 @@ export function WaitingRoomPage() {
     });
   };
   const leave = () => {
-    void runDirectMutation('leave', leaveRoomMutation);
+    void runDirectMutation('leave', leaveRoomMutation).then((success) => {
+      if (!success) setPageError('暂时没有离开成功，请再点一次；房间状态仍会保留。');
+    });
   };
   const resolveCheckAction = (action: Extract<AllowedRoomAction, 'invite' | 'update_config' | 'update_ai_config'>) => {
     if (action === 'invite') void onCopyInvite();
@@ -223,12 +226,6 @@ export function WaitingRoomPage() {
             {error}
           </div>
         ) : null}
-        {inviteFeedback ? (
-          <div className="v3-alert v3-alert--success waiting-room__feedback" role="status" aria-live="polite">
-            {inviteFeedback}
-          </div>
-        ) : null}
-
         <RoomActions
           room={room}
           currentMember={currentMember}
@@ -251,6 +248,8 @@ export function WaitingRoomPage() {
             onKickPlayer={(memberId) => runSeatMutation(() => kickPlayer(memberId))}
             onInvitePlayer={() => void onCopyInvite('play')}
             onInviteSpectator={() => void onCopyInvite('watch')}
+            inviteCopied={inviteCopied}
+            onConfigureAI={(member) => openAIConfigEditor(member)}
           />
           <aside className="waiting-room__side" aria-label="房间摘要与开局检查">
             <RoomConfigSummary
@@ -337,7 +336,8 @@ export function WaitingRoomPage() {
 
         <RoomAIConfigEditor
           room={room}
-          open={aiEditorOpen && isHost && isActionAllowed(room, 'update_ai_config')}
+            open={aiEditorOpen && isHost && isActionAllowed(room, 'update_ai_config')}
+            targetAIName={aiTargetName}
           pending={aiConfigStatus === 'updating'}
           summary={aiSummary}
           status={aiConfigStatus}

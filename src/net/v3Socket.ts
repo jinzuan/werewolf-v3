@@ -517,20 +517,24 @@ export const joinV3Room = (
   roomCode: string,
   joinToken: string,
   joinRequestId: string,
+  avatarId?: string,
 ): Promise<ClientAck<JoinRoomAck extends ProtocolAck<infer P> ? P : never>> =>
   emitAck(
     // Joining is also an identity boundary. Always use a fresh unauthenticated
     // transport so a previous room lease cannot reject the new join.
     openRoomConnection({}, true),
     'v3:command',
-    roomReadRequest(
+    {
+      ...roomReadRequest(
       actorId,
       {
         type: 'room.join',
         payload: { roomCode, joinToken, joinRequestId },
       },
       actorName,
-    ),
+      ),
+      ...(avatarId ? { avatarId } : {}),
+    },
   );
 
 export const spectateV3Room = (
@@ -540,6 +544,7 @@ export const spectateV3Room = (
   joinToken: string,
   joinRequestId: string,
   omniscientToken?: string,
+  avatarId?: string,
 ): Promise<ClientAck<JoinRoomAck extends ProtocolAck<infer P> ? P : never>> => {
   const command: SpectatorCommand = {
     type: 'spectator.join',
@@ -549,6 +554,7 @@ export const spectateV3Room = (
     meta: commandMeta(actorId),
     command,
     actorName,
+    ...(avatarId ? { avatarId } : {}),
   } as ClientCommand;
   return emitAck(
     openRoomConnection({ joinToken }, true),

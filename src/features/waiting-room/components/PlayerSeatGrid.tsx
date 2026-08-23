@@ -24,6 +24,8 @@ interface PlayerSeatGridProps {
   onKickPlayer?: (memberId: string) => void;
   onInvitePlayer?: () => void;
   onInviteSpectator?: () => void;
+  inviteCopied?: 'play' | 'watch' | null;
+  onConfigureAI?: (member: RoomMemberViewV31) => void;
 }
 
 export function PlayerSeatGrid({
@@ -36,6 +38,8 @@ export function PlayerSeatGrid({
   onKickPlayer,
   onInvitePlayer,
   onInviteSpectator,
+  inviteCopied = null,
+  onConfigureAI,
 }: PlayerSeatGridProps) {
   const seats = selectPlayerSeats(room);
   const unassigned = selectUnassignedPlayers(room);
@@ -84,7 +88,7 @@ export function PlayerSeatGrid({
           <h2 id="player-seats-title">玩家席</h2>
         </div>
         <span className="waiting-room__section-heading-actions">
-          {onInvitePlayer && isActionAllowed(room, 'invite') ? <Button variant="quiet" onClick={onInvitePlayer}><UserPlus size={15} /><span className="waiting-room__invite-label-full">邀请玩家</span><span className="waiting-room__invite-label-compact">邀请</span></Button> : null}
+          {onInvitePlayer && isActionAllowed(room, 'invite') ? <Button variant="quiet" onClick={onInvitePlayer}><UserPlus size={15} /><span className="waiting-room__invite-label-full">{inviteCopied === 'play' ? '已复制' : '邀请玩家'}</span><span className="waiting-room__invite-label-compact">{inviteCopied === 'play' ? '已复制' : '邀请'}</span></Button> : null}
           {canBecomeSpectator && onBecomeSpectator ? <Button variant="quiet" onClick={onBecomeSpectator}><Users size={15} />进入观战席</Button> : null}
           {canClaim && onClaimSeat ? <Button variant="quiet" onClick={() => onClaimSeat()}><UserRoundPlus size={15} />进入玩家席</Button> : null}
           <span className="waiting-room__check-count">{occupied} / {seats.length}</span>
@@ -136,7 +140,7 @@ export function PlayerSeatGrid({
         点击席位查看快捷操作；观战席不占用玩家席，玩家席满时不会强制挤入。
       </p>
 
-      <SpectatorList room={room} embedded onInvite={onInviteSpectator} />
+      <SpectatorList room={room} embedded onInvite={onInviteSpectator} inviteCopied={inviteCopied === 'watch'} />
 
       {unassigned.length ? (
         <div className="waiting-room__unassigned" aria-label="待分配席位">
@@ -178,6 +182,7 @@ export function PlayerSeatGrid({
           {!selectedMember && canClaim ? <Button size="action" onClick={() => run(() => onClaimSeat?.(selectedSeat!))}><UserRoundPlus size={17} />进入玩家席</Button> : null}
           {selectedMember && !selectedMember.isAI && selectedMember.id !== viewerId && canApply ? <Button variant="secondary" onClick={() => run(onRequestSeat)}><UserRoundPlus size={17} />申请玩家位置</Button> : null}
           {selectedMember?.id === viewerId && canBecomeSpectator ? <Button variant="secondary" onClick={() => run(onBecomeSpectator)}><Users size={17} />加入观战席</Button> : null}
+          {selectedMember?.isAI && isHost && onConfigureAI ? <Button variant="secondary" onClick={() => run(() => onConfigureAI(selectedMember))}><Bot size={17} />设置 AI 参数</Button> : null}
           {canKick ? <Button variant="quiet" onClick={() => run(() => onKickPlayer?.(selectedMember!.id))}><X size={17} />{selectedMember?.isAI ? '删除 AI 玩家' : '房主移出玩家席'}</Button> : null}
           {!selectedMember && canAddAI ? <Button variant="secondary" onClick={() => run(() => onAddAI?.(selectedSeat!))}><Bot size={17} />添加 AI 玩家</Button> : null}
           {!selectedMember && onInvitePlayer && isActionAllowed(room, 'invite') ? <Button variant="secondary" onClick={() => run(onInvitePlayer)}><UserPlus size={17} />邀请真人玩家</Button> : null}

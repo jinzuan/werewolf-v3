@@ -20,7 +20,7 @@ import { RoleCard } from '../../ui/RoleCard';
 import { Seat } from '../../ui/Seat';
 import { avatarAssetMap } from '../../ui/assetRegistry';
 import { Modal } from '../../ui/Modal';
-import { readPlayerNickname, writePlayerNickname } from '../../runtime/playerProfile';
+import { readPlayerAvatarId, readPlayerNickname, writePlayerNickname } from '../../runtime/playerProfile';
 import type { RoomCreationCatalog } from '../../../shared/roomContract';
 import {
   clearWizardDraft,
@@ -41,7 +41,6 @@ import {
   wizardPathForStep,
   writeWizardDraft,
   WIZARD_STEPS,
-  WIZARD_STEP_PATHS,
   type WizardDraft,
   type WizardIssue,
   type WizardStep,
@@ -124,7 +123,7 @@ const codeFallbackStep = (code: string): WizardStep => {
   return 'roles';
 };
 
-function WizardStepper({
+function _WizardStepper({
   current,
   draft,
   catalog,
@@ -690,7 +689,7 @@ function ConfirmStep({
   );
 }
 
-function PlayersAndRulesStep({
+function _PlayersAndRulesStep({
   draft,
   catalog,
   issues,
@@ -712,7 +711,7 @@ function PlayersAndRulesStep({
   );
 }
 
-function RolesAndConfirmStep({
+function _RolesAndConfirmStep({
   draft,
   catalog,
   issues,
@@ -764,7 +763,7 @@ export function RoomWizardPage() {
     const saved = readWizardDraft(storageTarget());
     const next = saved
       ? { ...cloneDraft(saved), catalogVersion: catalog.catalogVersion }
-      : createInitialDraft(catalog, readPlayerNickname());
+      : createInitialDraft(catalog, readPlayerNickname(), readPlayerAvatarId());
     setDraft(next);
     writeWizardDraft(storageTarget(), next);
   }, [catalog, draft]);

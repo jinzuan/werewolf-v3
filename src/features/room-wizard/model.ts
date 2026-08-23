@@ -111,6 +111,7 @@ const firstEnabledPreset = (catalog: RoomCreationCatalog) =>
 export const createInitialDraft = (
   catalog: RoomCreationCatalog,
   creatorName = '玩家',
+  creatorAvatarId = 'avatar-player',
 ): WizardDraft => {
   const preset = firstEnabledPreset(catalog);
   const maxPlayers = preset?.playerCount ?? catalog.playerCounts[0] ?? 0;
@@ -122,7 +123,7 @@ export const createInitialDraft = (
     version: ROOM_WIZARD_DRAFT_VERSION,
     catalogVersion: catalog.catalogVersion,
     roomName: '月影村·新手局',
-    creator: { name: creatorName, avatarId: 'avatar-player' },
+    creator: { name: creatorName, avatarId: creatorAvatarId },
     mode: mixedByDefault ? 'mixed' : 'human',
     visibility: 'invite_only',
     maxPlayers,

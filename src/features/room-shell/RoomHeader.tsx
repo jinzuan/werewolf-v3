@@ -88,7 +88,8 @@ export function RoomHeader({ children, ...status }: RoomHeaderProps) {
   const handleHomeClick = async (event: MouseEvent<HTMLAnchorElement>): Promise<void> => {
     if (room.status !== 'waiting' && room.status !== 'ready_check') return;
     event.preventDefault();
-    if (await leaveRoomMutation()) navigate('/lobby', { replace: true });
+    await leaveRoomMutation();
+    navigate('/lobby', { replace: true });
   };
   return (
     <>

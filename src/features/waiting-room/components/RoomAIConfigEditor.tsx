@@ -40,6 +40,7 @@ interface RoomAIConfigEditorProps {
   error: string | null;
   onClose: () => void;
   onSubmit: (patch: RoomAIConfigPatch) => void;
+  targetAIName?: string | null;
 }
 
 export function RoomAIConfigEditor({
@@ -51,6 +52,7 @@ export function RoomAIConfigEditor({
   error,
   onClose,
   onSubmit,
+  targetAIName,
 }: RoomAIConfigEditorProps) {
   const [provider, setProvider] = useState<RoomAIProvider>('local');
   const [model, setModel] = useState<string>(ROOM_AI_DEFAULTS.local.model);
@@ -121,8 +123,8 @@ export function RoomAIConfigEditor({
   return (
     <Modal
       open={open}
-      title="修改电脑玩家设置"
-      context="凭据留空表示保持原值；只有勾选清除才会删除已保存凭据。"
+      title={targetAIName ? `设置 AI · ${targetAIName}` : '修改电脑玩家设置'}
+      context={targetAIName ? '当前为房主专属设置；模型与行动风格保存到本房间的电脑玩家服务。' : '凭据留空表示保持原值；只有勾选清除才会删除已保存凭据。'}
       onClose={onClose}
       size="wide"
       footer={(

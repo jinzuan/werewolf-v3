@@ -72,6 +72,7 @@ import {
 import { gameActionsReady } from '../../v3/actions';
 import { getSessionPersistence } from '../../runtime/sessionPersistence';
 import { subscribeV3ReconnectLifecycle } from '../../runtime/reconnectLifecycle';
+import { readPlayerAvatarId } from '../../runtime/playerProfile';
 
 const storage = (): Storage | null =>
   typeof localStorage === 'undefined' ? null : localStorage;
@@ -260,7 +261,7 @@ const buildDefaultOptions = (
   return {
     catalogVersion: catalog.catalogVersion,
     roomName: roomName.trim(),
-    creator: { name: name.trim(), avatarId: 'avatar-player' },
+    creator: { name: name.trim(), avatarId: readPlayerAvatarId() },
     // The default lobby action always enters a waiting room. `auto` means
     // AI fills vacant seats at start; it no longer means an immediate all-AI
     // monitor session.
@@ -276,7 +277,7 @@ const buildDefaultOptions = (
     rulesetVersion: preset.rulesetVersion,
     readyPolicy: 'all_connected_humans',
     allowPublicSpectators: false,
-    reviewEnabled: true,
+    reviewEnabled: false,
   };
 };
 
@@ -933,20 +934,21 @@ export const useV3Store = create<V3Store>()((set, get) => {
     // Never send a room mutation while the browser is still changing socket
     // identity. In particular, a freshly-created host must wait for the
     // authoritative room state instead of receiving a misleading auth error.
+    const leavingRoom = command.type === 'room.leave' || command.type === 'room.dissolve';
     if (
       current.authorityStatus !== 'authorized' ||
       current.recovering ||
       current.syncStatus === 'syncing' ||
-      current.syncStatus === 'error'
+      (current.syncStatus === 'error' && !leavingRoom)
     ) {
-      if (!current.recovering) await recover();
+      if (!current.recovering && !leavingRoom) await recover();
       current = get();
       if (
         !current.session ||
         !current.room ||
         current.authorityStatus !== 'authorized' ||
         current.recovering ||
-        current.syncStatus === 'error'
+        (current.syncStatus === 'error' && !leavingRoom)
       ) return false;
     }
     const action = roomActionForCommand(command);
@@ -1296,6 +1298,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
           normalizedRoomCode,
           joinToken,
           pending.joinRequestId,
+          readPlayerAvatarId(),
         );
         if (response.ok === false) {
           if (!isTransportFailure(response)) clearPendingJoin(pending.joinRequestId);
@@ -1338,6 +1341,7 @@ export const useV3Store = create<V3Store>()((set, get) => {
           joinToken,
           pending.joinRequestId,
           omniscientToken,
+          readPlayerAvatarId(),
         );
         if (response.ok === false) {
           if (!isTransportFailure(response)) clearPendingJoin(pending.joinRequestId);

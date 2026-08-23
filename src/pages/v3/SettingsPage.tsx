@@ -8,10 +8,15 @@ import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { Input } from '../../ui/Input';
 import {
+  PLAYER_AVATAR_IDS,
+  PLAYER_BIO_MAX_LENGTH,
   PLAYER_NICKNAME_MAX_LENGTH,
+  readPlayerAvatarId,
+  readPlayerBio,
   readPlayerNickname,
-  writePlayerNickname,
+  writePlayerProfile,
 } from '../../runtime/playerProfile';
+import { avatarAssetMap } from '../../ui/assetRegistry';
 
 type MotionPreference = 'system' | 'reduced' | 'full';
 
@@ -26,6 +31,8 @@ export function SettingsPage() {
   const connected = useV3Store((state) => state.connected);
   const [motionPreference, setMotionPreference] = useState<MotionPreference>(readMotionPreference);
   const [nickname, setNickname] = useState(() => readPlayerNickname());
+  const [bio, setBio] = useState(() => readPlayerBio());
+  const [avatarId, setAvatarId] = useState(() => readPlayerAvatarId());
   const diagnosticsEnabled = endpointDiagnosticsEnabled();
   const [serverUrl, updateServerUrl] = useState(() => getServerUrl());
   const [saved, setSaved] = useState(false);
@@ -36,7 +43,10 @@ export function SettingsPage() {
 
   const save = () => {
     localStorage.setItem('werewolf-v3-motion-mode', motionPreference);
-    setNickname(writePlayerNickname(nickname));
+    const profile = writePlayerProfile({ nickname, bio, avatarId });
+    setNickname(profile.nickname);
+    setBio(profile.bio);
+    setAvatarId(profile.avatarId);
     if (diagnosticsEnabled) setServerUrl(serverUrl.trim());
     setSaved(true);
   };
@@ -55,7 +65,7 @@ export function SettingsPage() {
       <div className="v3-settings-layout">
         <Card>
           <div className="v3-panel-heading">
-            <div><span>局外个人资料</span><h2>我的昵称</h2></div>
+            <div><span>局外个人资料</span><h2>我的资料</h2></div>
             <UserRound size={18} aria-hidden="true" />
           </div>
           <label className="v3-field">
@@ -70,6 +80,20 @@ export function SettingsPage() {
               }}
             />
             <span className="v3-field__hint">保存后会用于大厅、开房和入座，不用每次重新填写。</span>
+          </label>
+          <div className="v3-field">
+            <span>头像</span>
+            <div className="v3-segmented" role="group" aria-label="头像选择">
+              {PLAYER_AVATAR_IDS.map((id) => {
+                const kind = id === 'avatar-computer' ? 'computer' : id === 'avatar-spectator' ? 'spectator' : 'player';
+                return <button key={id} type="button" className={avatarId === id ? 'is-active' : undefined} aria-pressed={avatarId === id} onClick={() => { setAvatarId(id); setSaved(false); }}><img src={avatarAssetMap[kind].src} alt={avatarAssetMap[kind].label} width="28" height="28" /></button>;
+              })}
+            </div>
+          </div>
+          <label className="v3-field">
+            <span>个人简介</span>
+            <textarea className="v3-input" value={bio} maxLength={PLAYER_BIO_MAX_LENGTH} rows={3} placeholder="写一句让别人认识你的话（可选）" onChange={(event) => { setBio(event.target.value); setSaved(false); }} />
+            <span className="v3-field__hint">最多 {PLAYER_BIO_MAX_LENGTH} 字，仅保存在本机资料中。</span>
           </label>
         </Card>
         {diagnosticsEnabled ? (
