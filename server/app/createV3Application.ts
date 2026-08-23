@@ -139,6 +139,17 @@ const createModernApplication = async (
       response.end(JSON.stringify({ ok: false, code: 'INSECURE_TRANSPORT' }));
       return;
     }
+    if (request.url === '/' || request.url === '/index.html') {
+      response.writeHead(200, { 'content-type': 'application/json', ...responseHeaders(security) });
+      response.end(JSON.stringify({
+        ok: true,
+        service: 'werewolf-v3',
+        status: 'running',
+        health: '/health',
+        transport: 'socket.io',
+      }));
+      return;
+    }
     if (request.url === '/health') {
       response.writeHead(200, { 'content-type': 'application/json', ...responseHeaders(security) });
       response.end(JSON.stringify({ ok: true, service: 'werewolf-v3' }));

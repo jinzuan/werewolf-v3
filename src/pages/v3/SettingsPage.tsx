@@ -82,6 +82,13 @@ export function SettingsPage() {
           </Card>
         ) : null}
         <Card>
+          <div className="v3-panel-heading"><div><span>云端服务</span><h2>服务端入口</h2></div><Monitor size={18} aria-hidden="true" /></div>
+          <div className="v3-setting-row">
+            <div><strong>服务端状态页</strong><span>打开后可查看云端服务是否在线。</span></div>
+            <a className="v3-button v3-button--quiet" href={`${serverUrl.replace(/\/$/u, '')}/`} target="_blank" rel="noreferrer">打开服务端</a>
+          </div>
+        </Card>
+        <Card>
           <div className="v3-panel-heading"><div><span>月光森林视觉</span><h2>显示</h2></div><Monitor size={18} aria-hidden="true" /></div>
           <div className="v3-setting-row">
             <div><strong>场景</strong><span>日暮村庄、月下森林与篝火广场会跟随对局阶段切换。</span></div>
