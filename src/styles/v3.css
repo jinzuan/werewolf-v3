@@ -790,37 +790,10 @@ button.ww-role-card { width: 100%; color: inherit; cursor: pointer; }
 .v3-console-events > div { grid-template-columns: auto auto minmax(0, 1fr); }
 .v3-monitor-filters { display: grid; grid-template-columns: minmax(180px, 260px) minmax(220px, 1fr); gap: var(--ww-space-3); padding: var(--ww-space-3); }
 .v3-monitor-filters label { display: grid; gap: 5px; }
-.v3-ai-monitor-banner {
-  min-height: 42px;
-  margin-bottom: var(--ww-space-4);
-  padding: 7px 10px;
-  border: 1px solid color-mix(in srgb, #8C79C8 34%, var(--ww-border-default));
-  border-radius: var(--ww-radius-control);
-  background: linear-gradient(100deg, color-mix(in srgb, #8C79C8 15%, var(--ww-bg-surface)), var(--ww-bg-surface));
-}
-.v3-ai-monitor-banner__stats { display: inline-flex; align-items: center; gap: 14px; margin-inline-start: auto; color: var(--ww-text-muted); font-size: var(--ww-text-caption-size); }
-.v3-ai-monitor-banner__stats span { display: inline-flex; align-items: baseline; gap: 4px; }
-.v3-ai-monitor-banner__stats strong { color: var(--ww-text-strong); font-family: var(--ww-font-family-number); font-size: 15px; }
-.v3-page--ai-monitor { width: 100%; max-width: none; padding-inline: clamp(16px, 2.4vw, 40px); }
-.v3-page--ai-monitor .v3-mobile-match-surface { min-height: 0; display: flex; flex: 1 1 auto; flex-direction: column; }
-.v3-ai-monitor-layout { grid-template-columns: minmax(280px, .82fr) minmax(560px, 1.8fr) minmax(280px, .82fr); gap: 14px; }
-.v3-page--ai-monitor .v3-ai-monitor-layout { min-height: calc(100dvh - 190px); grid-template-rows: minmax(0, 1fr) auto; }
-.v3-ai-monitor-layout > .v3-match-layout__left > .v3-card,
-.v3-ai-monitor-layout > .v3-match-layout__right > .v3-card { height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-.v3-ai-monitor-layout > .v3-match-layout__left .v3-identity-list { min-height: 0; flex: 1 1 auto; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; overflow-y: auto; padding-inline-end: 4px; scrollbar-gutter: stable; }
-.v3-ai-monitor-layout > .v3-match-layout__left .v3-monitor-identity-row { grid-template-columns: 36px minmax(0, 1fr); grid-template-rows: auto auto; gap: 4px 6px; padding: 6px; }
-.v3-ai-monitor-layout > .v3-match-layout__left .v3-monitor-identity-flip { width: 34px; height: 34px; }
-.v3-ai-monitor-layout > .v3-match-layout__left .v3-monitor-identity-flip img { width: 27px; height: 27px; }
-.v3-ai-monitor-layout > .v3-match-layout__left .v3-monitor-identity-row > strong { min-width: 0; display: flex; align-items: center; gap: 3px; font-size: 12px; }
-.v3-ai-monitor-layout > .v3-match-layout__left .v3-monitor-identity-row > .v3-badge { grid-column: 2; justify-self: start; min-height: 18px; padding-inline: 6px; font-size: 10px; }
-.v3-ai-monitor-layout > .v3-match-layout__left .v3-monitor-identity-role { grid-column: 1 / -1; font-size: 10px; }
-.v3-ai-monitor-layout .v3-monitor-stream { height: 100%; min-height: 0; grid-template-rows: minmax(300px, .9fr) minmax(340px, 1.1fr); }
-.v3-ai-monitor-layout .v3-monitor-stream > .v3-card { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-.v3-ai-monitor-layout .v3-monitor-stream > .v3-card:first-child { order: 2; }
-.v3-ai-monitor-layout .v3-monitor-stream > .v3-monitor-chat { order: 1; }
-.v3-ai-monitor-layout .v3-console-events, .v3-ai-monitor-layout .v3-chat-list { min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
-.v3-ai-monitor-layout .v3-monitor-chat .v3-chat-list { padding: 12px 14px; }
-.v3-ai-monitor-layout .v3-mobile-room-meta { flex: none; }
+.v3-monitor-game-layout .v3-player-seat__avatar img { width: 26px; height: 26px; object-fit: contain; }
+.v3-monitor-seat-role { color: var(--ww-text-muted); font-size: 10px; white-space: nowrap; }
+.v3-monitor-game-layout .v3-player-seat.is-speaking .v3-monitor-seat-role { color: var(--v3-seat-color); }
+.v3-monitor-game-layout .v3-event-item { padding-inline-end: 4px; }
 .v3-advanced-info { border: 1px solid var(--ww-border-default); border-radius: var(--ww-radius-control); background: var(--ww-bg-subtle); }
 .v3-advanced-info > summary { min-height: 44px; display: flex; align-items: center; padding: 8px 12px; }
 .v3-setting-row { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--ww-space-4); padding: 12px 0; border-bottom: 1px solid var(--ww-border-default); }
@@ -894,6 +867,12 @@ button.ww-role-card { width: 100%; color: inherit; cursor: pointer; }
     grid-template-areas: 'center right' 'left left' 'footer footer';
   }
   .v3-match-layout__left .v3-player-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  /*
+   * The base game shell has one flexible desktop row. Once the player rail is
+   * moved below the two primary panes, that row must keep a readable minimum;
+   * otherwise the automatic row consumes the viewport and clips chat/action.
+   */
+  .v3-game-layout { grid-template-rows: minmax(520px, 1fr) auto; }
   .v3-desktop-info-rail { position: static; }
   .v3-room-header__viewer, .v3-room-header__timer { display: none; }
 }
@@ -921,6 +900,8 @@ button.ww-role-card { width: 100%; color: inherit; cursor: pointer; }
   .v3-stage-summary h1 { overflow: hidden; font-size: 18px; text-overflow: ellipsis; white-space: nowrap; }
   .v3-stage-summary strong { font-size: 13px; }
   .v3-match-layout, .v3-spectate-layout, .v3-monitor-layout { grid-template-columns: 1fr; grid-template-areas: 'center' 'right' 'left' 'footer'; }
+  /* Portrait tablets use a scrollable stack, with chat remaining primary. */
+  .v3-game-layout { height: auto; grid-template-rows: minmax(420px, auto) auto auto; }
   .v3-match-layout__left .v3-player-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .v3-desktop-info-rail { position: static; }
   .v3-chat-panel { min-height: 420px; }
@@ -995,7 +976,6 @@ button.ww-role-card { width: 100%; color: inherit; cursor: pointer; }
   .v3-stage-summary > .v3-stage-summary__turn, .v3-stage-summary > .v3-stage-summary__action { display: flex; align-items: baseline; gap: 4px; }
   .v3-stage-summary__turn strong, .v3-stage-summary__action strong { min-width: 0; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
   .v3-page--match { padding: 10px var(--page-gutter) 0; }
-  .v3-page--ai-monitor { width: 100%; padding-inline: var(--page-gutter); overflow-y: auto; }
   .v3-mobile-match-surface { width: 100%; height: auto; min-height: 0; display: flex; flex: 1 1 auto; flex-direction: column; padding-bottom: var(--v3-mobile-nav-height); }
   .v3-match-layout, .v3-spectate-layout, .v3-monitor-layout { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: 'center' 'right' 'left' 'footer'; gap: 10px; }
   .v3-match-layout__left, .v3-match-layout__center, .v3-match-layout__right, .v3-match-layout__footer { min-width: 0; min-height: 0; overflow: visible; }
@@ -1020,8 +1000,6 @@ button.ww-role-card { width: 100%; color: inherit; cursor: pointer; }
   .v3-event-list--mobile, .v3-event-count--mobile { display: grid; }
   .v3-mobile-only { display: none; }
   .v3-playback-bar { align-items: flex-start; flex-direction: column; }
-  .v3-ai-monitor-banner { gap: 6px 10px; }
-  .v3-ai-monitor-banner__stats { width: 100%; justify-content: space-between; margin-inline-start: 0; }
   .v3-spectate-identity-list, .v3-identity-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .v3-spectate-identity, .v3-monitor-identity-row { grid-template-columns: 44px minmax(0, 1fr) auto; }
   .v3-spectate-identity > .v3-badge, .v3-monitor-identity-row > .v3-badge { display: inline-flex; }

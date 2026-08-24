@@ -26,6 +26,46 @@ interface EventFileDocument {
   streams: PersistedStreams;
 }
 
+/**
+ * A state update is a recovery checkpoint, not an immutable audit payload.
+ * Keep every checkpoint marker (stream versions and command ids are used for
+ * idempotency), but retain the large session snapshot only on the newest one.
+ * Without this compaction, a long AI game stores the ever-growing transcript
+ * again on every turn and the single JSON file grows quadratically.
+ */
+const compactHistoricalStateSnapshots = (
+  events: readonly StoredEvent[],
+): StoredEvent[] => {
+  let latestStateIndex = -1;
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    if (events[index].event.eventType === 'game.state_updated') {
+      latestStateIndex = index;
+      break;
+    }
+  }
+  if (latestStateIndex < 0) return [...events];
+
+  return events.map((stored, index) => {
+    if (
+      index === latestStateIndex ||
+      stored.event.eventType !== 'game.state_updated'
+    ) {
+      return stored;
+    }
+    const commandId = stored.event.payload.commandId;
+    return {
+      ...stored,
+      event: {
+        ...stored.event,
+        payload: {
+          ...(typeof commandId === 'string' ? { commandId } : {}),
+          compacted: true,
+        },
+      },
+    };
+  });
+};
+
 export class FileEventStoreError extends Error {
   constructor(
     message: string,
@@ -110,9 +150,14 @@ export class FileEventStore implements EventStore {
           streamVersion: current.length + index + 1,
           event,
         }));
+        const combined = [...current, ...stored];
         const next = {
           ...streams,
-          [request.streamId]: [...current, ...stored],
+          [request.streamId]: request.events.some(
+            (event) => event.eventType === 'game.state_updated',
+          )
+            ? compactHistoricalStateSnapshots(combined)
+            : combined,
         };
         await this.write(next);
         this.streams = next;

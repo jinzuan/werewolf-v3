@@ -417,9 +417,11 @@ test('429 exhaustion uses one deterministic fallback and keeps the stage moving'
   assert.equal(telemetry.status, 'fallback');
   assert.equal(telemetry.retryCount, 2);
   assert.equal(telemetry.errorClass, 'rate_limited');
+  // Command receipts are runtime-only. The fallback still advances the live
+  // session, while serialized checkpoints deliberately omit this bulky cache.
   assert.equal(
     Object.keys(session.serialize().state.processedCommands).length,
-    13,
+    0,
   );
 });
 

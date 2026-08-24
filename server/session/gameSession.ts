@@ -1290,7 +1290,10 @@ export class GameSession {
       flow.stage !== 'discussion' ||
       flow.discussionMode !== 'free_discussion' ||
       this.state.gameState.currentSpeaker === actor.id ||
-      !actor.isAlive
+      !actor.isAlive ||
+      (flow.discussionSpeechCounts?.[actor.id] ?? 0) >=
+        (flow.discussionSpeechQuota ?? FREE_DISCUSSION_SPEECH_QUOTA) ||
+      flow.discussionQueue?.some((entry) => entry.playerId === actor.id)
     ) {
       return null;
     }
@@ -2117,8 +2120,21 @@ export class GameSession {
       const playerId = this.state.gameState.currentSpeaker;
       if (this.state.dayFlow.stage === 'discussion' &&
           this.state.dayFlow.discussionMode === 'free_discussion') {
+        const quota = this.state.dayFlow.discussionSpeechQuota ??
+          FREE_DISCUSSION_SPEECH_QUOTA;
+        const queued = new Set(
+          (this.state.dayFlow.discussionQueue ?? []).map((entry) => entry.playerId),
+        );
         const response = this.state.players
-          .filter((player) => player.isAlive && player.id !== playerId)
+          // Do not authorize a no-op insert. Re-authorizing an AI that has
+          // exhausted its quota (or is already queued) creates a revision loop
+          // in an unattended room and prevents the idle deadline from voting.
+          .filter((player) =>
+            player.isAlive &&
+            player.id !== playerId &&
+            (this.state.dayFlow.discussionSpeechCounts?.[player.id] ?? 0) < quota &&
+            !queued.has(player.id),
+          )
           .map((player) => ({
             playerId: player.id,
             actions: ['request_speech'] as GameAction[],
