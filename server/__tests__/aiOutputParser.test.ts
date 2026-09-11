@@ -109,3 +109,55 @@ test('speech queue requests are parsed only when the server grants that action',
   assert.equal(rejected.ok, false);
   if (!rejected.ok) assert.equal(rejected.code, 'ACTION_NOT_ALLOWED');
 });
+
+test('a premature wolf vote during discussion is preserved as a proposal instead of discarded', () => {
+  const wolf = players.find((player) => player.role === 'wolf')!;
+  const target = players.find((player) => player.role !== 'wolf')!;
+  const parseContext = {
+    allowedCommandTypes: ['game.wolf_speak', 'game.skip_speech'] as const,
+    players,
+    playerId: wolf.id,
+    role: 'wolf' as const,
+    phase: 'night',
+    stage: 'wolf_discussion',
+    promptContext: {
+      legalActions: ['wolf_speak', 'skip_speech'] as const,
+      legalTargets: [{ id: target.id, name: target.name }],
+    },
+  };
+
+  for (const output of [
+    JSON.stringify({ action: 'wolf_vote', target: target.name, reason: '他是当前信息位' }),
+    JSON.stringify({ command: { type: 'game.wolf_vote', payload: { targetId: target.id } } }),
+  ]) {
+    const parsed = parseAIOutput(output, parseContext);
+    assert.equal(parsed.ok, true);
+    if (!parsed.ok) continue;
+    assert.equal(parsed.command.type, 'game.wolf_speak');
+    if (parsed.command.type === 'game.wolf_speak') {
+      assert.match(parsed.command.payload.content, new RegExp(target.name, 'u'));
+    }
+  }
+});
+
+test('wolf discussion skip is accepted whenever the authoritative action list grants it', () => {
+  const wolf = players.find((player) => player.role === 'wolf')!;
+  const parsed = parseAIOutput(
+    JSON.stringify({ action: 'skip_speech' }),
+    {
+      allowedCommandTypes: ['game.wolf_speak', 'game.skip_speech'],
+      players,
+      playerId: wolf.id,
+      role: 'wolf',
+      phase: 'night',
+      stage: 'wolf_discussion',
+      promptContext: {
+        legalActions: ['wolf_speak', 'skip_speech'],
+        currentRoundSpeeches: [],
+        newInformationSinceLastTurn: [],
+      },
+    },
+  );
+  assert.equal(parsed.ok, true);
+  if (parsed.ok) assert.equal(parsed.command.type, 'game.skip_speech');
+});

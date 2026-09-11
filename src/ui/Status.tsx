@@ -30,6 +30,7 @@ export function Status({
       className={cn('ww-status', `ww-status--${tone}`, className)}
       role="status"
       {...props}
+      data-glass-role="item"
     >
       <span className="ww-status__dot" aria-hidden="true" />
       {icon ? <span className="ww-status__icon" aria-hidden="true">{icon}</span> : null}

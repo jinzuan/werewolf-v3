@@ -12,6 +12,15 @@ export type EventVisibility =
   | 'wolf_private'
   | 'spectator_omniscient';
 
+/** Trusted source label for server-created commands/events; never client-authored. */
+export type CommandOrigin =
+  | 'model'
+  | 'safe_degradation'
+  | 'rules_degraded'
+  | 'test'
+  | 'human'
+  | 'unknown_legacy';
+
 export const DOMAIN_EVENT_SCHEMA_VERSION = 1 as const;
 
 export const DOMAIN_EVENT_TYPES = [
@@ -32,6 +41,7 @@ export const DOMAIN_EVENT_TYPES = [
   'night.resolution_detail',
   'night.started',
   'wolf.message',
+  'wolf.speech_skipped',
   'wolf.vote_cast',
   'wolf.vote_unresolved',
   'wolf.kill_locked',
@@ -86,6 +96,8 @@ export interface DomainEvent<
   audienceIds?: string[];
   correlationId: string;
   schemaVersion: typeof DOMAIN_EVENT_SCHEMA_VERSION;
+  /** Optional provenance retained for server diagnostics and replay audits. */
+  origin?: CommandOrigin;
 }
 
 export interface StoredEvent<TEvent extends DomainEvent = DomainEvent> {

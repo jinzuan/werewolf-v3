@@ -39,7 +39,7 @@ test('each stage transition publishes a newer revision and next actor actions', 
       initial.gameState.stageRevision!,
   );
   assert.equal(wolfSnapshot.gameState.nightStage, 'wolf_discussion');
-  assert.deepEqual(wolfSnapshot.gameState.allowedActions, ['wolf_speak']);
+  assert.deepEqual(wolfSnapshot.gameState.allowedActions, ['wolf_speak', 'skip_speech']);
   assert.ok(
     (wolfSnapshot.gameState as typeof wolfSnapshot.gameState & {
       deadlineTs?: number | null;

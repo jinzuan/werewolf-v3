@@ -7,6 +7,7 @@ import type {
 } from './types';
 import type {
   DomainEvent,
+  CommandOrigin,
   EventVisibility,
   ProjectedSnapshot,
   ViewerContext,
@@ -296,6 +297,8 @@ export interface GameCommandMeta extends BaseCommandMeta {
   roomId: string;
   gameId: string;
   expectedStageRevision: number;
+  /** Set by the trusted AI orchestrator; socket clients leave it absent. */
+  origin?: CommandOrigin;
 }
 
 export interface SpectatorCommandMeta extends BaseCommandMeta {

@@ -93,10 +93,14 @@ const basePromptContext = (context: AIRequestContext): AIPromptContext => {
     requiredNovelty:
       context.promptContext?.requiredNovelty ??
       '轮到你时先尝试推进一件有价值的事：探查、追问、回应、暂时站边或信息交换均可。只在没有新信息、没有被点名且没有必须澄清的冲突时才可合法跳过；不得复述旧主张或旧证据。',
-    experience: [
-      context.projectedContext?.experience,
-      context.promptContext?.experience,
-    ].filter((item): item is string => Boolean(item?.trim())).join('\n\n') || undefined,
+    // The coordinator's frozen per-seat assignment is authoritative for this
+    // turn. Do not concatenate it with the projector's rotating legacy
+    // reference: duplicated experience blocks make the model copy strategy
+    // prose and defeat per-AI variation.
+    experience:
+      context.promptContext?.experience?.trim() ||
+      context.projectedContext?.experience?.trim() ||
+      undefined,
     visibleEvents: events,
     legalActions: allowedActions,
   };
@@ -186,7 +190,7 @@ export const buildPromptPipeline = (
 ): PromptPipelineResult => {
   const maxChars = Math.max(4_000, budget.maxChars ?? DEFAULT_MAX_CHARS);
   const maxEvents = Math.max(8, budget.maxEvents ?? DEFAULT_MAX_EVENTS);
-  let promptContext = basePromptContext(input);
+  const promptContext = basePromptContext(input);
   let current = trimContext(input, promptContext, maxEvents);
   let prompt = buildAIPrompt(current.context);
   const initialCharacters = prompt.system.length + prompt.user.length;

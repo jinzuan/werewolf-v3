@@ -32,7 +32,12 @@ export function TopStatusBar({
   const [rulesOpen, setRulesOpen] = useState(false);
   const phaseAsset = phaseAssetMap[scene];
   return (
-    <header className="v3-topbar" data-scene={scene}>
+    <header
+      className="v3-topbar"
+      data-scene={scene}
+      data-glass-role="navigation"
+      data-glass-priority="critical"
+    >
       <div className="v3-topbar__identity">
         <span className="v3-topbar__mark">
           <img src={roleAssetMap.wolf.src} alt="" aria-hidden="true" />
@@ -65,7 +70,7 @@ export function TopStatusBar({
         <Button variant="icon" aria-label="查看完整规则" aria-haspopup="dialog" title="规则" onClick={() => setRulesOpen(true)}>
           <CircleHelp size={18} />
         </Button>
-        <Link className="v3-button v3-button--icon v3-button--default v3-topbar__settings-link" to="/settings" aria-label="打开设置" title="设置">
+        <Link className="v3-button v3-button--icon v3-button--default v3-topbar__settings-link" data-glass-role="control" data-glass-motion="control" to="/settings" aria-label="打开设置" title="设置">
           <Settings size={18} />
         </Link>
       </div>

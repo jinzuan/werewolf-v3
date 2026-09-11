@@ -37,6 +37,8 @@ export function MobileRoomMeta() {
       <button
         type="button"
         className="v3-mobile-room-meta__code"
+        data-glass-role="control"
+        data-glass-motion="control"
         onClick={() => void copyRoomCode()}
         aria-label={`复制房间号 ${room.code}`}
       >
@@ -49,11 +51,11 @@ export function MobileRoomMeta() {
           {copied ? '已复制' : '点击复制'}
         </span>
       </button>
-      <div>
+      <div data-glass-role="item">
         <span>视角</span>
         <strong>{viewerLabel(room.viewer.kind, room.viewer.omniscient)}</strong>
       </div>
-      <div>
+      <div data-glass-role="item">
         <span>房间状态</span>
         <strong>{roomStatusLabel(room.status)}</strong>
       </div>

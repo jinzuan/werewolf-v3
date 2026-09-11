@@ -73,6 +73,16 @@ export interface ReviewDeathRecord {
   occurredAt: number;
 }
 
+/** Explicit post-game god-view allowlist; experience assignment data is server-only. */
+export interface ReviewPlayerView {
+  id: string;
+  name: string;
+  role: Role | null;
+  isAI: boolean;
+  isAlive: boolean;
+  order: number;
+}
+
 export interface PostGameReviewView {
   gameId: string;
   roomId: string;
@@ -86,7 +96,7 @@ export interface PostGameReviewView {
   insights: ReviewInsight[];
   /** Present when the caller explicitly requested the ended-game god view. */
   omniscient?: boolean;
-  players?: ReviewArchivePlayer[];
+  players?: ReviewPlayerView[];
   deaths?: ReviewDeathRecord[];
   updatedAt: number;
 }

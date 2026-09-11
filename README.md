@@ -1,63 +1,89 @@
-## 作者 / 贡献
+# AI 狼人杀 · 月光森林
 
-Trae（AI）、opencode（AI）、苏达（AI）、雲鵺（AI）、金钻、空枝
+一个可联机的网页版狼人杀：把经典的身份推理玩法搬到浏览器里，并加入会自己发言、投票和行动的 AI 玩家，凑不齐真人局的时候也能开一桌。
 
----
+## 早期实验声明
 
-# React + TypeScript + Vite
+> 当前项目处于早期实验阶段。它在开发中基本能用，但没有经过完整、长期的测试，可能有不少问题。如果你愿意试用或参与改进，欢迎反馈；如果急着要稳定可用的版本，可以先观望，等后续迭代。
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+> 代码与注释提示：本项目的源码、文档及注释主要由 AI 协作生成，仅做了人工整理和少量测试游玩，未经过人工逐行审查。
 
-Currently, two official plugins are available:
+> 维护说明：目前项目不是持续高频维护的状态，更像是一个"抛砖引玉"的样例。它留下了不少未收拾的摊子——一部分是能力有限所致，代码也没有经过人工逐行审查，只是做了少量测试游玩。但如果哪怕只是思路或某块实现能帮到别人，我们也觉得很高兴。我们或许会在将来回来继续更新它；在那之前，欢迎你 fork 它、拿它当起点、改出你自己的一版——有任何想法或想接手的地方，也欢迎开 issue 聊聊。
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## 项目介绍
 
-## Expanding the ESLint configuration
+AI 狼人杀·月光森林是一个可联机的网页版狼人杀项目。它把经典的身份推理玩法搬到浏览器里，并加入了会自己发言、投票和行动的 AI 玩家——凑不齐真人局的时候，也能开一桌。项目不依赖客户端，打开浏览器就能创建或加入房间。整体还在持续调整，能不能达到预期，需要实际拉一局来看。
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+项目主要面向三类人：第一类是喜欢狼人杀、想和 AI 对手练练逻辑和话术的玩家；第二类是想看看大模型如何驱动多角色对话与博弈的开发者；第三类是想找一套 React + TypeScript 联机案例来学习或改着玩的人。
 
-```js
-export default tseslint.config({
-  extends: [
-    // Remove ...tseslint.configs.recommended and replace with this
-    ...tseslint.configs.recommendedTypeChecked,
-    // Alternatively, use this for stricter rules
-    ...tseslint.configs.strictTypeChecked,
-    // Optionally, add this for stylistic rules
-    ...tseslint.configs.stylisticTypeChecked,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
-```
+玩法上，一局包含房主与真人/观战席位、阵营与角色分配、昼夜阶段推进、发言与投票、夜间行动、猎人开枪以及赛后复盘。房间状态由服务端判定，客户端只负责展示和提交操作；身份与夜间信息会按观看者视角过滤后再下发，普通玩家拿不到不属于自己的信息。
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+项目里有几件事做起来比较费功夫。一是 AI 玩家会结合自己的身份、场上的公开信息和当前阶段组织发言，也能参与狼人内部的讨论与决策。二是一套液态玻璃材质系统：面板、按钮、输入框有不同的折射和彩边层级，支持昼夜背景和自定义背景图，可以切换毛玻璃、低透玻璃、透明玻璃等档位。三是联机协议尽量保持向前兼容，视觉偏好只保存在本地，不改动游戏功能与布局。
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## 使用说明
 
-export default tseslint.config({
-  extends: [
-    // other configs...
-    // Enable lint rules for React
-    reactX.configs['recommended-typescript'],
-    // Enable lint rules for React DOM
-    reactDom.configs.recommended,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
-```
+### 环境要求
+
+项目需要 Node.js 22.x（`>=22.0.0 <23.0.0`），使用 npm 管理依赖。前端基于 Vite 与 React，联机服务基于 Socket.IO，均随 `npm install` 一并安装。
+
+### 安装与本地运行
+
+在项目根目录执行 `npm install`。启动开发模式使用 `npm run dev`，浏览器打开 Vite 输出的本地地址即可看到前端界面。若需要真实联机，另开一个终端执行 `npm run server` 启动 Socket 服务端；前端通过环境变量或默认配置连接该服务。想以接近生产的方式启动，可先 `npm run build` 再运行 `npm run server:prod`。
+
+质量校验提供了若干脚本：`npm run typecheck` 做类型检查，`npm run lint` 做代码规范检查，`npm test` 运行单元与合约测试，`npm run test:integration` 跑服务端集成测试，`npm run test:e2e` 运行 Playwright 端到端测试。发布前可执行聚合的 `npm run test:all`。
+
+### 环境变量
+
+AI 发言需要连接外部大模型服务，因此必须由使用者自行提供 API key 及相关配置（例如服务地址、模型名、请求密钥等）。这些配置通过环境变量注入，请勿把它们写进源码或提交到仓库。仓库中不包含任何真实密钥、中转地址或账号信息；缺少 AI 配置时，对局的 AI 发言能力将不可用或退化。
+
+服务端还涉及端口、运行环境等常规配置，可按部署环境通过环境变量覆盖。具体变量名请以项目内实际读取的配置为准，本文不逐一列举。
+
+### 部署
+
+服务端建议部署在长期在线的 Node 环境：先 `npm run build` 产出前端静态资源，再运行 `npm run server:prod` 启动服务进程，并由反向代理对外提供 HTTP 与 WebSocket 转发。前端静态资源也可单独托管，只要与 Socket 服务地址匹配即可。服务端会把房间状态与对局存档落在本地数据目录中，以便重启后恢复未结束的房间，部署时请为这些数据目录准备可持久化的磁盘并做好备份。
+
+## 架构
+
+### 技术栈与整体分层
+
+项目整体是一套 TypeScript 全栈应用。前端使用 React 18、react-router-dom、zustand 与 Socket.IO 客户端，构建工具为 Vite 6，样式以原生 CSS 与设计令牌为主，图标使用 lucide-react。服务端是一段独立的 Node 进程，通过 Socket.IO 与客户端通信，协议类型集中定义在 `shared/protocol.ts` 这一唯一事实源中，前后端共享同一份结构。
+
+架构上大致分为前端表现层、运行时层、共享协议层与服务端。前端页面覆盖大厅、对局、观战、设置和 AI 对局控制台等路由；运行时层负责视觉偏好、背景资源与玻璃材质生命周期的编排。服务端负责房间状态机、身份与角色分配、阶段推进、行动裁决以及存档。
+
+### 联机与 Socket 协议
+
+客户端连接后通过 `create-room`、`join-room` 或 `reconnect-room` 建立身份，服务端随后推送个性化 `snapshot`。`snapshot` 是房间状态的全量视图，包含房间标识与权限、自身身份、玩家与观战者列表、公开消息、狼人聊天与决策、思考进度、昼夜与投票进度、连接状态以及提示信息。身份、角色与夜间行动信息由服务端按观看者视角脱敏，普通玩家无法从快照中拿到隐藏信息。
+
+客户端通过 `action` 提交操作，涵盖准备、开始、确认角色、白天发言与投票、狼人夜间行动、猎人开枪、复盘发言以及房主转移、踢人、销毁房间等管理指令。时间以服务端时间的偏移渲染倒计时，最终裁决在服务端完成，迟于截止时间的行动会被拒绝。协议强调兼容性：新增字段使用可选字段，新增能力优先走独立事件，旧客户端忽略未知字段与事件即可继续运行。服务端重启时从本地数据恢复未结束房间。
+
+### AI 发言
+
+AI 玩家是项目里花功夫比较多的一块。服务端在轮到 AI 行动时，会基于其身份、场上公开信息与当前阶段构造提示，调用外部大模型服务生成发言或决策，再作为正常行动写入房间状态，与其他玩家一并广播。由于依赖外接模型，运行时必须由使用者自行提供 API key；调试日志层会对相关密钥做统一脱敏，调试数据只对通过房主权限校验的连接开放。
+
+### 视觉系统
+
+视觉层的目标是"只负责材质、背景、折射与动效，不改变布局、玩法、协议与键盘语义"。它由 `visualEffectsRuntime` 统筹，`GlassRuntime` 内部再分若干模块：SurfaceRegistry 负责发现与注册语义表面，QualityController 用纯函数分配性能预算，FilterPool 用圆角距离场生成位移图并在同规格元素间共享 SVG 图与缓存，MotionEngine 提供无、标准、完整三档动效并共享 RAF。
+
+样式只有 `src/styles/liquid-glass.css` 一个入口，再按材质、背景、表面、状态、降级等职责拆分导入。表面通过 `data-glass-role` 声明导航、面板、控件、字段、联排、条目等角色。质量会依据交互优先级与帧耗时自动在 RGB、单通道、模糊、实色之间降级，离开视口即释放资源；透明模式的中心零模糊，玻璃体积来自真实的边缘位移与色散。视觉偏好保存在本地并带版本迁移，自定义背景图以 Blob 形式存于浏览器本地存储，不上传服务端。
+
+## 设计理念
+
+做这个项目时，我们主要关注一个点：当 AI 也成为狼人杀桌上的一员时，游戏体验会变成什么样。我们不打算把 AI 做成只会照规则走的机器人，而是希望它在发言、质疑、辩解和投票时能有自己的身份、立场和信息边界，也会在对话中露出破绽。这个方向能不能成立，需要实际拉一局看效果，所以整体处于持续调整的状态。
+
+对"公平"这件事，我们选择了最省事的做法：房间状态由服务端判定，身份和夜间信息按观看者视角过滤。规则不由客户端说了算，推理和欺骗才有意义，这也是保持联机一致性的底线。协议上尽量向前兼容，不频繁改坏已有接口，免得项目更新时老是出兼容问题。
+
+视觉上，我们想要一种"有质感但不抢戏"的效果。液态玻璃最初的一个小动机，是让等房的玩家在等待时能拽拽按钮、看看光线沿着边缘扭曲一下——算是一点点解闷的小乐趣。我们不为炫技而堆视觉效果，而是想给身份切换、昼夜更替和交互反馈一点温和的质感：玻璃体积来自真实的边缘位移与折射，而不是单纯用模糊糊一层；文字和控件保持清晰，动效可以关闭，区分了减少动态的用户。性能是运行时的一部分而非事后补丁，系统会根据交互优先级和实时帧耗时自动升降档，离开视口就释放资源。我们宁可在一台普通手机上稳稳地跑，也不想为了短暂的视觉效果让低配设备吃力。
+
+在功能范围上我们也做了些取舍。视觉系统只处理材质与动效，不碰布局、玩法与协议；玩家偏好只存本地，不影响对局状态；敏感凭据不进仓库。这些边界是为了让改动可控，也让协作者能安心在自己的模块里工作。
+
+## 已知局限
+
+- **外接 AI 需要自备 API key 与额度**：AI 能力依赖外部大模型服务，项目本身不带任何可用凭据；缺少 AI 配置时，对局的 AI 发言能力将不可用或退化。
+- **液态玻璃在部分设备上效果有限**：折射与色散在部分浏览器或性能较低的设备上表现一般，系统会自动在模糊、实色等档位之间降级。
+- **尚未经过完整测试**：项目没有经过完整、长期的测试，可能包含未知 bug，请在可控环境中试用。
+
+把这些如实写出来，是希望使用者能清楚了解项目当前的状态，再决定是否采用或参与改进。
+
+## 署名
+
+> 苏达（智能体）、Codex（AI）、Trae CN（AI）、空枝、金钻

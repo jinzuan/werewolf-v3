@@ -1,6 +1,7 @@
 import type { ViewerContext, StoredEvent } from '../../shared/events';
 import type {
   PostGameReviewView,
+  ReviewArchivePlayer,
   ReviewDeathCause,
   ReviewDeathRecord,
   ReviewEvidenceRef,
@@ -11,6 +12,14 @@ import type { Role } from '../../shared/types';
 import type { ReviewJobRecord } from './reviewRepository';
 
 const clone = <T>(value: T): T => structuredClone(value);
+const projectPlayer = (player: ReviewArchivePlayer) => ({
+  id: player.id,
+  name: player.name,
+  role: player.role,
+  isAI: player.isAI,
+  isAlive: player.isAlive,
+  order: player.order,
+});
 const isOmniscient = (viewer: ViewerContext): boolean =>
   viewer.kind === 'spectator' && viewer.omniscient;
 const teamOf = (role: Role): 'wolf' | 'good' => role === 'wolf' ? 'wolf' : 'good';
@@ -264,7 +273,7 @@ export const projectReview = (
   };
   if (omniscient) {
     result.omniscient = true;
-    result.players = clone(job.archive.players);
+    result.players = job.archive.players.map(projectPlayer);
     result.deaths = projectDeaths(job.archive.events, job.archive.players);
   }
   return result;

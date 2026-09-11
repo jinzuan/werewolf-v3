@@ -1,4 +1,4 @@
-import { ArrowRight, Bot, DoorOpen, LoaderCircle, Radio } from 'lucide-react';
+import { ArrowRight, Bot, CircleAlert, DoorOpen, LoaderCircle, Radio } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppShell } from '../../components/shell/AppShell';
@@ -81,12 +81,15 @@ export function LobbyPage() {
   };
 
   return (
-    <AppShell title="大厅" eyebrow="月影桌游台" connected={connected}>
+    <AppShell title="大厅" eyebrow="月影桌游台" connected={connected} pageClassName="v3-page--lobby">
       <section className="v3-lobby-hero" aria-labelledby="lobby-hero-title">
         <div className="v3-lobby-hero__copy">
           <span className="v3-lobby-hero__eyebrow">月影村 · 今夜开席</span>
           <h1 id="lobby-hero-title">邀请朋友，点亮一局狼人杀</h1>
           <p>可以邀请真人，也可以直接开启一局全 AI 对局。</p>
+          <div className="v3-lobby-hero__modes" aria-label="开局方式">
+            <span>真人组局</span><span>AI 推演</span>
+          </div>
           <div className="v3-lobby-hero__actions">
             {activeSession ? (
               <Button
@@ -109,12 +112,24 @@ export function LobbyPage() {
             </Button>
           </div>
         </div>
-        <img className="v3-lobby-hero__moon" src={phaseAssetMap.lobby.src} alt="月光森林的月相" />
+        <div className="v3-lobby-hero__visual">
+          <span className="v3-lobby-hero__orbit" aria-hidden="true" />
+          <img className="v3-lobby-hero__moon" src={phaseAssetMap.lobby.src} alt="月光森林的月相" />
+          <div className="v3-lobby-hero__visual-copy">
+            <span>选择你的开局方式</span>
+            <strong>让村庄从第一句话开始运转</strong>
+          </div>
+        </div>
       </section>
 
-      {error ? <div className="v3-alert v3-alert--error" role="alert">{error}</div> : null}
+      {error ? (
+        <div className="v3-alert v3-alert--error v3-lobby-alert" role="alert">
+          <CircleAlert size={18} aria-hidden="true" />
+          <div><strong>暂时无法完成操作</strong><span>{error}</span></div>
+        </div>
+      ) : null}
 
-      <section className="v3-section" aria-labelledby="room-list-title">
+      <section className="v3-section v3-lobby-room-section" aria-labelledby="room-list-title">
         <header className="v3-section__header">
           <div>
             <span>村口灯火</span>

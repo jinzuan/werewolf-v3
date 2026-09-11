@@ -79,6 +79,8 @@ export function Seat({
       aria-pressed={selected}
       disabled={disabled ?? isEmpty}
       {...props}
+      data-glass-role="item"
+      data-glass-motion="control"
     >
       <span className="ww-seat__number" aria-hidden="true">
         {String(seatNumber).padStart(2, '0')}

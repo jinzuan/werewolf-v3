@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://werewolf.local/contracts/speech-queue-decision.v1.schema.json",
+  "title": "Free-discussion queue participation decision v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "result", "action", "reason_code", "trigger_event_ids"],
+      "properties": {
+        "contract_version": { "const": "speech-queue-decision.v1" },
+        "result": { "const": "request" },
+        "action": { "const": "request_speech" },
+        "reason_code": { "enum": ["direct_mention", "unanswered_question", "new_role_claim", "new_vote_change", "material_disagreement", "new_private_information"] },
+        "trigger_event_ids": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 4, "uniqueItems": true }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "result", "reason_code", "trigger_event_ids"],
+      "properties": {
+        "contract_version": { "const": "speech-queue-decision.v1" },
+        "result": { "const": "decline" },
+        "reason_code": { "enum": ["no_new_information", "already_queued", "quota_exhausted", "same_fingerprint", "not_addressed"] },
+        "trigger_event_ids": { "type": "array", "maxItems": 0 }
+      }
+    }
+  ]
+}

@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://werewolf.local/contracts/speech-plan.v1.schema.json",
+  "title": "Speech planner result v1",
+  "oneOf": [
+    { "$ref": "#/$defs/speechPlan" },
+    { "$ref": "#/$defs/skipPlan" },
+    { "$ref": "#/$defs/invalidContext" }
+  ],
+  "$defs": {
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "subject_id", "predicate", "object", "evidence_event_ids", "confidence", "commitment_strength"],
+      "properties": {
+        "kind": { "enum": ["fact", "observation", "inference", "proposal"] },
+        "subject_id": { "type": ["string", "null"] },
+        "predicate": { "enum": ["states_public_fact", "leans_alignment", "asks_question", "answers_question", "corrects_claim", "commits_vote", "holds_position", "prefer_as_kill_target", "changes_kill_target", "rejects_kill_target", "adds_kill_risk"] },
+        "object": { "type": ["string", "number", "boolean", "null"] },
+        "evidence_event_ids": { "type": "array", "items": { "type": "string" }, "uniqueItems": true, "maxItems": 8 },
+        "confidence": { "enum": ["low", "medium", "high"] },
+        "commitment_strength": { "type": ["string", "null"], "enum": ["tentative", "firm", null] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "predicate": { "enum": ["commits_vote", "leans_alignment", "holds_position", "prefer_as_kill_target", "changes_kill_target", "rejects_kill_target"] } } },
+          "then": { "properties": { "commitment_strength": { "enum": ["tentative", "firm"] } } },
+          "else": { "properties": { "commitment_strength": { "type": "null" } } }
+        }
+      ]
+    },
+    "roleHypothesis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "confidence", "basis", "evidence_event_ids"],
+      "properties": {
+        "role": { "enum": ["unknown", "seer", "witch", "hunter", "guardian", "villager"] },
+        "confidence": { "enum": ["low", "medium", "high"] },
+        "basis": { "enum": ["none", "public_role_claim", "validated_team_state"] },
+        "evidence_event_ids": { "type": "array", "items": { "type": "string" }, "uniqueItems": true, "maxItems": 8 }
+      }
+    },
+    "specialStrategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "expected_benefit", "evidence_event_ids"],
+      "properties": {
+        "code": { "enum": ["self_kill_deception", "teammate_sacrifice"] },
+        "expected_benefit": { "enum": ["potion_bait", "public_credibility", "route_change", "team_survival"] },
+        "evidence_event_ids": { "type": "array", "items": { "type": "string" }, "minItems": 1, "uniqueItems": true, "maxItems": 8 }
+      }
+    },
+    "wolfPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plan_version", "coordination", "route", "route_basis", "route_evidence_event_ids", "target_role_hypothesis", "decisive_reason_code", "alternative_target_id", "new_risk_code", "special_strategy"],
+      "properties": {
+        "plan_version": { "type": "integer", "minimum": 0 },
+        "coordination": { "enum": ["propose", "change", "reject", "add_risk"] },
+        "route": { "enum": ["uncommitted", "gods", "villagers"] },
+        "route_basis": { "enum": ["none", "count_math", "public_role_claim", "validated_team_state"] },
+        "route_evidence_event_ids": { "type": "array", "items": { "type": "string" }, "uniqueItems": true, "maxItems": 8 },
+        "target_role_hypothesis": { "$ref": "#/$defs/roleHypothesis" },
+        "decisive_reason_code": { "enum": ["public_information_threat", "public_role_claim", "vote_control", "rescue_risk", "day_exile_value", "route_distance", "team_survival", "alternative_comparison", "blind_pick"] },
+        "alternative_target_id": { "type": ["string", "null"] },
+        "new_risk_code": { "type": ["string", "null"], "maxLength": 80 },
+        "special_strategy": { "oneOf": [{ "$ref": "#/$defs/specialStrategy" }, { "type": "null" }] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "route": { "enum": ["gods", "villagers"] } } },
+          "then": {
+            "properties": {
+              "route_basis": { "enum": ["count_math", "public_role_claim", "validated_team_state"] },
+              "route_evidence_event_ids": { "minItems": 1 }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "target_role_hypothesis": { "properties": { "role": { "const": "unknown" } } } } },
+          "then": { "properties": { "target_role_hypothesis": { "properties": { "basis": { "const": "none" }, "evidence_event_ids": { "maxItems": 0 } } } } },
+          "else": { "properties": { "target_role_hypothesis": { "properties": { "basis": { "enum": ["public_role_claim", "validated_team_state"] }, "evidence_event_ids": { "minItems": 1 } } } } }
+        }
+      ]
+    },
+    "render": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["length", "max_graphemes", "max_sentences", "allow_direct_quote", "tone"],
+      "properties": {
+        "length": { "enum": ["very_short", "short", "normal"] },
+        "max_graphemes": { "type": "integer", "minimum": 1, "maximum": 150 },
+        "max_sentences": { "type": "integer", "minimum": 1, "maximum": 3 },
+        "allow_direct_quote": { "const": false },
+        "tone": { "const": "table_talk" }
+      }
+    },
+    "speechPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "result", "action", "channel", "speech_act", "novelty", "responding_to_event_id", "new_event_ids", "target_id", "claim", "wolf_plan", "render"],
+      "properties": {
+        "contract_version": { "const": "speech-plan.v1" },
+        "result": { "const": "speech" },
+        "action": { "enum": ["speak", "wolf_speak"] },
+        "channel": { "enum": ["public", "wolf_private"] },
+        "speech_act": { "enum": ["report_fact", "answer", "correct", "align", "ask", "hold", "nominate", "propose_kill", "change_kill", "reject_kill", "add_risk", "ask_for_target"] },
+        "novelty": { "enum": ["new_fact", "new_inference", "new_proposal", "changed_plan", "direct_response"] },
+        "responding_to_event_id": { "type": ["string", "null"] },
+        "new_event_ids": { "type": "array", "items": { "type": "string" }, "uniqueItems": true, "maxItems": 8 },
+        "target_id": { "type": ["string", "null"] },
+        "claim": { "$ref": "#/$defs/claim" },
+        "wolf_plan": { "oneOf": [{ "$ref": "#/$defs/wolfPlan" }, { "type": "null" }] },
+        "render": { "$ref": "#/$defs/render" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "channel": { "const": "wolf_private" } } },
+          "then": {
+            "properties": {
+              "action": { "const": "wolf_speak" },
+              "speech_act": { "enum": ["propose_kill", "change_kill", "reject_kill", "add_risk", "ask_for_target"] },
+              "wolf_plan": { "$ref": "#/$defs/wolfPlan" },
+              "render": { "properties": { "max_sentences": { "maximum": 2 } } }
+            }
+          },
+          "else": {
+            "properties": {
+              "action": { "const": "speak" },
+              "speech_act": { "enum": ["report_fact", "answer", "correct", "align", "ask", "hold", "nominate"] },
+              "wolf_plan": { "type": "null" }
+            }
+          }
+        }
+      ]
+    },
+    "skipPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "result", "action", "channel", "speech_act", "novelty", "responding_to_event_id", "new_event_ids", "target_id", "reason_code"],
+      "properties": {
+        "contract_version": { "const": "speech-plan.v1" },
+        "result": { "const": "skip" },
+        "action": { "const": "skip_speech" },
+        "channel": { "enum": ["public", "wolf_private"] },
+        "speech_act": { "const": "skip" },
+        "novelty": { "const": "none" },
+        "responding_to_event_id": { "type": "null" },
+        "new_event_ids": { "type": "array", "maxItems": 0 },
+        "target_id": { "type": "null" },
+        "reason_code": { "enum": ["no_new_information", "team_consensus_unchanged", "not_addressed"] }
+      }
+    },
+    "invalidContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "result", "error"],
+      "properties": {
+        "contract_version": { "const": "speech-plan.v1" },
+        "result": { "const": "invalid_context" },
+        "error": { "const": "INVALID_CONTEXT" }
+      }
+    }
+  }
+}

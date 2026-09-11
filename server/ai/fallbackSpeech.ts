@@ -23,13 +23,13 @@ export const fallbackSpeechContent = (context: AIRequestContext): string => {
   const targetName = target?.name ?? '场上玩家';
   const subject = recent || `目前有${alive.length}名玩家存活`;
   const responseLead = latestSpeaker && recent
-    ? `先回应${latestSpeaker}刚才的发言：${recent}`
+    ? `${latestSpeaker}刚才提到的这点我先记着：${recent}`
     : subject;
   const variants = [
-    `第${day}天我先回应${latestSpeaker ?? '上一位玩家'}：${responseLead}。我暂时关注${targetName}，再听他解释后调整判断。`,
-    `第${day}天我接着桌面信息说：${responseLead}。我把${targetName}列为观察位，但现在不急着下定论。`,
-    `第${day}天从刚才的发言看，${responseLead}。我对${targetName}保留怀疑，想确认他的发言和投票是否一致。`,
-    `第${day}天我不重复前面的结论，只补充一点：${responseLead}。我会继续观察${targetName}的立场变化。`,
+    `第${day}天，${responseLead}。${targetName}我先放观察位，等票型再看。`,
+    `第${day}天我先记下${responseLead}，现在不急着给${targetName}定性。`,
+    `第${day}天，${responseLead}；${targetName}的发言和投票如果对不上，我再调整判断。`,
+    `第${day}天我只补这一点：${responseLead}。${targetName}先留在观察名单。`,
   ];
   return variants[(context.stageRevision + stableIndex(actor?.id ?? context.playerId)) % variants.length];
 };

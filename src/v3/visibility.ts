@@ -50,7 +50,10 @@ export const filterVisibleEvents = (
 
 export const isSpeechEvent = (
   event: Pick<DomainEvent, 'eventType'>,
-): boolean => event.eventType === 'day.speech' || event.eventType === 'wolf.message';
+): boolean =>
+  event.eventType === 'day.speech' ||
+  event.eventType === 'wolf.message' ||
+  event.eventType === 'wolf.speech_skipped';
 
 /**
  * Build the chat projection from the same viewer-scoped event stream used by

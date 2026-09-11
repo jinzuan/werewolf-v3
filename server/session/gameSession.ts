@@ -80,6 +80,15 @@ import type {
 } from './types';
 import { experienceLibrary } from '../ai/experienceLibrary';
 import { createHash } from 'node:crypto';
+import {
+  consolidate,
+  createCognitionState,
+  prepare as prepareCognition,
+  reduce as reduceCognition,
+  type CognitionPlayer,
+  type CognitionStateV2,
+  type PreparedMemoryContext,
+} from '../ai/cognition';
 
 const DEFAULT_STAGE_DURATION_MS = 30_000;
 
@@ -228,6 +237,12 @@ export class GameSession {
   private eventCacheLoaded = false;
   private memoryMigrationPending = false;
   private personaMigrationPending = false;
+  /**
+   * Memory V2 is a rebuildable private projection, not part of SessionState.
+   * Keeping it out of state_updated avoids embedding an ever-growing ledger
+   * inside every durable snapshot while still giving each AI a stable view.
+   */
+  private cognitionState: CognitionStateV2 | null = null;
   private state: SessionState;
 
   constructor(
@@ -274,6 +289,7 @@ export class GameSession {
     this.memoryMigrationPending = false;
     this.personaMigrationPending = false;
     this.migrateSnapshot();
+    this.resetCognitionState();
     this.normalizeMissingNightActors();
     this.syncAuthorityFields(false);
   }
@@ -367,7 +383,7 @@ export class GameSession {
       const before = beforeInitialization;
       this.setDeadline();
       try {
-        await this.append([
+        const initialEvents = [
           this.event(
             'game.started',
             {
@@ -383,7 +399,9 @@ export class GameSession {
             'system:game-start',
           ),
           this.stateEvent('system:game-start'),
-        ]);
+        ];
+        await this.append(initialEvents);
+        this.applyCognitionEvents(initialEvents);
       } catch (error) {
         this.state = before;
         throw error;
@@ -419,6 +437,7 @@ export class GameSession {
         }
         events.push(this.stateEvent('system:ai-role-confirmation'));
         await this.append(events);
+        this.applyCognitionEvents(events);
         await this.changed();
         this.memoryMigrationPending = false;
         this.personaMigrationPending = false;
@@ -479,7 +498,9 @@ export class GameSession {
       this.state.aiMemories = updateAIMemoryBoards(this.state.aiMemories, events, this.state.players);
       this.setDeadline();
       try {
-        await this.append([...events, this.stateEvent(correlationId)]);
+        const committed = [...events, this.stateEvent(correlationId)];
+        await this.append(committed);
+        this.applyCognitionEvents(events);
         await this.changed();
         return true;
       } catch (error) {
@@ -622,7 +643,9 @@ export class GameSession {
     const before = structuredClone(this.state);
     const beforeRevision = this.stageRevision;
     const beforeStageKey = this.stageKey();
-    const events = this.applyCommand(actor, command, meta.commandId);
+    const rawEvents = this.applyCommand(actor, command, meta.commandId);
+    const origin = meta.origin ?? 'unknown_legacy';
+    const events = rawEvents?.map((event) => ({ ...event, origin })) ?? null;
     if (!events) return this.reject('ACTION_NOT_ALLOWED');
     this.normalizeSingleWolfDiscussion();
 
@@ -645,10 +668,11 @@ export class GameSession {
     if (revisionChanged) this.setDeadline();
     const committed = [
       ...events,
-      this.stateEvent(meta.commandId, meta.actorId, meta.commandId),
+      this.stateEvent(meta.commandId, meta.actorId, meta.commandId, origin),
     ];
     try {
       await this.append(committed);
+      this.applyCognitionEvents(events);
     } catch (error) {
       this.state = before;
       throw error;
@@ -801,7 +825,20 @@ export class GameSession {
             correlationId,
             actor.id,
           )]
-        : [];
+        : [this.event(
+            'wolf.speech_skipped',
+            {
+              actorId: actor.id,
+              round: this.state.gameState.wolfDiscussionRound,
+              ...(command.payload.reason?.trim()
+                ? { reason: command.payload.reason.trim() }
+                : {}),
+            },
+            'wolf_private',
+            this.alivePlayers('wolf').map((player) => player.id),
+            correlationId,
+            actor.id,
+          )];
       const order = this.state.gameState.wolfSpeakerOrder.filter((id) =>
         this.state.players.some((player) => player.id === id && player.isAlive && player.role === 'wolf'),
       );
@@ -1649,46 +1686,6 @@ export class GameSession {
     );
   }
 
-  private discussionCycleOrder(): PlayerId[] {
-    const alive = this.alivePlayers()
-      .sort((left, right) => left.order - right.order)
-      .map((player) => player.id);
-    if (alive.length === 0) return [];
-    const start = flowStart(this.state.dayFlow.speechStartPlayerId, alive);
-    return [...buildSpeechOrder(
-      alive,
-      start,
-      this.state.dayFlow.speechDirection ?? 'clockwise',
-    )];
-  }
-
-  private beginNextDiscussionCycle(): boolean {
-    const flow = this.state.dayFlow;
-    const cycle = flow.discussionCycle ?? 1;
-    const required = flow.discussionCyclesRequired ?? FREE_DISCUSSION_CYCLES;
-    if (cycle >= required) return false;
-    const nextCycle = cycle + 1;
-    const queued = this.discussionCycleOrder();
-    flow.discussionCycle = nextCycle;
-    let requestSequence = flow.discussionRequestSequence ?? 0;
-    flow.discussionQueue = queued.map((playerId, index) => ({
-      playerId,
-      position: index + 1,
-      enqueuedAt: this.now(),
-      requestOrder: ++requestSequence,
-      source: 'free_cycle',
-      mentionCount: Math.min(
-        DISCUSSION_MENTION_LIMIT,
-        flow.discussionMentionCounts?.[playerId] ?? 0,
-      ),
-      priority: 0,
-      cycle: nextCycle,
-    }));
-    flow.discussionRequestSequence = requestSequence;
-    this.refreshDiscussionQueueProjection();
-    return flow.speechQueue.length > 0;
-  }
-
   private discussionQueueEvent(correlationId: string): DomainEvent {
     return this.event(
       'day.speech_queue_updated',
@@ -2079,10 +2076,23 @@ export class GameSession {
         case 'wolf_discussion':
           return alive('wolf')
             .filter((player) => player.id === this.state.gameState.wolfCurrentSpeaker)
-            .map((player) => ({
-              playerId: player.id,
-              actions: ['wolf_speak', 'skip_speech'],
-            }));
+            .map((player) => {
+              const order = this.state.gameState.wolfSpeakerOrder.filter((id) =>
+                this.state.players.some((candidate) =>
+                  candidate.id === id && candidate.isAlive && candidate.role === 'wolf',
+                ),
+              );
+              // Each round needs one actual proposal. Later wolves may pass if
+              // they have no disagreement; the first speaker cannot silently
+              // collapse the entire team discussion.
+              const firstSpeaker = order[0] === player.id;
+              return {
+                playerId: player.id,
+                actions: firstSpeaker
+                  ? ['wolf_speak']
+                  : ['wolf_speak', 'skip_speech'],
+              };
+            });
         case 'wolf_vote':
           return alive('wolf')
             .filter(
@@ -2185,17 +2195,17 @@ export class GameSession {
     // deadlines for player-controlled stages, but leaving this passive stage
     // without a one-shot transition would leave it with neither an actor nor
     // a timer after the last AI night action commits.
-    const autoAdvanceSingleHumanDawn =
+    const autoAdvanceUnattendedDawn =
       this.state.gameState.phase === 'day' &&
       this.state.dayFlow.stage === 'dawn' &&
-      this.humanPlayerCount() === 1;
+      this.humanPlayerCount() <= 1;
     const waitingForFreeDiscussion =
       this.state.gameState.phase === 'day' &&
       this.state.dayFlow.stage === 'discussion' &&
       this.state.gameState.currentSpeaker === null;
     if (this.state.gameState.phase === 'ended') {
       this.state.gameState.deadlineTs = null;
-    } else if (autoAdvanceSingleHumanDawn) {
+    } else if (autoAdvanceUnattendedDawn) {
       this.state.gameState.deadlineTs = stageStartedAt;
     } else if (waitingForFreeDiscussion) {
       this.state.gameState.deadlineTs = stageStartedAt + DISCUSSION_WAIT_TIMEOUT_MS;
@@ -2263,6 +2273,7 @@ export class GameSession {
       ];
       try {
         await this.append(committed);
+        this.applyCognitionEvents(events);
       } catch (error) {
         this.state = before;
         // Leave a retryable timer behind without recursively retrying in the
@@ -2481,6 +2492,7 @@ export class GameSession {
     correlationId: string,
     actorId?: string,
     commandId?: string,
+    origin?: DomainEvent['origin'],
   ): DomainEvent {
     const sessionState = structuredClone(this.state);
     // Command receipts contain their event arrays and are a runtime cache,
@@ -2499,7 +2511,29 @@ export class GameSession {
       undefined,
       correlationId,
       actorId,
+      origin,
     );
+  }
+
+  /** Read-only Memory V2 packet for one AI; IDs are kept private to the prompt. */
+  prepareAICognition(input: {
+    ownerId: string;
+    stageRevision: number;
+    legalActions: readonly GameAction[];
+    legalTargetIds: readonly string[];
+    mode?: 'full' | 'compact';
+  }): PreparedMemoryContext | undefined {
+    if (!this.cognitionState) return undefined;
+    const owner = this.cognitionState.ownerMemoriesById[input.ownerId];
+    if (!owner) return undefined;
+    return prepareCognition(this.cognitionState, {
+      ownerId: input.ownerId,
+      asOfSequence: this.cognitionState.throughSequence,
+      stageRevision: input.stageRevision,
+      legalActions: input.legalActions,
+      legalTargetIds: input.legalTargetIds,
+      mode: input.mode,
+    });
   }
 
   private event(
@@ -2509,6 +2543,7 @@ export class GameSession {
     audienceIds?: string[],
     correlationId = `system:${randomUUID()}`,
     actorId?: string,
+    origin?: DomainEvent['origin'],
   ): DomainEvent {
     this.state.sequence += 1;
     const eventId = randomUUID();
@@ -2534,6 +2569,7 @@ export class GameSession {
       audienceIds: resolvedAudienceIds,
       correlationId,
       schemaVersion: DOMAIN_EVENT_SCHEMA_VERSION,
+      ...(origin ? { origin } : {}),
     };
   }
 
@@ -2560,6 +2596,7 @@ export class GameSession {
           `Game stream ${this.streamId()} is missing persisted events for snapshot version ${this.state.streamVersion}.`,
         );
       }
+      this.resetCognitionState();
       this.storedEventCache = [];
       this.eventCacheLoaded = true;
       return;
@@ -2591,6 +2628,7 @@ export class GameSession {
           `Game stream ${this.streamId()} cannot replay an older state-event format from a stale room snapshot.`,
         );
       }
+      this.rebuildCognitionFromEvents(stored.map(({ event }) => event));
       this.storedEventCache = compactStoredEvents(stored);
       this.eventCacheLoaded = true;
       return;
@@ -2637,8 +2675,179 @@ export class GameSession {
 
     this.state = recovered;
     this.migrateSnapshot();
+    this.rebuildCognitionFromEvents(stored.map(({ event }) => event));
     this.storedEventCache = compactStoredEvents(stored);
     this.eventCacheLoaded = true;
+  }
+
+  private resetCognitionState(): void {
+    const players: CognitionPlayer[] = this.state.players
+      .filter((player): player is Player & { role: Role } => player.role !== null)
+      .map((player) => ({
+        id: player.id,
+        role: player.role,
+        isAlive: player.isAlive,
+        order: player.order,
+      }));
+    this.cognitionState = createCognitionState({
+      gameId: this.state.gameId,
+      players,
+    });
+  }
+
+  private cognitionDeathIds(event: DomainEvent): string[] {
+    if (event.eventType === 'player.exited' || event.eventType === 'day.exiled') {
+      return typeof event.payload.playerId === 'string'
+        ? [event.payload.playerId]
+        : [];
+    }
+    if (event.eventType === 'hunter.shot') {
+      return typeof event.payload.targetId === 'string'
+        ? [event.payload.targetId]
+        : [];
+    }
+    if (event.eventType === 'night.resolved' && Array.isArray(event.payload.deaths)) {
+      return event.payload.deaths.filter((id): id is string => typeof id === 'string');
+    }
+    return [];
+  }
+
+  private reduceCognitionEvent(
+    current: CognitionStateV2,
+    event: DomainEvent,
+  ): CognitionStateV2 {
+    if (event.eventType === 'game.state_updated') return current;
+    const next = structuredClone(current);
+    for (const playerId of this.cognitionDeathIds(event)) {
+      const owner = next.ownerMemoriesById[playerId];
+      if (
+        owner &&
+        (owner.owner.deathCutoffSequence === undefined ||
+          owner.owner.deathCutoffSequence === null ||
+          event.sequence < owner.owner.deathCutoffSequence)
+      ) {
+        owner.owner.deathCutoffSequence = event.sequence;
+      }
+    }
+    return reduceCognition(next, event);
+  }
+
+  private cognitionCheckpoint(
+    current: CognitionStateV2,
+    kind: 'night_open' | 'dawn',
+    day: number,
+    id: string,
+    throughSequence: number,
+  ): CognitionStateV2 {
+    const alivePlayerIds = Object.values(current.playersById)
+      .filter((player) => player.isAlive)
+      .map((player) => player.id);
+    const legalWolfTargetIds = Object.values(current.playersById)
+      .filter((player) => player.isAlive && player.role !== 'wolf')
+      .map((player) => player.id);
+    return consolidate(current, {
+      id,
+      kind,
+      day,
+      throughSequence,
+      stageWindow: Math.max(0, day),
+      alivePlayerIds,
+      legalWolfTargetIds,
+    });
+  }
+
+  private applyCognitionEvents(events: readonly DomainEvent[]): void {
+    if (!this.cognitionState) this.resetCognitionState();
+    let current = this.cognitionState!;
+    for (const event of events) {
+      current = this.reduceCognitionEvent(current, event);
+      if (
+        event.eventType === 'night.started' &&
+        typeof event.payload.day === 'number'
+      ) {
+        current = this.cognitionCheckpoint(
+          current,
+          'night_open',
+          event.payload.day,
+          `${this.state.gameId}:night_open:${event.payload.day}`,
+          event.sequence,
+        );
+      }
+      if (
+        event.eventType === 'day.started' &&
+        event.payload.stage === 'dawn' &&
+        typeof event.payload.day === 'number'
+      ) {
+        current = this.cognitionCheckpoint(
+          current,
+          'dawn',
+          event.payload.day,
+          `${this.state.gameId}:dawn:${event.payload.day}`,
+          event.sequence,
+        );
+      }
+    }
+    // The first night has no night.started event; the stage transition itself
+    // is the safe point before the first wolf message. The same guard also
+    // repairs snapshots created before explicit checkpoint events existed.
+    if (
+      this.state.gameState.phase === 'night' &&
+      this.state.night.stage === 'wolf_discussion'
+    ) {
+      current = this.cognitionCheckpoint(
+        current,
+        'night_open',
+        this.state.gameState.day,
+        `${this.state.gameId}:night_open:${this.state.gameState.day}`,
+        current.throughSequence,
+      );
+    }
+    if (this.state.dayFlow.stage === 'dawn') {
+      current = this.cognitionCheckpoint(
+        current,
+        'dawn',
+        this.state.gameState.day,
+        `${this.state.gameId}:dawn:${this.state.gameState.day}`,
+        current.throughSequence,
+      );
+    }
+    this.cognitionState = current;
+  }
+
+  private rebuildCognitionFromEvents(events: readonly DomainEvent[]): void {
+    this.resetCognitionState();
+    const ordered = [...events].sort((left, right) => left.sequence - right.sequence);
+    let current = this.cognitionState!;
+    for (const event of ordered) {
+      current = this.reduceCognitionEvent(current, event);
+      if (
+        event.eventType === 'night.started' &&
+        typeof event.payload.day === 'number'
+      ) {
+        current = this.cognitionCheckpoint(
+          current,
+          'night_open',
+          event.payload.day,
+          `${this.state.gameId}:night_open:${event.payload.day}`,
+          event.sequence,
+        );
+      }
+      if (
+        event.eventType === 'day.started' &&
+        event.payload.stage === 'dawn' &&
+        typeof event.payload.day === 'number'
+      ) {
+        current = this.cognitionCheckpoint(
+          current,
+          'dawn',
+          event.payload.day,
+          `${this.state.gameId}:dawn:${event.payload.day}`,
+          event.sequence,
+        );
+      }
+    }
+    this.cognitionState = current;
+    this.applyCognitionEvents([]);
   }
 
   private streamId(): string {
@@ -2886,6 +3095,3 @@ export class GameSession {
     }
   }
 }
-
-const flowStart = (preferred: PlayerId | null, alive: readonly PlayerId[]): PlayerId =>
-  preferred && alive.includes(preferred) ? preferred : alive[0];

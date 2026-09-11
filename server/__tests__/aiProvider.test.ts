@@ -388,7 +388,7 @@ test('HTTP provider logs validation failures and timeouts without completion dat
   assert.equal(timeoutLogs.at(-1)?.errorClass, 'timeout');
 });
 
-test('429 exhaustion uses one deterministic fallback and keeps the stage moving', async () => {
+test('429 exhaustion pauses when no legal safe control can move the stage', async () => {
   const calls: number[] = [];
   const { players, session, guardian } = await createGuardianSession();
   const provider = new HttpAIProvider(providerConfig(), {
@@ -412,9 +412,10 @@ test('429 exhaustion uses one deterministic fallback and keeps the stage moving'
   );
 
   const telemetry = orchestrator.telemetry().at(-1)!;
-  assert.equal(result.accepted, true);
+  assert.equal(result.accepted, false);
+  assert.equal(result.suggestion, null);
   assert.equal(calls.length, 3);
-  assert.equal(telemetry.status, 'fallback');
+  assert.equal(telemetry.status, 'failed');
   assert.equal(telemetry.retryCount, 2);
   assert.equal(telemetry.errorClass, 'rate_limited');
   // Command receipts are runtime-only. The fallback still advances the live
@@ -425,7 +426,7 @@ test('429 exhaustion uses one deterministic fallback and keeps the stage moving'
   );
 });
 
-test('provider timeout falls back without retrying or blocking the stage', async () => {
+test('provider timeout pauses without retrying when no legal safe control exists', async () => {
   const { players, session, guardian } = await createGuardianSession();
   let calls = 0;
   const provider = new HttpAIProvider(providerConfig(), {
@@ -453,14 +454,15 @@ test('provider timeout falls back without retrying or blocking the stage', async
   );
   const telemetry = orchestrator.telemetry().at(-1)!;
 
-  assert.equal(result.accepted, true);
+  assert.equal(result.accepted, false);
+  assert.equal(result.suggestion, null);
   assert.equal(calls, 1);
-  assert.equal(telemetry.status, 'fallback');
+  assert.equal(telemetry.status, 'failed');
   assert.equal(telemetry.retryCount, 0);
   assert.equal(telemetry.errorClass, 'timeout');
 });
 
-test('illegal provider output falls back without dispatching the illegal command', async () => {
+test('illegal provider output pauses without dispatching an invented action', async () => {
   const { players, session, guardian } = await createGuardianSession();
   const provider = new HttpAIProvider(providerConfig(), {
     fetch: async () =>
@@ -480,12 +482,13 @@ test('illegal provider output falls back without dispatching the illegal command
   );
   const telemetry = orchestrator.telemetry().at(-1)!;
 
-  assert.equal(result.accepted, true);
-  assert.equal(telemetry.status, 'fallback');
+  assert.equal(result.accepted, false);
+  assert.equal(result.suggestion, null);
+  assert.equal(telemetry.status, 'failed');
   assert.equal(telemetry.errorClass, 'invalid_output');
   assert.equal(
-    session.serialize().state.night.actions.guardTargetId !== null,
-    true,
+    session.serialize().state.night.actions.guardTargetId,
+    null,
   );
 });
 
@@ -583,9 +586,13 @@ test('experience manifest contains all 33 source files with matching bytes and h
   for (const asset of library.assets) {
     const source = readFileSync(path.join(sourceRoot, asset.path));
     const target = readFileSync(path.join(targetRoot, asset.path));
+    // Git's Windows checkout may materialize the LF source asset as CRLF,
+    // while the server bundle is intentionally LF-only. Compare canonical
+    // UTF-8 bytes so this integrity test checks content, not checkout policy.
+    const canonicalSource = Buffer.from(source.toString('utf8').replace(/\r\n/g, '\n'));
     assert.deepEqual(
-      target.subarray(target.length - source.length),
-      source,
+      target.subarray(target.length - canonicalSource.length),
+      canonicalSource,
       `${asset.path}: original source bytes must be preserved as the suffix`,
     );
     assert.equal(target.length, asset.bytes, asset.path);

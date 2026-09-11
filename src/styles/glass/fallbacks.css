@@ -1,0 +1,39 @@
+:root[data-visual-mode='original'] :is(.ww-glass-lens, .v3-visual-backdrop) { display: none; }
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root:not([data-visual-mode='original']) {
+    --ww-glass-panel-fill: rgba(12, 27, 43, .92);
+    --ww-glass-control-fill: rgba(16, 34, 51, .94);
+    --ww-glass-item-fill: rgba(18, 36, 53, .9);
+    --ww-glass-panel-border: rgba(230, 245, 255, .12);
+    --ww-glass-control-border: rgba(234, 247, 255, .15);
+  }
+
+  :root:not([data-visual-mode='original']) :is(.ww-glass-lens, .ww-glass-native) {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root:not([data-visual-mode='original']) {
+    --ww-glass-panel-fill: rgba(12, 27, 43, .94);
+    --ww-glass-control-fill: rgba(16, 34, 51, .96);
+    --ww-glass-item-fill: rgba(18, 36, 53, .92);
+    --ww-glass-panel-blur: 0px;
+    --ww-glass-control-blur: 0px;
+    --ww-glass-item-blur: 0px;
+  }
+}
+
+@media (max-width: 767px) {
+  :root[data-visual-mode='frosted'] {
+    --ww-glass-panel-blur: 10px;
+    --ww-glass-control-blur: 6px;
+  }
+
+  :root[data-visual-mode='low-transparency'] {
+    --ww-glass-panel-blur: .8px;
+    --ww-glass-control-blur: .25px;
+  }
+}

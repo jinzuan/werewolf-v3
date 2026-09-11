@@ -41,7 +41,7 @@ test('a wolf with no new disagreement can skip after a teammate spoke', () => {
   assert.ok(decision.allowedMoves.includes('跳过发言'));
 });
 
-test('wolf skip advances the private discussion without creating filler chat', async () => {
+test('each wolf round requires one proposal, then later wolves may visibly skip', async () => {
   const players = createPlayers();
   const session = new GameSession('room-wolf-skip', players, new InMemoryEventStore());
   await initializeSession(session, players);
@@ -50,10 +50,23 @@ test('wolf skip advances the private discussion without creating filler chat', a
   const wolves = players.filter((player) => player.role === 'wolf');
   await dispatch(session, guardian.id, { type: 'game.night_action', payload: { playerId: guardian.id, action: 'guard', targetId: guardian.id } });
   await dispatch(session, seer.id, { type: 'game.night_action', payload: { playerId: seer.id, action: 'check', targetId: wolves[0].id } });
-  const skipped = await dispatch(session, wolves[0].id, { type: 'game.skip_speech', payload: {} });
+  let state = session.serialize().state;
+  assert.deepEqual(state.gameState.allowedActors[0]?.actions, ['wolf_speak']);
+  const first = await dispatch(session, wolves[0].id, {
+    type: 'game.wolf_speak',
+    payload: { content: '我建议先刀信息位。' },
+  });
+  assert.equal(first.ok, true);
+  state = session.serialize().state;
+  assert.deepEqual(state.gameState.allowedActors[0]?.actions, ['wolf_speak', 'skip_speech']);
+  const skipped = await dispatch(session, wolves[1].id, { type: 'game.skip_speech', payload: {} });
   assert.equal(skipped.ok, true);
   assert.equal(skipped.events.some((event) => event.eventType === 'wolf.message'), false);
-  assert.equal(session.serialize().state.gameState.wolfCurrentSpeaker, wolves[1].id);
+  const skipEvent = skipped.events.find((event) => event.eventType === 'wolf.speech_skipped');
+  assert.ok(skipEvent);
+  assert.equal(skipEvent.visibility, 'wolf_private');
+  assert.equal((skipEvent.payload as { actorId: string }).actorId, wolves[1].id);
+  assert.equal(session.serialize().state.gameState.wolfCurrentSpeaker, wolves[2].id);
   session.dispose();
 });
 

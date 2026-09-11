@@ -142,7 +142,7 @@ const createModernApplication = async (
     }
     if (request.url === '/' || request.url === '/index.html') {
       const protocol = security.environment === 'production' ? 'https' : 'http';
-      const host = (request.headers.host ?? '39.96.207.42').split(':')[0].replace(/[^a-zA-Z0-9.-]/g, '');
+      const host = (request.headers.host ?? 'localhost').split(':')[0].replace(/[^a-zA-Z0-9.-]/g, '');
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...responseHeaders(security) });
       response.end(renderServerLandingPage(protocol, host));
       return;

@@ -2,7 +2,12 @@ import type { AIPrompt } from './promptBuilder';
 import { parseAIOutput } from './outputParser';
 import { buildPromptPipeline } from './promptPipeline';
 import { RepeatPolicy, repeatSceneFromContext } from './repeatPolicy';
-import { inspectSpeechStyle } from './speechStyleGate';
+import { validateProviderSpeech } from './speechValidation';
+import {
+  buildSpeechQueuePrompt,
+  parseSpeechQueueDecision,
+} from './speechQueueDecision';
+import type { SpeechQueueDecision } from './speech/speech-queue-decision.v1';
 import type {
   AIProvider,
   AIRequestContext,
@@ -68,20 +73,19 @@ export class PromptAIProvider implements AIProvider {
       }
 
       if (RepeatPolicy.isSpeechCommand(parsed.command.type) && parsed.speechText) {
-        const style = inspectSpeechStyle(parsed.speechText, {
-          commandType: parsed.command.type,
-          role: context.role,
-          phase: context.phase,
-          stage: context.stage,
-          players: context.players,
-          promptContext,
-        });
-        if (!style.ok) {
+        const speechValidation = validateProviderSpeech(
+          parsed.speechText,
+          { ...context, promptContext },
+          parsed.command.type,
+        );
+        if (!speechValidation.ok) {
           if (attempt < this.maxCorrectionAttempts) {
-            correction = style.rewriteInstruction;
+            correction = speechValidation.rewriteInstruction;
             continue;
           }
-          throw new Error(`AI_SPEECH_STYLE_${style.issues.join('_')}`);
+          throw new Error(
+            `AI_SPEECH_${speechValidation.category === 'style' ? 'STYLE' : 'GATE'}_${speechValidation.issues.join('_')}`,
+          );
         }
         const scene = repeatSceneFromContext(context);
         const repeat = this.repeatPolicy.inspect(scene, parsed.speechText);
@@ -102,6 +106,16 @@ export class PromptAIProvider implements AIProvider {
       };
     }
     throw new Error('AI_OUTPUT_RETRY_EXHAUSTED');
+  }
+
+  async decideSpeechQueue(context: AIRequestContext): Promise<SpeechQueueDecision> {
+    const prompt = buildSpeechQueuePrompt(context);
+    const raw = await this.client.complete(prompt, context);
+    const parsed = parseSpeechQueueDecision(raw, context);
+    if (parsed.ok === false) {
+      throw new Error(`AI_QUEUE_DECISION_${parsed.message.replace(/\s+/gu, '_')}`);
+    }
+    return parsed.decision;
   }
 
   resetRepeatPolicy(): void {

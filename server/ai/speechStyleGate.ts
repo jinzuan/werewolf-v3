@@ -15,7 +15,10 @@ export type SpeechStyleIssue =
   | 'ANSWER_ERASURE'
   | 'RETROSPECTIVE_FIRST_CHECK_MOTIVE'
   | 'VAGUE_SCORE_SHORTHAND'
-  | 'LOOPED_PRESSURE_PATTERN';
+  | 'LOOPED_PRESSURE_PATTERN'
+  | 'WOLF_CONSENSUS_RESTATEMENT'
+  | 'REPEATED_ACKNOWLEDGEMENT_TIC'
+  | 'GENERIC_OBSERVATION_LOOP';
 
 export interface SpeechStyleGateContext {
   commandType: Extract<GameCommand['type'], 'game.speak' | 'game.wolf_speak'>;
@@ -122,6 +125,7 @@ const isEmptyEcho = (
 ): boolean => {
   const trimmed = text.trim();
   if (/^(?:对[，,。！]?\s*)?(?:我也这么想|我同意|没什么补充|继续听听|再听听|先听听|先这样)[。！]?$/u.test(trimmed)) {
+    if (context.commandType === 'game.wolf_speak') return false;
     return true;
   }
   const prior = previousSpeeches(context).at(-1);
@@ -132,6 +136,61 @@ const isEmptyEcho = (
   const lengthRatio = current.length / previous.length;
   return lengthRatio >= 0.75 && lengthRatio <= 1.25 &&
     speechSimilarity(current, previous) >= 0.9;
+};
+
+const repeatsWolfConsensus = (
+  text: string,
+  context: SpeechStyleGateContext,
+): boolean => {
+  if (context.commandType !== 'game.wolf_speak') return false;
+  const prior = previousSpeeches(context);
+  if (prior.length === 0 || compact(text).length <= 28) return false;
+  const names = (context.players ?? []).map((player) => player.name.trim()).filter(Boolean);
+  const targetsIn = (speech: string): Set<string> => new Set(
+    names.filter((name) => speech.includes(name)),
+  );
+  const priorTargets = new Set(prior.flatMap((speech) => [...targetsIn(speech)]));
+  const currentTargets = targetsIn(text);
+  const sharesTarget = [...currentTargets].some((name) => priorTargets.has(name));
+  const addsTarget = [...currentTargets].some((name) => !priorTargets.has(name));
+  const addsDifference = /反对|不同意|不赞成|换刀|改刀|改目标|新风险|备选|自刀|空刀|分工|我来跳|我倒钩/u.test(
+    text.replace(/不(?:建议)?空刀|别空刀|没(?:有)?新风险|暂无新风险/gu, ''),
+  );
+  const consensusBoilerplate = /没有(?:新增)?公开信息|暂无新信息|首夜.*没信息|不建议空刀|不空刀|统一|锁定|确认/u.test(text);
+  return sharesTarget && !addsTarget && !addsDifference && consensusBoilerplate;
+};
+
+const acknowledgementTic = (text: string): boolean =>
+  /(?:这点|这部分|这个回应|这个解释).{0,10}(?:听到|听到了|认可|认同|收到|算回答到)|(?:回应|解释|说明).{0,8}(?:我)?(?:听到|听到了|认可|认同)|(?:已经|确实)(?:回应|解释|说明).{0,12}(?:但|这点)/u.test(text);
+
+const repeatsAcknowledgementTic = (
+  text: string,
+  context: SpeechStyleGateContext,
+): boolean => context.commandType === 'game.speak' &&
+  acknowledgementTic(text) &&
+  previousSpeeches(context).slice(-6).filter(acknowledgementTic).length >= 2;
+
+const genericObservationScore = (text: string): number => [
+  /目前|当前/u,
+  /暂时|先保留|不站边|不点名/u,
+  /先听|听后续|后面/u,
+  /重点看|更看重/u,
+  /改口|前后一致/u,
+  /票型|投票倾向/u,
+  /具体触发点|具体理由/u,
+  /再判断|再决定/u,
+].filter((pattern) => pattern.test(text)).length;
+
+const repeatsGenericObservation = (
+  text: string,
+  context: SpeechStyleGateContext,
+): boolean => {
+  if (context.commandType !== 'game.speak') return false;
+  if (/？|\?|今天(?:出|投)|我(?:投|验|守|毒)|查杀|金水|银水/u.test(text)) return false;
+  if (genericObservationScore(text) < 3) return false;
+  return previousSpeeches(context).slice(-6)
+    .filter((speech) => genericObservationScore(speech) >= 3)
+    .length >= 2;
 };
 
 const claimsUnverifiablePrivateFact = (
@@ -249,12 +308,20 @@ const rewriteInstructionFor = (issues: readonly SpeechStyleIssue[]): string => {
   const pressureBoundary = issues.includes('LOOPED_PRESSURE_PATTERN')
     ? '场上已经重复过同类施压，不再要求二选一、强迫点名、追问改判条件或泛称没有独立判断；改为报告新事实、准确回应、具体认可、保留观察，或在允许时跳过。'
     : '';
+  const wolfConsensusBoundary = issues.includes('WOLF_CONSENSUS_RESTATEMENT')
+    ? '狼队友已经说过相同刀口和理由：有新风险/新目标/新分工时只说新增点；只是同意时用极短确认，或直接选择 skip_speech。'
+    : '';
+  const publicLoopBoundary = issues.includes('REPEATED_ACKNOWLEDGEMENT_TIC') || issues.includes('GENERIC_OBSERVATION_LOOP')
+    ? '桌上已经重复过“听到了但保留/后面看改口票型”的结构。删除确认收到和观察标准，只留下一个具体新事实、一个窄问题、一个当前动作；没有新增就短过或选择 skip_speech。'
+    : '';
   return [
     factBoundary,
     answerBoundary,
     firstCheckBoundary,
     scoreBoundary,
     pressureBoundary,
+    wolfConsensusBoundary,
+    publicLoopBoundary,
     '保留原立场和已有事实，按信息量改成一句或 1-3 句桌上聊天；短说是允许的，不要为了凑长度扩写。一次只推进一个具体点，删掉模板腔和空泛附和，不要解释改写过程。',
   ].filter(Boolean).join(' ');
 };
@@ -289,6 +356,9 @@ export const inspectSpeechStyle = (
   }
   if (hasVagueScoreShorthand(text, context)) add('VAGUE_SCORE_SHORTHAND');
   if (repeatsPressurePattern(text, context)) add('LOOPED_PRESSURE_PATTERN');
+  if (repeatsWolfConsensus(text, context)) add('WOLF_CONSENSUS_RESTATEMENT');
+  if (repeatsAcknowledgementTic(text, context)) add('REPEATED_ACKNOWLEDGEMENT_TIC');
+  if (repeatsGenericObservation(text, context)) add('GENERIC_OBSERVATION_LOOP');
 
   return {
     ok: issues.length === 0,

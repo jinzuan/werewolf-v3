@@ -12,6 +12,8 @@ export function SyncStatusNotice() {
   return (
     <div
       className={`v3-sync-status v3-sync-status--${status}`}
+      data-glass-role="item"
+      data-glass-priority="high"
       role={status === 'error' ? 'alert' : 'status'}
       aria-live="polite"
     >

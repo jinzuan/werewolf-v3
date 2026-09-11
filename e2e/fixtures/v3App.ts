@@ -103,7 +103,8 @@ const startPreview = async (): Promise<{ child: ChildProcess; url: string }> => 
     };
     const finishURL = (): void => {
       if (settled) return;
-      const normalized = output.replace(/\u001B\[[0-?]*[ -\/]*[@-~]/g, '');
+      const ansiEscape = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, 'g');
+      const normalized = output.replace(ansiEscape, '');
       const match = normalized.match(/(https?:\/\/(?:127\.0\.0\.1|localhost):\d+)/);
       if (!match) return;
       settled = true;

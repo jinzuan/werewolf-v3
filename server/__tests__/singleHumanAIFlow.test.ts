@@ -80,7 +80,7 @@ const mockNightProvider: AIProvider = {
       return {
         command: {
           type: 'game.wolf_speak',
-          payload: { content: 'mock wolf discussion' },
+          payload: { content: '先看刀口，别急着定。' },
         },
         reason: 'mock wolf discussion',
       };
@@ -98,7 +98,7 @@ const mockNightProvider: AIProvider = {
       return {
         command: {
           type: 'game.speak',
-          payload: { content: 'mock daytime speech' },
+          payload: { content: '我先听后面的发言。' },
         },
         reason: 'mock daytime speech',
       };

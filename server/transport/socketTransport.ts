@@ -28,6 +28,52 @@ interface SocketState {
   lastSequence?: number;
 }
 
+export type RoomAccessCredentialScope = 'issued' | 'resume';
+
+/** Runtime DTO allowlist used by create/join and, more strictly, recovery ACKs. */
+export const projectRoomAccessPayload = (
+  access: RoomAccess,
+  credentialScope: RoomAccessCredentialScope,
+): RoomAccess => {
+  const room = access.room;
+  return {
+    room: {
+      id: room.id,
+      code: room.code,
+      name: room.name,
+      roomRevision: room.roomRevision,
+      status: room.status,
+      config: structuredClone(room.config),
+      configRevision: room.configRevision,
+      configLocked: room.configLocked,
+      members: structuredClone(room.members),
+      counts: structuredClone(room.counts),
+      startCheck: structuredClone(room.startCheck),
+      ...(room.seatRequests !== undefined
+        ? { seatRequests: structuredClone(room.seatRequests) }
+        : {}),
+      ...(room.computerPlayerStatus !== undefined
+        ? { computerPlayerStatus: room.computerPlayerStatus }
+        : {}),
+      ...(room.computerPlayerMode !== undefined
+        ? { computerPlayerMode: room.computerPlayerMode }
+        : {}),
+      viewer: structuredClone(room.viewer),
+      ...(room.gameId !== undefined ? { gameId: room.gameId } : {}),
+      createdAt: room.createdAt,
+    },
+    credentials: {
+      resumeToken: access.credentials.resumeToken,
+      ...(credentialScope === 'issued' && typeof access.credentials.joinToken === 'string'
+        ? { joinToken: access.credentials.joinToken }
+        : {}),
+      ...(credentialScope === 'issued' && typeof access.credentials.omniscientToken === 'string'
+        ? { omniscientToken: access.credentials.omniscientToken }
+        : {}),
+    },
+  };
+};
+
 const state = (socket: Socket): SocketState => socket.data as SocketState;
 
 const isGameCommand = (
@@ -397,7 +443,7 @@ export function bindSocketTransport(
             if (dropCreateAck) {
               dropCreateAck = false;
             } else {
-              ack?.({ ok: true, ...access });
+              ack?.({ ok: true, ...projectRoomAccessPayload(access, 'issued') });
             }
             await pushRoom(access.room.code, 'created');
             return;
@@ -430,7 +476,7 @@ export function bindSocketTransport(
             });
             await bind(access, meta.actorId);
             await waitForJoinFloor(joinAttemptStartedAt);
-            ack?.({ ok: true, ...access });
+            ack?.({ ok: true, ...projectRoomAccessPayload(access, 'issued') });
             await pushRoom(access.room.code, 'joined');
             return;
           }
@@ -464,7 +510,7 @@ export function bindSocketTransport(
             });
             await bind(access, meta.actorId);
             await waitForJoinFloor(joinAttemptStartedAt);
-            ack?.({ ok: true, ...access });
+            ack?.({ ok: true, ...projectRoomAccessPayload(access, 'issued') });
             await pushRoom(access.room.code, 'joined');
             return;
           }
@@ -485,13 +531,13 @@ export function bindSocketTransport(
             if (command.type === 'spectator.resume') {
               const events = await rooms.events(identity, command.payload.afterSequence);
               state(socket).lastSequence = events.at(-1)?.sequence ?? command.payload.afterSequence;
-              ack?.({ ok: true, ...access, events });
+              ack?.({ ok: true, ...projectRoomAccessPayload(access, 'resume'), events });
             } else {
               // This only seeds the transport's delivery cursor. Recovery
               // still reads the authoritative history below, so a stale
               // browser cursor can never make the server discard events.
               state(socket).lastSequence = afterSequence;
-              ack?.({ ok: true, ...access });
+              ack?.({ ok: true, ...projectRoomAccessPayload(access, 'resume') });
             }
             await pushRoom(access.room.code, 'reconnected');
             return;

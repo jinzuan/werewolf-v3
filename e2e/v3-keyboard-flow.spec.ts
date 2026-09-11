@@ -62,18 +62,6 @@ const useServer = async (page: import('playwright').Page, serverURL: string): Pr
   }, serverURL);
 };
 
-const tabTo = async (
-  page: import('playwright').Page,
-  target: import('playwright').Locator,
-  limit = 160,
-): Promise<void> => {
-  for (let index = 0; index < limit; index += 1) {
-    if (await target.evaluate((element) => element === document.activeElement).catch(() => false)) return;
-    await page.keyboard.press('Tab');
-  }
-  throw new Error(`keyboard focus did not reach ${await target.getAttribute('aria-label').catch(() => 'target')}`);
-};
-
 test('keyboard can enter room settings, inspect rules, and create a friend room', async ({ page, v3 }) => {
   await useServer(page, v3.serverURL);
   await page.goto(`${v3.appURL}/rooms/new/players`);

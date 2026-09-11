@@ -93,9 +93,15 @@ export function RoomHeader({ children, ...status }: RoomHeaderProps) {
   };
   return (
     <>
-      <header className="v3-room-header" data-room-view={segment} data-scene={scene}>
+      <header
+        className="v3-room-header"
+        data-room-view={segment}
+        data-scene={scene}
+        data-glass-role="navigation"
+        data-glass-priority="critical"
+      >
       <div className="v3-room-header__primary">
-        <Link className="v3-button v3-button--quiet v3-room-header__home" to="/lobby" onClick={(event) => { void handleHomeClick(event); }}>
+        <Link className="v3-button v3-button--quiet v3-room-header__home" data-glass-role="control" data-glass-motion="control" to="/lobby" onClick={(event) => { void handleHomeClick(event); }}>
           <Home size={16} /><span>返回大厅</span>
         </Link>
         <div className="v3-room-header__code-group">
@@ -139,7 +145,7 @@ export function RoomHeader({ children, ...status }: RoomHeaderProps) {
         <Button variant="icon" aria-label="查看完整规则" title="帮助" onClick={() => setRulesOpen(true)}>
           <CircleHelp size={18} />
         </Button>
-        <Link className="v3-button v3-button--icon v3-button--default" to="/settings" aria-label="打开设置" title="设置">
+        <Link className="v3-button v3-button--icon v3-button--default" data-glass-role="control" data-glass-motion="control" to="/settings" aria-label="打开设置" title="设置">
           <Settings size={18} />
         </Link>
         {children}

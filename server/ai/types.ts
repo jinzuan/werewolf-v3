@@ -3,6 +3,8 @@ import type { GameCommand } from '../../shared/protocol';
 import type { GameAction, Player, Role } from '../../shared/types';
 import type { AIMemoryBoard } from './memory';
 import type { AIPersonaProfile } from './persona';
+import type { PreparedMemoryContext } from './cognition';
+import type { SpeechQueueDecision } from './speech/speech-queue-decision.v1';
 
 export interface AILegalTarget {
   id: string;
@@ -51,6 +53,8 @@ export interface AIPromptContext {
   personaVoiceProfile?: AIPersonaProfile;
   /** The requesting AI's server-maintained, role-specific memory board. */
   memoryBoard?: AIMemoryBoard;
+  /** V2 cognition projection prepared for this exact stage and legal action set. */
+  preparedMemory?: PreparedMemoryContext;
   publicVoteHistory?: string[];
   publicSpeeches?: string[];
   currentRoundSpeeches?: string[];
@@ -155,6 +159,19 @@ export interface AISuggestion {
   };
 }
 
+export type AIProviderMode = 'real_ai' | 'rules-degraded' | 'test-deterministic';
+
+export interface AISuggestionProvenance {
+  /** Missing legacy provider modes are normalized to real_ai by the orchestrator. */
+  providerMode: AIProviderMode;
+  origin: 'provider' | 'orchestrator-fallback' | 'orchestrator-unavailable';
+}
+
+/** A suggestion whose source has been assigned by the trusted orchestrator. */
+export interface AIResolvedSuggestion extends AISuggestion {
+  provenance: AISuggestionProvenance;
+}
+
 export class AIProviderError extends Error {
   constructor(
     readonly errorClass: string,
@@ -201,8 +218,10 @@ export const defaultAILogger: AILogger = (entry) => {
 
 export interface AIProvider {
   /** real_ai is the only production provider mode; rules-degraded is explicit. */
-  readonly mode?: 'real_ai' | 'rules-degraded' | 'test-deterministic';
+  readonly mode?: AIProviderMode;
   suggest(context: AIRequestContext): Promise<AISuggestion>;
+  /** Optional independent decision used only for free-discussion queue entry. */
+  decideSpeechQueue?(context: AIRequestContext): Promise<SpeechQueueDecision>;
 }
 
 export interface AITelemetryEntry {

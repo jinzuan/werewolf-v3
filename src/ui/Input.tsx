@@ -3,6 +3,13 @@ import { cn } from '../lib/utils';
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
   function Input({ className, ...props }, ref) {
-    return <input ref={ref} className={cn('v3-input', className)} {...props} />;
+    return (
+      <input
+        ref={ref}
+        className={cn('v3-input', className)}
+        {...props}
+        data-glass-role="field"
+      />
+    );
   },
 );

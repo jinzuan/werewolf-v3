@@ -356,7 +356,12 @@ const addGoodSpeech = (
   const actorNode = board.nodes[actorId];
   if (!actorNode) return;
   const stance = stanceForSpeech(content);
+  actorNode.behavior.speechOpportunities += 1;
   actorNode.behavior.speechCount += 1;
+  actorNode.behavior.silenceRate = Math.max(
+    0,
+    1 - actorNode.behavior.speechCount / Math.max(1, actorNode.behavior.speechOpportunities),
+  );
   actorNode.behavior.lastSpeechSequence = event.sequence;
   actorNode.behavior.lastSpeech = shortText(content);
   const mentions = mentionedPlayers(content, players, actorId);
@@ -435,39 +440,41 @@ const addGoodSpeech = (
 const addGoodSpeechSkip = (
   board: GoodEvidenceBoard,
   event: DomainEvent,
+  players: readonly Player[],
 ): void => {
   const item = payload(event);
   if (item.lastWords === true) return;
   const actorId = typeof item.actorId === 'string' ? item.actorId : event.actorId;
   if (!actorId || !board.nodes[actorId]) return;
-  board.nodes[actorId].behavior.skippedSpeechCount += 1;
-};
-
-const addSpeechOpportunity = (board: GoodEvidenceBoard, players: readonly Player[]): void => {
-  for (const player of players) {
-    const node = board.nodes[player.id];
-    if (!node || !player.isAlive) continue;
-    node.behavior.speechOpportunities += 1;
-    node.behavior.silenceRate = Math.max(
-      0,
-      1 - node.behavior.speechCount / Math.max(1, node.behavior.speechOpportunities),
-    );
-    const alreadyRecordedSilence = node.evidence.some(
-      (item) => item.kind === 'behavior' && item.subjectId === player.id && /沉默度/iu.test(item.summary),
-    );
-    if (node.behavior.silenceRate >= 0.75 && !alreadyRecordedSilence) {
-      addGoodEvidence(node, {
-        id: `behavior:${board.updatedSequence}:${player.id}`,
-        subjectId: player.id,
-        kind: 'behavior',
-        level: 'doubt',
-        summary: `${player.name}沉默度${Math.round(node.behavior.silenceRate * 100)}%，持续低发言`,
-        sourceEventId: `behavior:${board.updatedSequence}`,
-        sourceSequence: board.updatedSequence,
-        sourceVisibility: 'public_timeline',
-        contradictsOtherSpeech: false,
-      });
-    }
+  const node = board.nodes[actorId];
+  node.behavior.speechOpportunities += 1;
+  node.behavior.skippedSpeechCount += 1;
+  node.behavior.silenceRate = Math.max(
+    0,
+    1 - node.behavior.speechCount / Math.max(1, node.behavior.speechOpportunities),
+  );
+  const alreadyRecordedSilence = node.evidence.some(
+    (item) => item.kind === 'behavior' && item.subjectId === actorId && /沉默度/iu.test(item.summary),
+  );
+  // One short pass is normal table rhythm. “Persistent silence” becomes
+  // evidence only after the player has actually completed at least two speech
+  // opportunities without contributing content.
+  if (
+    node.behavior.speechOpportunities >= 2 &&
+    node.behavior.silenceRate >= 0.75 &&
+    !alreadyRecordedSilence
+  ) {
+    addGoodEvidence(node, {
+      id: `behavior:${event.sequence}:${actorId}`,
+      subjectId: actorId,
+      kind: 'behavior',
+      level: 'doubt',
+      summary: `${playerName(players, actorId)}沉默度${Math.round(node.behavior.silenceRate * 100)}%，持续低发言`,
+      sourceEventId: event.eventId,
+      sourceSequence: event.sequence,
+      sourceVisibility: sourceVisibility(event),
+      contradictsOtherSpeech: false,
+    });
   }
 };
 
@@ -508,6 +515,7 @@ const addWolfSpeech = (
   const leadership = /归票|带队|号召|投票|狼坑|明确投|出局|站边/iu.test(content);
   const speaker = board.targets[actorId];
   if (speaker) {
+    speaker.speechOpportunities += 1;
     speaker.speechCount += 1;
     if (roleExposed) speaker.roleExposureSignals += 1;
     if (information) speaker.informationSignals += 1;
@@ -535,15 +543,6 @@ const addWolfSpeech = (
       sourceEventId: event.eventId,
     });
     cap(board.dayPlans, 8);
-  }
-};
-
-const addWolfOpportunity = (board: WolfPlanBoard, players: readonly Player[]): void => {
-  for (const player of players) {
-    const target = board.targets[player.id];
-    if (!target || !player.isAlive) continue;
-    target.speechOpportunities += 1;
-    refreshWolfTarget(target, player.name);
   }
 };
 
@@ -591,10 +590,9 @@ const addWolfKill = (
 ): void => {
   const targetId = payload(event).targetId;
   if (typeof targetId !== 'string' || !board.targets[targetId]) return;
-  board.focusTargetId = targetId;
   const target = board.targets[targetId];
   board.nightPlans.push({
-    text: `夜晚计划：优先处理${playerName(players, targetId)}（${target.priority}威胁，${target.reasons.join('、') || '暂无足够威胁信号'}）；不把沉默低威胁位当固定刀口。`,
+    text: `历史刀口：上夜实际选择${playerName(players, targetId)}（当时${target.priority}威胁，${target.reasons.join('、') || '暂无足够威胁信号'}）；这只是已结算记录，不是本夜锁定。`,
     sourceSequence: event.sequence,
     sourceEventId: event.eventId,
   });
@@ -636,14 +634,11 @@ const updateBoardForEvent = (
   board.updatedSequence = Math.max(board.updatedSequence, event.sequence);
   if (board.kind === 'good_evidence') {
     switch (event.eventType) {
-      case 'day.started':
-        addSpeechOpportunity(board, players);
-        break;
       case 'day.speech':
         addGoodSpeech(board, event, players);
         break;
       case 'day.speech_skipped':
-        addGoodSpeechSkip(board, event);
+        addGoodSpeechSkip(board, event, players);
         break;
       case 'day.exile_result':
       case 'day.revote_required':
@@ -659,15 +654,13 @@ const updateBoardForEvent = (
     }
   } else {
     switch (event.eventType) {
-      case 'day.started':
-        addWolfOpportunity(board, players);
-        break;
       case 'day.speech':
         addWolfSpeech(board, event, players);
         break;
       case 'day.speech_skipped': {
         const actorId = payload(event).actorId;
         if (typeof actorId === 'string' && board.targets[actorId]) {
+          board.targets[actorId].speechOpportunities += 1;
           board.targets[actorId].skippedSpeechCount += 1;
           refreshWolfTarget(board.targets[actorId], playerName(players, actorId));
         }
@@ -748,6 +741,37 @@ export const updateAIMemoryBoards = (
   // function. Mutating that transaction-local board avoids a second 12-seat
   // deep clone on every speech while retaining rollback safety on append fail.
   const boards = current;
+  // Repair snapshots written by the old day.started rule. It marked every
+  // living player as “100% persistently silent” before the first daytime turn.
+  // A real completed skip has skippedSpeechCount > 0 and is preserved.
+  for (const board of Object.values(boards)) {
+    if (board.kind === 'good_evidence') {
+      for (const node of Object.values(board.nodes)) {
+        if (
+          node.behavior.speechOpportunities === 1 &&
+          node.behavior.speechCount === 0 &&
+          node.behavior.skippedSpeechCount === 0
+        ) {
+          node.behavior.speechOpportunities = 0;
+          node.behavior.silenceRate = 0;
+          node.evidence = node.evidence.filter((item) => !(
+            item.kind === 'behavior' && /沉默度100%.*持续低发言/iu.test(item.summary)
+          ));
+        }
+      }
+    } else {
+      for (const target of Object.values(board.targets)) {
+        if (
+          target.speechOpportunities === 1 &&
+          target.speechCount === 0 &&
+          target.skippedSpeechCount === 0
+        ) {
+          target.speechOpportunities = 0;
+          refreshWolfTarget(target, playerName(players, target.playerId));
+        }
+      }
+    }
+  }
   for (const event of events) {
     for (const board of Object.values(boards)) {
       updateBoardForEvent(board, event, players);
@@ -803,9 +827,9 @@ const formatWolfBoard = (board: WolfPlanBoard, players: readonly Player[]): stri
     `当前焦点：${board.focusTargetId ? memoryName(players, board.focusTargetId) : '未锁定'}`,
     '连续昼间计划：',
     day.join('\n') || '- 尚未形成昼间计划',
-    '连续夜间计划：',
+    '历史夜间记录（只复盘，不自动延续）：',
     night.join('\n') || '- 尚未形成夜间计划',
-    '狼队讨论应沿用并修正以上计划，避免按座位号、固定一号或潜水低威胁机械选刀。',
+    '本夜以当前高价值排序和当前焦点重新选刀。若当前焦点与旧刀口不同，默认切换到当前焦点；只有明确提出避守、骗药、自刀或空刀收益时才延续旧目标。旧刀口只是历史，不是本夜锁定。',
   ].join('\n');
 };
 

@@ -112,6 +112,22 @@ test('事件模板只显示安全中文，未知事件不回显原始值', () =>
   );
 });
 
+test('狼人私密跳过会说明是主动跳过还是服务端安全跳过', () => {
+  const playerName = (id: string | null) => id === 'p1' ? '甲' : '未知目标';
+  assert.equal(
+    describeEvent(event('wolf.speech_skipped', { actorId: 'p1', round: 1 }), playerName),
+    '甲选择跳过本轮狼聊。',
+  );
+  assert.equal(
+    describeEvent(event('wolf.speech_skipped', {
+      actorId: 'p1',
+      round: 1,
+      reason: 'AI输出未通过校验，已自动跳过',
+    }), playerName),
+    '甲：AI输出未通过校验，已自动跳过',
+  );
+});
+
 test('全知观战将玩家视角的第一人称事件还原为真实席位名', () => {
   const playerName = (id: string | null) => id === 'p1' ? '一号玩家' : '未知目标';
   const monitor = {

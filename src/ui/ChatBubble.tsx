@@ -33,7 +33,7 @@ export function ChatBubble({
 }: ChatBubbleProps) {
   if (variant === 'system') {
     return (
-      <div className="v3-chat-system">
+      <div className="v3-chat-system" data-glass-role="item">
         <time>{time}</time>
         <span>{children}</span>
       </div>
@@ -49,11 +49,14 @@ export function ChatBubble({
       <span className="v3-chat-avatar" aria-hidden="true">
         {avatarAsset ? <img src={avatarAsset.src} alt="" /> : <span>{author.slice(0, 1)}</span>}
       </span>
-      <article className={cn(
-        'v3-chat-bubble',
-        `v3-chat-bubble--${variant}`,
-        speakerTone === undefined ? undefined : `v3-chat-bubble--speaker-${speakerTone}`,
-      )}>
+      <article
+        className={cn(
+          'v3-chat-bubble',
+          `v3-chat-bubble--${variant}`,
+          speakerTone === undefined ? undefined : `v3-chat-bubble--speaker-${speakerTone}`,
+        )}
+        data-glass-role="item"
+      >
         <header>
           <strong>{author}</strong>
           {seatNumber !== undefined ? (

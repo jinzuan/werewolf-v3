@@ -40,6 +40,31 @@ test('AI review runs team, global, and one isolated self pass per AI', async () 
   assert.deepEqual(result.insights.filter((item) => item.round === 'self').map((item) => item.playerId), ['ai-wolf-1', 'ai-wolf-2']);
 });
 
+test('good-team review input never promotes one player role_private facts', async () => {
+  const privateEvent = event(5, 'seer.result', 'role_private', ['human-1']);
+  privateEvent.event.payload = { targetId: 'ai-wolf-1', alignment: 'wolf' };
+  const isolatedEvents = [...events, privateEvent];
+  const userInputs: Array<Record<string, unknown>> = [];
+  const generator = new AIReviewGenerator({
+    async complete(prompt) {
+      userInputs.push(JSON.parse(prompt.user) as Record<string, unknown>);
+      return JSON.stringify({ messages: [], insights: [] });
+    },
+  });
+
+  await generator.generate({
+    archive: {
+      ...input.archive,
+      events: isolatedEvents,
+      sourceEventIds: isolatedEvents.map(({ event: item }) => item.eventId),
+    },
+    events: isolatedEvents,
+  });
+
+  assert.equal(userInputs[0]?.team, 'good');
+  assert.doesNotMatch(JSON.stringify(userInputs[0]), /seer\.result|event-5/);
+});
+
 test('agent experience updates are isolated by player and experience instance', async () => {
   const store = new InMemoryInsightStore();
   await store.add({ id: 'one', role: 'wolf', text: '第1天公开投票后先核对结果。', evidenceEventIds: ['event-2'], gameId: 'game-1', createdAt: 1, schemaVersion: 2, scope: 'agent', playerId: 'ai-wolf-1', experienceInstanceId: 'exp-1' });

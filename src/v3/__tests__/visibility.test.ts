@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { DomainEvent } from '../../../shared/events';
-import { chatEventsForViewer } from '../visibility';
+import { chatEventsForViewer, isSpeechEvent } from '../visibility';
 
 const event = (
   sequence: number,
@@ -47,6 +47,21 @@ test('狼人聊天流显示所有队友发言并按服务端序号排序', () =>
       playerId: 'villager-1',
       role: 'villager',
     }),
+    [],
+  );
+});
+
+test('狼人跳过记录进入狼队聊天流且不会泄露给好人', () => {
+  const skipped = event(5, 'wolf.speech_skipped', 'wolf_private', ['wolf-1', 'wolf-2']);
+  skipped.actorId = 'wolf-1';
+  skipped.payload = { actorId: 'wolf-1', round: 1, reason: 'AI输出未通过校验，已自动跳过' };
+  assert.equal(isSpeechEvent(skipped), true);
+  assert.deepEqual(
+    chatEventsForViewer([skipped], { kind: 'player', playerId: 'wolf-1', role: 'wolf' }),
+    [skipped],
+  );
+  assert.deepEqual(
+    chatEventsForViewer([skipped], { kind: 'player', playerId: 'villager-1', role: 'villager' }),
     [],
   );
 });

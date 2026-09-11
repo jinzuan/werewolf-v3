@@ -114,7 +114,14 @@ test('day checkpoints are durable, private before lock, and retain vote reasons'
     session.serialize().state.dayFlow.stage === 'speech' ||
     session.serialize().state.dayFlow.stage === 'discussion'
   ) {
-    const actorId = session.serialize().state.gameState.currentSpeaker!;
+    const state = session.serialize().state;
+    if (state.gameState.currentSpeaker === null) {
+      // Free discussion is quota/mention driven; with no new queue entry the
+      // documented idle deadline advances the table to voting.
+      await clock.advance(30_001);
+      continue;
+    }
+    const actorId = state.gameState.currentSpeaker;
     const result = await dispatch(session, actorId, {
       type: 'game.speak',
       payload: { content: '公开发言' },

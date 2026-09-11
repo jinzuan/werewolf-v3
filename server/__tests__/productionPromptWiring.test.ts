@@ -94,7 +94,10 @@ test('production HTTP provider sends one prompt containing projection, rules, ex
   const prompt = messages.map((message) => message.content).join('\n');
   assert.match(prompt, /ruleset-projected/);
   assert.match(prompt, /平安夜/);
-  assert.match(prompt, /投影经验/);
+  // The coordinator's fixed per-AI assignment wins over the projector's
+  // rotating legacy reference; duplicating both made the model copy boilerplate.
+  assert.match(prompt, /经验锚点/);
+  assert.doesNotMatch(prompt, /投影经验/);
   assert.match(prompt, /RepeatPolicy/);
   assert.ok(!prompt.includes('apiKey'));
 });

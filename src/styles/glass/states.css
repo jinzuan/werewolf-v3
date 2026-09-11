@@ -1,0 +1,207 @@
+/* Interaction classes are written by the shared motion engine. */
+:root:not([data-visual-mode='original']) .ww-glass-surface:is(:hover, :focus-within) > .ww-glass-lens {
+  --ww-glass-highlight-opacity: .25;
+}
+
+:root[data-motion='full']:not([data-visual-mode='original']) .ww-glass-surface:is(
+  [data-glass-motion-state='pressed'],
+  [data-glass-motion-state='dragging']
+) > .ww-glass-lens::after {
+  background:
+    radial-gradient(
+      82px 48px at var(--glass-pressure-x, 50%) var(--glass-pressure-y, 50%),
+      rgba(255, 255, 255, calc(.035 + var(--glass-pressure, 0) * .05)),
+      rgba(108, 197, 250, calc(.018 + var(--glass-pressure, 0) * .025)) 42%,
+      transparent 76%
+    ),
+    linear-gradient(132deg, rgba(255, 255, 255, .12), transparent 18%, transparent 78%, rgba(112, 188, 240, .035));
+  opacity: calc(.18 + var(--glass-pressure, 0) * .22);
+}
+
+:root:not([data-visual-mode='original']) .ww-glass-surface:focus-visible,
+:root:not([data-visual-mode='original']) .ww-glass-native:focus-visible {
+  outline: 2px solid var(--ww-glass-focus);
+  outline-offset: 2px;
+}
+
+:root:not([data-visual-mode='original']) .ww-glass-native:focus {
+  border-color: color-mix(in srgb, var(--ww-glass-focus) 64%, transparent);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--ww-glass-focus) 14%, transparent),
+    var(--ww-glass-control-shadow),
+    inset .55px .55px rgba(255, 255, 255, .07);
+}
+
+:root:not([data-visual-mode='original']) :where(.v3-button, button)[disabled] {
+  cursor: not-allowed;
+  opacity: .5;
+}
+
+/* Shared segmented geometry: one base lens, one moving puck, no option lens. */
+.drag-segmented.v3-segmented {
+  position: relative;
+  min-width: 0;
+  width: max-content;
+  max-width: 100%;
+  flex-wrap: nowrap;
+  isolation: isolate;
+  overflow: visible;
+  touch-action: pan-y;
+  border: 1px solid transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.drag-segmented__slider,
+.drag-segmented__ghost,
+.drag-segmented__bridge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+/* Keep the drag geometry layers absolutely positioned so the glass surface
+ * rules can never pull them into normal flow and inflate the max-content
+ * container width on every drag (observed: container grows repeatedly and
+ * never snaps back after dragging a segmented control). */
+.drag-segmented > .drag-segmented__slider,
+.drag-segmented > .drag-segmented__ghost,
+.drag-segmented > .drag-segmented__bridge {
+  position: absolute !important;
+  left: 0;
+  top: 0;
+  width: auto;
+  height: auto;
+  flex: none;
+}
+
+.drag-segmented__slider {
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.drag-segmented__ghost {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--ww-glass-rim-cyan) 8%, transparent);
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, .035), transparent 42%),
+    color-mix(in srgb, var(--ww-action-primary) 7%, var(--ww-glass-control-fill));
+  box-shadow: 0 7px 18px rgba(0, 8, 18, .08);
+}
+
+.drag-segmented__slider {
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 90ms ease-out, scale 90ms ease-out;
+}
+
+.drag-segmented[data-ready='true'] .drag-segmented__slider { opacity: 1; }
+
+.drag-segmented__ghost {
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 80ms ease-out;
+}
+
+.drag-segmented__bridge {
+  z-index: 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(185, 225, 250, .11), rgba(82, 159, 215, .055));
+  filter: blur(3px);
+  opacity: 0;
+  transform-origin: 0 50%;
+  transition: opacity 80ms ease-out;
+}
+
+.drag-segmented--dragging {
+  z-index: var(--glass-motion-active-z, 29);
+}
+
+:root:not([data-visual-mode='original']) .drag-segmented--dragging > .ww-glass-lens {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.drag-segmented--dragging .drag-segmented__slider {
+  z-index: 3;
+  scale: 1.055 .955;
+  transition: none;
+  will-change: transform, width, height, scale;
+}
+
+:root[data-motion='full']:not([data-visual-mode='original']) .drag-segmented--dragging .drag-segmented__slider > .ww-glass-lens::after {
+  background:
+    radial-gradient(
+      72px 42px at var(--glass-pressure-x, 50%) var(--glass-pressure-y, 50%),
+      rgba(255, 255, 255, calc(.025 + var(--glass-pressure, 0) * .05)),
+      rgba(105, 198, 251, calc(.012 + var(--glass-pressure, 0) * .026)) 42%,
+      transparent 76%
+    ),
+    linear-gradient(132deg, rgba(255, 255, 255, .12), transparent 18%, transparent 78%, rgba(112, 188, 240, .035));
+  opacity: calc(.18 + var(--glass-pressure, 0) * .2);
+}
+
+.drag-segmented--dragging :where(.drag-segmented__ghost, .drag-segmented__bridge) {
+  will-change: transform, width, height, opacity;
+}
+
+.drag-segmented--merging .drag-segmented__ghost { opacity: .34; }
+.drag-segmented--merging .drag-segmented__bridge { opacity: .42; }
+
+.drag-segmented.v3-segmented > .drag-segmented__option {
+  position: relative;
+  z-index: 4;
+  flex: 1 1 auto;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.drag-segmented.v3-segmented > .drag-segmented__option::before,
+.drag-segmented.v3-segmented > .drag-segmented__option::after { display: none; }
+
+.drag-segmented__label {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.drag-segmented__option--selected { color: #fff; }
+
+:root[data-visual-mode='original'] .drag-segmented.v3-segmented {
+  border-color: var(--ww-border-default);
+  background: var(--ww-bg-subtle);
+}
+
+:root[data-visual-mode='original'] .drag-segmented__slider {
+  border-color: rgba(218, 233, 245, .13);
+  background: #26394c;
+  box-shadow: inset 0 1px rgba(255, 255, 255, .06), 0 5px 12px rgba(0, 6, 14, .18);
+}
+
+:root:is([data-motion='none'], [data-motion='reduced']) :where(
+  .drag-segmented__slider,
+  .drag-segmented__ghost,
+  .drag-segmented__bridge
+) {
+  transition: none;
+}
+
+:root:is([data-motion='none'], [data-motion='reduced']) .drag-segmented--dragging .drag-segmented__slider { scale: 1; }
+:root:is([data-motion='none'], [data-motion='reduced']) :where(.drag-segmented__ghost, .drag-segmented__bridge) { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .drag-segmented--dragging .drag-segmented__slider { scale: 1; }
+  :where(.drag-segmented__ghost, .drag-segmented__bridge) { display: none; }
+}

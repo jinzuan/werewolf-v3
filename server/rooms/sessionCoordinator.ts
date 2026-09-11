@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { GameAction, Player } from '../../shared/types';
 import type { GameCommand } from '../../shared/protocol';
 import { AIOrchestrator } from '../ai/orchestrator';
@@ -10,7 +11,7 @@ import {
 import { buildAIRuntimeContext, deriveAIActorStatus } from '../ai/runtimeContext';
 import { PromptContextCache } from '../ai/promptContextCache';
 import { experienceLibrary } from '../ai/experienceLibrary';
-import type { AIProvider } from '../ai/types';
+import type { AIProvider, AIRequestContext } from '../ai/types';
 import type { AITelemetry } from '../ai/aiTelemetry';
 import type { AILogger } from '../ai/types';
 import type { InsightStore } from '../review/insightStore';
@@ -101,6 +102,8 @@ export class SessionCoordinator {
   readonly contextCache = new PromptContextCache();
   readonly scheduler: AITurnScheduler;
   private closed = false;
+  /** Stage-local decline memory prevents an unattended request loop. */
+  private readonly declinedQueueRequests = new Map<string, Set<string>>();
   private readonly aiSpeechDelayMinMs: number;
   private readonly aiSpeechDelayMaxMs: number;
 
@@ -133,14 +136,28 @@ export class SessionCoordinator {
     if (request.gameId && request.gameId !== state.gameId) return;
     if (request.stageRevision !== undefined && request.stageRevision !== session.stageRevision) return;
     const auto = request.autoRoom ?? room.config?.mode === 'quick_computer';
-    const actorEntry = state.gameState.allowedActors?.find((entry) => {
+    const eligibleEntries = state.gameState.allowedActors?.filter((entry) => {
       const player = state.players.find((candidate) => candidate.id === entry.playerId);
       return Boolean(player && (auto || player.isAI));
-    });
+    }) ?? [];
+    const actionClass = request.actionClass ?? eligibleEntries[0]?.actions[0];
+    if (!actionClass) return;
+    const declineKey = `${state.gameId}:${session.stageRevision}:${actionClass}`;
+    const declined = this.declinedQueueRequests.get(declineKey) ?? new Set<string>();
+    const actorEntry = actionClass === 'request_speech'
+      ? eligibleEntries
+          .filter((entry) => entry.actions.includes('request_speech'))
+          .filter((entry) => (state.dayFlow.discussionMentionCounts?.[entry.playerId] ?? 0) > 0)
+          .filter((entry) => !declined.has(entry.playerId))
+          .sort((left, right) =>
+            (state.dayFlow.discussionMentionCounts?.[right.playerId] ?? 0) -
+              (state.dayFlow.discussionMentionCounts?.[left.playerId] ?? 0) ||
+            (state.players.find((player) => player.id === left.playerId)?.order ?? 0) -
+              (state.players.find((player) => player.id === right.playerId)?.order ?? 0),
+          )[0]
+      : eligibleEntries.find((entry) => entry.actions.includes(actionClass as GameAction));
     if (!actorEntry) return;
     if (request.actorId && request.actorId !== actorEntry.playerId) return;
-    const actionClass = request.actionClass ?? actorEntry.actions[0];
-    if (!actionClass) return;
     const task: AITurnTask = {
       roomCode,
       gameId: state.gameId,
@@ -160,6 +177,7 @@ export class SessionCoordinator {
     this.closed = true;
     await this.scheduler.close();
     this.contextCache.clear();
+    this.declinedQueueRequests.clear();
   }
 
   private async execute(task: AITurnTask & { signal: AbortSignal }): Promise<void> {
@@ -175,6 +193,21 @@ export class SessionCoordinator {
     const actor = state.players.find((player) => player.id === task.actorId);
     // Last-words and hunter stages intentionally authorize one dead actor.
     if (!actorEntry || !actor?.role) return;
+    if (
+      task.actionClass === 'request_speech' &&
+      (state.dayFlow.discussionMentionCounts?.[actor.id] ?? 0) <= 0
+    ) {
+      // Free discussion is event-driven. If nobody has brought this player
+      // forward, do not spend a model call asking for a filler insertion; the
+      // authoritative idle deadline will move the table to voting.
+      return;
+    }
+    const taskActions = actorEntry.actions.includes('skip_speech')
+      ? aiActionsForTask(task.actionClass)
+      : [task.actionClass as GameAction];
+    const taskCommandTypes = task.actionClass === 'wolf_speak' && !actorEntry.actions.includes('skip_speech')
+      ? (['game.wolf_speak'] as GameCommand['type'][])
+      : aiCommandTypesForTask(task.actionClass);
     if (task.actionClass === 'confirm_role') {
       await session.dispatch(
         {
@@ -215,10 +248,10 @@ export class SessionCoordinator {
       phase: state.gameState.phase,
       stage,
       players,
-      allowedActions: aiActionsForTask(task.actionClass),
+      allowedActions: taskActions,
     });
     actorStatus.deathCutoffSequence = viewer.deathCutoffSequence;
-    const promptContext = buildAIRuntimeContext({
+    const runtimePromptContext = buildAIRuntimeContext({
       actorId: actor.id,
       role: actor.role,
       phase: state.gameState.phase,
@@ -262,13 +295,69 @@ export class SessionCoordinator {
           : '',
       ].filter(Boolean).join('\n\n'),
     });
+    const promptContext = {
+      ...runtimePromptContext,
+      preparedMemory: session.prepareAICognition({
+        ownerId: actor.id,
+        stageRevision: task.stageRevision,
+        legalActions: taskActions,
+        legalTargetIds: (runtimePromptContext.legalTargets ?? []).map((target) => target.id),
+      }),
+    };
+    if (task.actionClass === 'request_speech' && provider.decideSpeechQueue) {
+      const queueContext: AIRequestContext = {
+        roomId: room.id,
+        gameId: session.gameId,
+        playerId: actor.id,
+        callId: `queue:${randomUUID()}`,
+        role: actor.role,
+        phase: state.gameState.phase,
+        stage,
+        stageRevision: task.stageRevision,
+        actorStatus,
+        deadlineTs: state.gameState.deadlineTs,
+        players,
+        allowedActions: ['request_speech'],
+        allowedCommandTypes: ['game.request_speech'],
+        promptContext,
+        signal: task.signal,
+      };
+      try {
+        const decision = await provider.decideSpeechQueue(queueContext);
+        if (decision.result === 'decline') {
+          this.markQueueRequestDeclined(task);
+          return;
+        }
+        const requestResult = await session.dispatch(
+          {
+            roomId: room.id,
+            gameId: session.gameId,
+            actorId: actor.id,
+            commandId: `ai:${queueContext.callId}`,
+            sentAt: this.options.now?.() ?? Date.now(),
+            expectedStageRevision: task.stageRevision,
+            origin: 'model',
+          },
+          {
+            type: 'game.request_speech',
+            payload: { reason: decision.reason_code },
+          },
+        );
+        if (!requestResult.ok) this.markQueueRequestDeclined(task);
+      } catch {
+        // Queue participation is optional. An unavailable queue call declines
+        // this candidate instead of creating a filler insertion or template.
+        this.markQueueRequestDeclined(task);
+      }
+      return;
+    }
     const orchestrator = new AIOrchestrator(provider, this.options.now, {
       timeoutMs: this.options.timeoutMs,
       contextCache: this.contextCache,
       telemetry: this.options.telemetry,
       logger: this.options.logger,
     });
-    await orchestrator.act(session, {
+    const result = await orchestrator.act(session, {
       roomId: room.id,
       gameId: session.gameId,
       playerId: actor.id,
@@ -279,10 +368,28 @@ export class SessionCoordinator {
       actorStatus,
       deadlineTs: state.gameState.deadlineTs,
       players,
-      allowedActions: aiActionsForTask(task.actionClass),
-      allowedCommandTypes: aiCommandTypesForTask(task.actionClass),
+      allowedActions: taskActions,
+      allowedCommandTypes: taskCommandTypes,
       promptContext,
       signal: task.signal,
+    });
+    if (task.actionClass === 'request_speech' && !result.accepted) {
+      this.markQueueRequestDeclined(task);
+    }
+  }
+
+  private markQueueRequestDeclined(task: AITurnTask): void {
+    const key = `${task.gameId}:${task.stageRevision}:${task.actionClass}`;
+    const declined = this.declinedQueueRequests.get(key) ?? new Set<string>();
+    declined.add(task.actorId);
+    this.declinedQueueRequests.set(key, declined);
+    // Keep scanning only this stage's candidates. If all decline, the
+    // scheduler remains idle and GameSession's 30s deadline stays authoritative.
+    void this.scheduleEligibleAI({
+      roomCode: task.roomCode,
+      gameId: task.gameId,
+      stageRevision: task.stageRevision,
+      actionClass: task.actionClass,
     });
   }
 

@@ -34,6 +34,8 @@ export function RoleRevealCard({
         aria-label={revealed ? `身份是${roleName}` : '揭晓身份牌'}
         aria-pressed={revealed}
         onClick={onReveal}
+        data-glass-role="panel"
+        data-glass-motion="control"
       >
         <span className="ww-role-reveal__face ww-role-reveal__face--front" aria-hidden={revealed}>
           <span className="ww-role-reveal__moon">✦</span>
@@ -58,6 +60,8 @@ export function RoleRevealCard({
         className="ww-role-reveal__info-button"
         aria-label={`${roleName}角色说明`}
         aria-expanded={infoOpen}
+        data-glass-role="control"
+        data-glass-motion="control"
         onClick={(event) => {
           event.stopPropagation();
           onToggleInfo();
@@ -65,7 +69,11 @@ export function RoleRevealCard({
       >
         {infoOpen ? <EyeOff size={16} /> : <CircleHelp size={16} />}
       </button>
-      <div className={`ww-role-reveal__popover ${infoOpen ? 'is-open' : ''}`} role="status">
+      <div
+        className={`ww-role-reveal__popover ${infoOpen ? 'is-open' : ''}`}
+        role="status"
+        data-glass-role="item"
+      >
         <strong>{roleName}怎么玩</strong>
         <span>{description}</span>
       </div>

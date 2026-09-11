@@ -26,7 +26,12 @@ import {
 import { buildPromptPipeline } from './promptPipeline';
 import { parseAIOutput } from './outputParser';
 import { RepeatPolicy, repeatSceneFromContext } from './repeatPolicy';
-import { inspectSpeechStyle } from './speechStyleGate';
+import { validateProviderSpeech } from './speechValidation';
+import {
+  buildSpeechQueuePrompt,
+  parseSpeechQueueDecision,
+} from './speechQueueDecision';
+import type { SpeechQueueDecision } from './speech/speech-queue-decision.v1';
 
 interface ProviderSettings {
   key: string;
@@ -172,6 +177,15 @@ const parseSuggestion = (
   if (!Array.isArray(choices) || !isRecord(choices[0])) {
     throw new ProviderError('invalid_response', retryCount);
   }
+  const finishReason = choices[0].finish_reason;
+  if (typeof finishReason === 'string' && finishReason !== 'stop') {
+    throw new ProviderError(
+      'invalid_output',
+      retryCount,
+      undefined,
+      `INCOMPLETE_OUTPUT:${finishReason}`,
+    );
+  }
   const message = choices[0].message;
   if (!isRecord(message) || typeof message.content !== 'string') {
     throw new ProviderError('invalid_response', retryCount);
@@ -298,6 +312,68 @@ export class HttpAIProvider implements AIProvider {
     });
   }
 
+  async decideSpeechQueue(context: AIRequestContext): Promise<SpeechQueueDecision> {
+    const startedAt = this.now();
+    const baseLog = {
+      roomId: context.roomId,
+      gameId: context.gameId,
+      playerId: context.playerId,
+      callId: context.callId,
+      stage: 'speech_queue',
+      provider: this.settings.provider,
+      model: this.settings.model,
+      endpoint: endpointLabel(this.settings.endpoint),
+    } as const;
+    this.logger({ layer: 'provider', status: 'started', ...baseLog });
+    try {
+      const prompt = buildSpeechQueuePrompt(context);
+      const response = await this.queue.run(
+        this.settings.key,
+        (signal) => this.requestOnce(prompt, signal),
+        { signal: context.signal, enqueueTimeoutMs: this.enqueueTimeoutMs },
+      );
+      if (response.status === 429) {
+        throw new ProviderError('rate_limited', 0, 429);
+      }
+      const data = response.data;
+      const choices = isRecord(data) && Array.isArray(data.choices) ? data.choices : [];
+      const finishReason = isRecord(choices[0]) ? choices[0].finish_reason : undefined;
+      if (typeof finishReason === 'string' && finishReason !== 'stop') {
+        throw new ProviderError('invalid_output', 0, undefined, `INCOMPLETE_OUTPUT:${finishReason}`);
+      }
+      const message = isRecord(choices[0]) ? choices[0].message : undefined;
+      const raw = isRecord(message) && typeof message.content === 'string'
+        ? message.content
+        : '';
+      const parsed = parseSpeechQueueDecision(raw, context);
+      if (parsed.ok === false) {
+        throw new ProviderError('invalid_output', 0, undefined, parsed.message);
+      }
+      this.logger({
+        layer: 'provider',
+        status: 'success',
+        ...baseLog,
+        commandType: parsed.decision.result === 'request' ? 'game.request_speech' : undefined,
+        retryCount: 0,
+        durationMs: Math.max(0, this.now() - startedAt),
+      });
+      return parsed.decision;
+    } catch (error) {
+      const normalized = normalizeError(error, 0);
+      this.logger({
+        layer: 'provider',
+        status: 'failed',
+        ...baseLog,
+        errorClass: normalized.errorClass,
+        ...(normalized.detail ? { detail: normalized.detail } : {}),
+        ...(normalized.status !== undefined ? { httpStatus: normalized.status } : {}),
+        retryCount: normalized.retryCount,
+        durationMs: Math.max(0, this.now() - startedAt),
+      });
+      throw normalized;
+    }
+  }
+
   async suggest(context: AIRequestContext): Promise<AISuggestion> {
     const startedAt = this.now();
     const baseLog = {
@@ -413,24 +489,21 @@ export class HttpAIProvider implements AIProvider {
           suggestion.command.type === 'game.wolf_speak'
         ) {
           const speech = suggestion.command.payload.content;
-          const style = inspectSpeechStyle(speech, {
-            commandType: suggestion.command.type,
-            role: context.role,
-            phase: context.phase,
-            stage: context.stage,
-            players: context.players,
-            promptContext: context.promptContext,
-          });
-          if (!style.ok) {
+          const speechValidation = validateProviderSpeech(
+            speech,
+            context,
+            suggestion.command.type,
+          );
+          if (!speechValidation.ok) {
             if (correctionAttempts < this.maxCorrectionAttempts) {
-              applyCorrection(style.rewriteInstruction);
+              applyCorrection(speechValidation.rewriteInstruction);
               continue;
             }
             throw new ProviderError(
               'invalid_output',
               retryCount,
               undefined,
-              `SPEECH_STYLE:${style.issues.join(',')}`,
+              `${speechValidation.category === 'style' ? 'SPEECH_STYLE' : 'SPEECH_GATE'}:${speechValidation.issues.join(',')}`,
             );
           }
           const repeat = this.repeatPolicy.inspect(

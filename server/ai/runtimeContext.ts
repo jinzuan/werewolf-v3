@@ -137,25 +137,11 @@ const eventDays = (
   return days;
 };
 
-const eventStage = (event: DomainEvent): string =>
-  event.stage ?? String(payload(event).stage ?? event.phase);
-
 const eventRound = (event: DomainEvent): number => {
   const item = payload(event);
   if (typeof item.lastWordsRound === 'number') return item.lastWordsRound;
   if (typeof item.discussionRound === 'number') return item.discussionRound;
   return typeof item.round === 'number' ? item.round : 1;
-};
-
-const eventTimeLabel = (
-  event: DomainEvent,
-  fallbackDay: number,
-  days?: ReadonlyMap<string, number>,
-): string => {
-  const day = eventDay(event, payload(event), fallbackDay, days);
-  const period = event.phase === 'night' ? '晚' : '天';
-  const round = eventRound(event);
-  return `【第${day}${period}·${eventStage(event)}·第${round}轮】`;
 };
 
 const voteHistoryFromPayload = (
@@ -372,38 +358,45 @@ const buildPublicFacts = (
 ): Pick<AIPromptContext, 'publicSpeeches' | 'currentRoundSpeeches' | 'publicVoteHistory' | 'ownPreviousSpeeches'> => {
   const days = eventDays(input.visibleEvents, input.dayNumber);
   const speechEvents = publicSpeechEvents(input.visibleEvents);
+  const discussionEvents = input.role === 'wolf' && input.stage === 'wolf_discussion'
+    ? input.visibleEvents.filter((event) =>
+        event.eventType === 'wolf.message' &&
+        event.visibility === 'wolf_private' &&
+        (event.audienceIds === undefined || event.audienceIds.includes(input.actorId)),
+      )
+    : speechEvents;
   const publicSpeeches = speechEvents.map((event) => {
     const item = payload(event);
-    return `${eventTimeLabel(event, input.dayNumber, days)} ${playerName(input.players, item.actorId ?? event.actorId)}：${String(item.content ?? '')}`;
+    return `${playerName(input.players, item.actorId ?? event.actorId)}：${String(item.content ?? '')}`;
   });
   const publicVoteHistory = publicVoteEvents(input.visibleEvents).flatMap((event) => {
     const item = payload(event);
     if (typeof item.targetId !== 'string') return [];
-    return [`${eventTimeLabel(event, input.dayNumber, days)} ${playerName(input.players, item.actorId ?? event.actorId)} 投票给 ${playerName(input.players, item.targetId)}`];
+    return [`${playerName(input.players, item.actorId ?? event.actorId)} 投票给 ${playerName(input.players, item.targetId)}`];
   });
   for (const event of input.visibleEvents) {
     if (event.visibility !== 'public_timeline') continue;
     if (event.eventType !== 'day.exiled' && event.eventType !== 'day.no_exile') continue;
     publicVoteHistory.push(...voteHistoryFromPayload(payload(event).voteHistory, input.players));
   }
-  const currentRoundSpeeches = speechEvents
+  const currentRoundSpeeches = discussionEvents
     .filter((event) => {
       const item = payload(event);
       return (
         eventDay(event, item, input.dayNumber, days) === input.dayNumber &&
-        eventStage(event) === input.stage &&
+        (event.stage ?? String(item.stage ?? event.phase)) === input.stage &&
         eventRound(event) === input.roundNumber
       );
     })
     .map((event) => {
       const item = payload(event);
-      return `${eventTimeLabel(event, input.dayNumber, days)} ${playerName(input.players, item.actorId ?? event.actorId)}：${String(item.content ?? '')}`;
+      return `${playerName(input.players, item.actorId ?? event.actorId)}：${String(item.content ?? '')}`;
     });
   const ownPreviousSpeeches = speechEvents
     .filter((event) => {
       const item = payload(event);
       const sameDay = eventDay(event, item, input.dayNumber, days) === input.dayNumber;
-      const stage = eventStage(event);
+      const stage = event.stage ?? String(item.stage ?? event.phase);
       const sameCurrentSpeechWindow =
         stage === input.stage ||
         (input.stage !== 'night' && ['speech', 'discussion', 'last_words'].includes(stage));
@@ -412,7 +405,7 @@ const buildPublicFacts = (
     })
     .map((event) => {
       const item = payload(event);
-      return `${eventTimeLabel(event, input.dayNumber, days)} ${playerName(input.players, item.actorId ?? event.actorId)}：${String(item.content ?? '')}`;
+      return `${playerName(input.players, item.actorId ?? event.actorId)}：${String(item.content ?? '')}`;
     });
   return {
     publicSpeeches,
@@ -506,6 +499,14 @@ export const legalTargetsForAI = (
       alive.map(({ id, name }) => ({ id, name })),
       randomIndex,
     );
+  }
+  if (allowedActions.includes('wolf_speak')) {
+    // Discussion is not the kill command, but the wolves still need an
+    // explicit candidate set for planning. Excluding wolves here prevents a
+    // degraded speech helper from accidentally proposing itself or a teammate.
+    return alive
+      .filter((player) => player.role !== 'wolf')
+      .map(({ id, name }) => ({ id, name }));
   }
   if (allowedActions.includes('vote')) {
     const candidates =

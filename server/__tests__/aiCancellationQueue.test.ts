@@ -110,7 +110,8 @@ test('an active HTTP request receives orchestrator cancellation', async () => {
     allowedActions: ['guard'],
   });
 
-  assert.equal(result.accepted, true);
+  assert.equal(result.accepted, false);
+  assert.equal(result.suggestion, null);
   assert.equal(aborted, true);
   assert.equal(telemetry.snapshot().active, 0);
   assert.ok(telemetry.snapshot().timeout >= 1);

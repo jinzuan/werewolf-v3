@@ -72,7 +72,7 @@ test('speech style gate identifies the reported template-heavy examples', () => 
     const result = inspectSpeechStyle(speech, gateContext());
     assert.equal(result.ok, false, speech);
     assert.ok(result.issues.includes(issue), speech);
-    assert.match(result.rewriteInstruction, /保留原立场.*2-3 句.*不要解释/u);
+    assert.match(result.rewriteInstruction, /保留原立场.*一句或 1-3 句.*短说是允许的.*不要解释/u);
   }
 });
 
@@ -128,6 +128,61 @@ test('empty agreement and direct restatement are rejected without scanning playe
     false,
     'only the generated output is screened; quoted industrial wording can still make that output unsuitable',
   );
+});
+
+test('wolf chat permits a terse confirmation but rejects a long restatement of the same target and rationale', () => {
+  const target = players.find((player) => player.role !== 'wolf')!;
+  const context = gateContext({
+    commandType: 'game.wolf_speak',
+    role: 'wolf',
+    phase: 'night',
+    stage: 'wolf_discussion',
+    promptContext: {
+      currentRoundSpeeches: [
+        `队友：先刀${target.name}，首夜没信息，别空刀。`,
+      ],
+      newInformationSinceLastTurn: [
+        `队友的新狼队发言：先刀${target.name}，首夜没信息，别空刀。`,
+      ],
+    },
+  });
+
+  assert.equal(inspectSpeechStyle(`同意，刀${target.name}。`, context).ok, true);
+  const repeated = inspectSpeechStyle(
+    `我也确认${target.name}，当前没有公开信息，没有新风险，不建议空刀，今晚统一锁定${target.name}。`,
+    context,
+  );
+  assert.ok(repeated.issues.includes('WOLF_CONSENSUS_RESTATEMENT'));
+  assert.match(repeated.rewriteInstruction, /短确认|skip_speech/u);
+});
+
+test('public speech rejects table-wide acknowledgement and generic-observation tics', () => {
+  const acknowledgement = inspectSpeechStyle(
+    '他已经解释了改票，这点我听到了，但我还是先看后续是否一致。',
+    gateContext({
+      promptContext: {
+        currentRoundSpeeches: [
+          '甲：他的回应我听到了，但暂时不能证明身份。',
+          '乙：这部分算回答到，但我还要看后续票型。',
+        ],
+      },
+    }),
+  );
+  assert.ok(acknowledgement.issues.includes('REPEATED_ACKNOWLEDGEMENT_TIC'));
+
+  const generic = inspectSpeechStyle(
+    '目前没有新信息，我暂时不站边，后面重点看谁改口，再结合票型判断。',
+    gateContext({
+      promptContext: {
+        currentRoundSpeeches: [
+          '甲：目前先保留，后面重点看发言和票型。',
+          '乙：暂时不点名，先听后续，重点看是否前后一致。',
+        ],
+      },
+    }),
+  );
+  assert.ok(generic.issues.includes('GENERIC_OBSERVATION_LOOP'));
+  assert.match(generic.rewriteInstruction, /具体问题|短过|skip_speech/u);
 });
 
 test('private-fact screening is conservative and respects the wolf channel boundary', () => {
@@ -273,7 +328,7 @@ test('prompt provider rewrites style once and reparses the corrected action', as
   const result = await provider.suggest(speechContext());
 
   assert.equal(prompts.length, 2);
-  assert.match(prompts[1], /保留原立场.*2-3 句桌上聊天/u);
+  assert.match(prompts[1], /保留原立场.*一句或 1-3 句桌上聊天/u);
   assert.deepEqual(result.command, {
     type: 'game.speak',
     payload: { content: '金钻还没解释改票，我想先听他回答。' },
@@ -311,7 +366,7 @@ test('HTTP provider uses the same single style correction path', async () => {
   const result = await provider.suggest(speechContext());
 
   assert.equal(requests.length, 2);
-  assert.match(requests[1], /保留原立场.*2-3 句桌上聊天/u);
+  assert.match(requests[1], /保留原立场.*一句或 1-3 句桌上聊天/u);
   assert.equal(result.command.type, 'game.speak');
   assert.equal(result.providerMeta?.retryCount, 1);
 });

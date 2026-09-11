@@ -52,7 +52,19 @@ const seedEndedGame = async (store: InMemoryEventStore): Promise<void> => {
       event(3, 'wolf.kill_locked', { targetId: 'seer-1' }, 'wolf_private', ['wolf-1']).event,
       event(4, 'day.exiled', { playerId: 'seer-1', day: 1 }).event,
       event(5, 'game.ended', { winner: 'wolf', reason: 'test' }).event,
-      event(6, 'game.state_updated', { gameState: { day: 1 }, players }).event,
+      event(6, 'game.state_updated', {
+        gameState: { day: 1 },
+        players,
+        sessionState: {
+          aiExperiences: {
+            'wolf-1': {
+              experienceInstanceId: 'experience-wolf-1',
+              assetId: 'wolf_1.md',
+              baseText: '旧经验',
+            },
+          },
+        },
+      }).event,
     ],
   });
 };
@@ -109,6 +121,14 @@ test('production V3 review uses the complete event stream and writes server insi
     kind: 'spectator', spectatorId: 'monitor', omniscient: true,
   });
   assert.ok(godView?.timeline.some((item) => item.eventType === 'wolf.kill_locked'));
+  assert.deepEqual(
+    Object.keys(godView!.players!.find((player) => player.id === 'wolf-1')!).sort(),
+    ['id', 'isAI', 'isAlive', 'name', 'order', 'role'],
+  );
+  assert.doesNotMatch(
+    JSON.stringify(godView),
+    /experienceInstanceId|experienceAssetId|experienceText|wolf_1\.md|旧经验/,
+  );
 });
 
 test('reviewEnabled false finalizes the canonical archive without invoking review AI or insights', async () => {
@@ -128,4 +148,102 @@ test('reviewEnabled false finalizes the canonical archive without invoking revie
   assert.equal(job?.archive.events.length, 6);
   assert.equal(calls, 0);
   assert.deepEqual(await insights.list(), []);
+});
+
+test('self insight missing experienceUpdate is rejected instead of falling into shared experience', async () => {
+  const events = new InMemoryEventStore();
+  await seedEndedGame(events);
+  const repository = new InMemoryReviewRepository();
+  const insights = new InMemoryInsightStore();
+  const pipeline = new ReviewPipeline(events, repository, {
+    insightStore: insights,
+    generator: {
+      async generate(): Promise<ReviewGeneration> {
+        return {
+          messages: [],
+          insights: [{
+            round: 'self',
+            role: 'wolf',
+            playerId: 'wolf-1',
+            experienceInstanceId: 'experience-wolf-1',
+            text: '第1天公开投票后应复核自己的狼刀选择。',
+            evidenceEventIds: ['event-4'],
+          }],
+        };
+      },
+    },
+  });
+
+  await pipeline.enqueue({ gameId: 'game-1', roomId: 'room-1', reviewEnabled: true });
+  await pipeline.process('game-1');
+
+  assert.deepEqual((await pipeline.get('game-1'))?.insights, []);
+  assert.deepEqual(await insights.list(), []);
+});
+
+test('self experienceUpdate is independently name-free and evidence-backed before storage', async () => {
+  const events = new InMemoryEventStore();
+  await seedEndedGame(events);
+  const repository = new InMemoryReviewRepository();
+  const insights = new InMemoryInsightStore();
+  const pipeline = new ReviewPipeline(events, repository, {
+    insightStore: insights,
+    generator: {
+      async generate(): Promise<ReviewGeneration> {
+        return {
+          messages: [],
+          insights: [{
+            round: 'self',
+            role: 'wolf',
+            playerId: 'wolf-1',
+            experienceInstanceId: 'experience-wolf-1',
+            text: '第1天公开投票后应复核自己的狼刀选择。',
+            experienceUpdate: '狼人一号以后要重视信息',
+            evidenceEventIds: ['event-4'],
+          }],
+        };
+      },
+    },
+  });
+
+  await pipeline.enqueue({ gameId: 'game-1', roomId: 'room-1', reviewEnabled: true });
+  await pipeline.process('game-1');
+
+  assert.deepEqual((await pipeline.get('game-1'))?.insights, []);
+  assert.deepEqual(await insights.list(), []);
+});
+
+test('valid self experienceUpdate is stored only in its agent scope', async () => {
+  const events = new InMemoryEventStore();
+  await seedEndedGame(events);
+  const repository = new InMemoryReviewRepository();
+  const insights = new InMemoryInsightStore();
+  const pipeline = new ReviewPipeline(events, repository, {
+    insightStore: insights,
+    generator: {
+      async generate(): Promise<ReviewGeneration> {
+        return {
+          messages: [],
+          insights: [{
+            round: 'self',
+            role: 'wolf',
+            playerId: 'wolf-1',
+            experienceInstanceId: 'experience-wolf-1',
+            text: '第1天公开投票后应复核自己的狼刀选择。',
+            experienceUpdate: '第1天公开投票后，先核对狼刀结果再调整判断。',
+            evidenceEventIds: ['event-4'],
+          }],
+        };
+      },
+    },
+  });
+
+  await pipeline.enqueue({ gameId: 'game-1', roomId: 'room-1', reviewEnabled: true });
+  await pipeline.process('game-1');
+
+  const stored = await insights.list('wolf', 'wolf-1');
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0].scope, 'agent');
+  assert.equal(stored[0].experienceInstanceId, 'experience-wolf-1');
+  assert.equal((await insights.list('wolf')).some((item) => item.scope === 'shared'), false);
 });

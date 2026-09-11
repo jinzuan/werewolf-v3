@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import path from 'node:path';
 import { resolveRuntimeConfig } from '../runtimeConfig';
 
 test('development defaults to a namespace-scoped data root', () => {
@@ -7,9 +8,10 @@ test('development defaults to a namespace-scoped data root', () => {
     { WW_ENV: 'development', WW_DEPLOYMENT_NAMESPACE: 'laptop' },
     '/workspace/project',
   );
-  assert.equal(config.dataDir, '/workspace/project/.data/dev/laptop');
-  assert.equal(config.roomsFile, '/workspace/project/.data/dev/laptop/rooms.json');
-  assert.equal(config.secretsDir, '/workspace/project/.data/dev/laptop/secrets');
+  const expectedRoot = path.resolve('/workspace/project', '.data', 'dev', 'laptop');
+  assert.equal(config.dataDir, expectedRoot);
+  assert.equal(config.roomsFile, path.join(expectedRoot, 'rooms.json'));
+  assert.equal(config.secretsDir, path.join(expectedRoot, 'secrets'));
 });
 test('production and test require explicit isolated roots', () => {
   assert.throws(

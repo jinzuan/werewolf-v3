@@ -170,3 +170,54 @@ test('deterministic speech fallback uses a legal skip when nothing changed', asy
     payload: { reason: '没有新的信息可补充' },
   });
 });
+
+test('wolf consensus treats repeated target and plan markers as no new decision', () => {
+  const wolf = players.find((player) => player.role === 'wolf')!;
+  const teammate = players.find((player) => player.role === 'wolf' && player.id !== wolf.id)!;
+  const request = context({
+    playerId: teammate.id,
+    role: 'wolf',
+    phase: 'night',
+    stage: 'wolf_discussion',
+    allowedActions: ['wolf_speak', 'skip_speech'],
+    allowedCommandTypes: ['game.wolf_speak', 'game.skip_speech'],
+    promptContext: {
+      legalActions: ['wolf_speak', 'skip_speech'],
+      currentRoundSpeeches: [
+        `${wolf.name}：首夜没信息，不空刀，先看白天。`,
+      ],
+      newInformationSinceLastTurn: [
+        `${wolf.name}的新狼队发言：首夜没信息，不空刀，先看白天。`,
+      ],
+      wolfDiscussionRound: 1,
+    },
+  });
+  const decision = buildSpeechDecisionContext(request, request.promptContext ?? {});
+  assert.deepEqual(decision.newInformation, []);
+  assert.equal(decision.preferNoContentExit, true);
+});
+
+test('second-round wolf confirmation becomes a one-speaker summary instead of four paraphrases', () => {
+  const wolves = players.filter((player) => player.role === 'wolf');
+  const target = players.find((player) => player.role !== 'wolf')!;
+  const firstSummary = `${wolves[0].name}：定${target.name}，没有新风险就不改。`;
+  const request = context({
+    playerId: wolves[1].id,
+    role: 'wolf',
+    phase: 'night',
+    stage: 'wolf_discussion',
+    allowedActions: ['wolf_speak', 'skip_speech'],
+    allowedCommandTypes: ['game.wolf_speak', 'game.skip_speech'],
+    promptContext: {
+      legalActions: ['wolf_speak', 'skip_speech'],
+      currentRoundSpeeches: [firstSummary],
+      newInformationSinceLastTurn: [`${wolves[0].name}的新狼队发言：定${target.name}。`],
+      wolfDiscussionRound: 2,
+    },
+  });
+
+  const decision = buildSpeechDecisionContext(request, request.promptContext ?? {});
+  assert.deepEqual(decision.newInformation, []);
+  assert.equal(decision.preferNoContentExit, true);
+  assert.match(formatSpeechDecisionContext(request, request.promptContext ?? {}), /协议包|短确认/u);
+});

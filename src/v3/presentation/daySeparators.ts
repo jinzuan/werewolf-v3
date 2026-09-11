@@ -26,6 +26,7 @@ export const eventPeriodLabel = (event: DomainEvent): string => {
       return '放逐投票';
     case 'night.started':
     case 'wolf.message':
+    case 'wolf.speech_skipped':
     case 'wolf.vote_cast':
     case 'wolf.vote_unresolved':
     case 'wolf.kill_locked':

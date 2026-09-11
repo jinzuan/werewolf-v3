@@ -146,7 +146,7 @@ test('regular speech prompt permits independent judgment, positive interaction, 
   assert.match(prompt.user, /“指认一个人”不是必填项/u);
   assert.match(
     prompt.user,
-    /仅当前没有真正的新信息、没有被点名，也没有必须澄清的冲突：可输出合法的 skip_speech/u,
+    /轮到你时先推进一件有价值的事：探查、追问、回应、暂时站边或信息交换均可；不强迫指认/u,
   );
 });
 
@@ -200,12 +200,13 @@ test('current round speeches are bounded by day, stage, and discussion round', (
   });
 
   assert.deepEqual(runtime.currentRoundSpeeches, [
-    '【第2天·discussion·第1轮】 好运来：今天讨论首轮',
+    '好运来：今天讨论首轮',
   ]);
-  assert.match(runtime.publicSpeeches?.[0] ?? '', /第1天·speech/);
-  assert.match(runtime.publicSpeeches?.[3] ?? '', /第2天·discussion·第2轮/);
+  assert.doesNotMatch(runtime.currentRoundSpeeches?.[0] ?? '', /【第|discussion|speech/);
+  assert.match(runtime.publicSpeeches?.[0] ?? '', /好运来：前一天旧发言/);
+  assert.match(runtime.publicSpeeches?.[3] ?? '', /好运来：今天讨论第二轮/);
   assert.deepEqual(runtime.ownPreviousSpeeches, [
-    '【第2天·speech·第1轮】 赵六：今天首轮发言',
+    '赵六：今天首轮发言',
   ]);
 });
 

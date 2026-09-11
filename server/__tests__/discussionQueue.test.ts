@@ -69,29 +69,8 @@ const completeFirstReport = async (
   }
 };
 
-const completeFreeDiscussion = async (
-  session: GameSession,
-  content: string | null = null,
-): Promise<void> => {
-  for (let turn = 0; turn < 40; turn += 1) {
-    const state = session.serialize().state;
-    if (state.dayFlow.stage === 'voting') return;
-    assert.equal(state.dayFlow.stage, 'discussion');
-    assert.ok(state.gameState.currentSpeaker);
-    const result = await dispatch(
-      session,
-      state.gameState.currentSpeaker,
-      content
-        ? { type: 'game.speak', payload: { content } }
-        : { type: 'game.skip_speech', payload: {} },
-    );
-    assert.equal(result.ok, true);
-  }
-  assert.fail('free discussion did not advance to voting');
-};
-
 test('first report follows seat order and free discussion starts from mentioned players', async () => {
-  const { session, players, clock } = await createSpeechSession();
+  const { session, players } = await createSpeechSession();
   await completeFirstReport(session, players, (index) =>
     index === 0 ? '@seer-2 先听他。' : index === 1 ? '@wolf-3 你回应一下。' : '先过。',
   );

@@ -1,0 +1,126 @@
+:root {
+  --ww-visual-day-image: none;
+  --ww-visual-night-image: none;
+  --ww-visual-backdrop-opacity: 0;
+  --ww-glass-tint-day: #1f4c68;
+  --ww-glass-tint-night: #1f4c68;
+  --ww-glass-tint-intensity: 34;
+  --ww-glass-tint-active: transparent;
+  --ww-glass-tint-percent: 0%;
+  --ww-glass-optics: blur(0px);
+  --ww-glass-saturation: 1;
+  --ww-glass-brightness: 1;
+  --ww-glass-panel-blur: 0px;
+  --ww-glass-control-blur: 0px;
+  --ww-glass-item-blur: 0px;
+  --ww-glass-panel-fill: transparent;
+  --ww-glass-control-fill: transparent;
+  --ww-glass-item-fill: transparent;
+  --ww-glass-panel-border: transparent;
+  --ww-glass-control-border: transparent;
+  --ww-glass-panel-shadow: none;
+  --ww-glass-control-shadow: none;
+  /* The profile opacity is applied to this pigment once. Keeping the pigment
+     chromatic prevents the rim from collapsing into a neutral white line. */
+  --ww-glass-rim-cyan: rgba(64, 217, 255, .52);
+  --ww-glass-rim-violet: rgba(155, 121, 255, .43);
+  --ww-glass-rim-warm: rgba(255, 178, 112, .34);
+  --ww-glass-rim-opacity: .14;
+  --ww-glass-rim-active-opacity: .23;
+  --ww-glass-rim-softness: .55px;
+  --ww-glass-highlight-opacity: .18;
+  --ww-glass-focus: rgba(255, 207, 126, .58);
+  --ww-glass-state-color: transparent;
+  --ww-glass-state-strength: 0%;
+}
+
+:root:not([data-visual-mode='original']) {
+  --ww-visual-backdrop-opacity: 1;
+  --ww-text-strong: #fff;
+  --ww-text-default: rgba(255, 255, 255, .9);
+  --ww-text-muted: rgba(231, 240, 250, .68);
+  --ww-text-disabled: rgba(214, 226, 239, .43);
+  --ww-text-on-action: #fff;
+  --ww-text-on-accent: #fff;
+  --ww-border-default: rgba(220, 239, 252, .09);
+  --ww-border-strong: rgba(232, 246, 255, .15);
+  --ww-overlay: rgba(1, 6, 13, .56);
+  --ww-danger-surface: color-mix(in srgb, var(--ww-state-danger) 12%, transparent);
+  color-scheme: dark;
+}
+
+:root[data-visual-mode='transparent'] {
+  --ww-bg-scene: #07111d;
+  --ww-bg-surface: rgba(255, 255, 255, .012);
+  --ww-bg-raised: rgba(255, 255, 255, .022);
+  --ww-bg-subtle: rgba(255, 255, 255, .016);
+  --ww-glass-saturation: 1.28;
+  --ww-glass-brightness: 1.015;
+  --ww-glass-panel-blur: 0px;
+  --ww-glass-control-blur: 0px;
+  --ww-glass-item-blur: 0px;
+  --ww-glass-panel-fill: color-mix(in srgb, var(--ww-glass-tint-active) var(--ww-glass-tint-percent), transparent);
+  --ww-glass-control-fill: color-mix(in srgb, var(--ww-glass-tint-active) var(--ww-glass-tint-percent), transparent);
+  --ww-glass-item-fill: color-mix(in srgb, var(--ww-glass-tint-active) var(--ww-glass-tint-percent), transparent);
+  --ww-glass-panel-border: transparent;
+  --ww-glass-control-border: transparent;
+  --ww-glass-panel-shadow: 0 18px 44px rgba(0, 8, 20, .12);
+  --ww-glass-control-shadow: 0 8px 22px rgba(0, 8, 20, .11);
+}
+
+:root[data-visual-mode='low-transparency'] {
+  --ww-bg-scene: #0b1523;
+  --ww-bg-surface: rgba(14, 30, 47, .11);
+  --ww-bg-raised: rgba(21, 40, 58, .14);
+  --ww-bg-subtle: rgba(12, 28, 44, .09);
+  --ww-glass-saturation: 1.16;
+  --ww-glass-brightness: .995;
+  --ww-glass-panel-blur: 1.25px;
+  --ww-glass-control-blur: .35px;
+  --ww-glass-item-blur: 0px;
+  --ww-glass-panel-fill: color-mix(in srgb, var(--ww-glass-tint-active) var(--ww-glass-tint-percent), rgba(13, 31, 48, .105));
+  --ww-glass-control-fill: color-mix(in srgb, var(--ww-glass-tint-active) var(--ww-glass-tint-percent), rgba(16, 36, 53, .09));
+  --ww-glass-item-fill: color-mix(in srgb, var(--ww-glass-tint-active) var(--ww-glass-tint-percent), rgba(17, 38, 56, .075));
+  --ww-glass-panel-border: rgba(229, 245, 255, .09);
+  --ww-glass-control-border: rgba(232, 247, 255, .105);
+  --ww-glass-panel-shadow: 0 18px 42px rgba(0, 7, 18, .17);
+  --ww-glass-control-shadow: 0 8px 22px rgba(0, 7, 18, .15);
+  --ww-glass-rim-opacity: .13;
+}
+
+:root[data-visual-mode='frosted'] {
+  --ww-bg-scene: #091321;
+  --ww-bg-surface: rgba(14, 29, 46, .22);
+  --ww-bg-raised: rgba(20, 39, 57, .27);
+  --ww-bg-subtle: rgba(12, 27, 43, .19);
+  --ww-glass-saturation: 1.18;
+  --ww-glass-brightness: .98;
+  --ww-glass-panel-blur: 14px;
+  --ww-glass-control-blur: 8px;
+  --ww-glass-item-blur: 2px;
+  --ww-glass-panel-fill: color-mix(in srgb, var(--ww-glass-tint-active) var(--ww-glass-tint-percent), rgba(12, 29, 46, .21));
+  --ww-glass-control-fill: color-mix(in srgb, var(--ww-glass-tint-active) var(--ww-glass-tint-percent), rgba(16, 35, 53, .17));
+  --ww-glass-item-fill: color-mix(in srgb, var(--ww-glass-tint-active) var(--ww-glass-tint-percent), rgba(17, 37, 55, .14));
+  --ww-glass-panel-border: rgba(233, 247, 255, .11);
+  --ww-glass-control-border: rgba(235, 248, 255, .13);
+  --ww-glass-panel-shadow: 0 20px 48px rgba(0, 6, 16, .24);
+  --ww-glass-control-shadow: 0 9px 24px rgba(0, 6, 16, .2);
+  --ww-glass-rim-opacity: .105;
+}
+
+:root[data-glass-tint-scope='day']:not([data-visual-mode='original']):not([data-visual-scene='night']):not([data-visual-scene='dusk']),
+:root[data-glass-tint-scope='always']:not([data-visual-mode='original']) {
+  --ww-glass-tint-active: var(--ww-glass-tint-day);
+  --ww-glass-tint-percent: calc(var(--ww-glass-tint-intensity) * 1%);
+}
+
+:root[data-glass-tint-scope='night']:not([data-visual-mode='original']):is([data-visual-scene='night'], [data-visual-scene='dusk']),
+:root[data-glass-tint-scope='always']:not([data-visual-mode='original']):is([data-visual-scene='night'], [data-visual-scene='dusk']) {
+  --ww-glass-tint-active: var(--ww-glass-tint-night);
+  --ww-glass-tint-percent: calc(var(--ww-glass-tint-intensity) * 1%);
+}
+
+:root[data-glass-tint-scope='none'] {
+  --ww-glass-tint-active: transparent;
+  --ww-glass-tint-percent: 0%;
+}

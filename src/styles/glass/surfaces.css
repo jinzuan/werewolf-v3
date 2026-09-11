@@ -1,0 +1,268 @@
+/* One semantic host, one empty optical lens, content painted above it. */
+:root:not([data-visual-mode='original']) .ww-glass-surface {
+  --ww-glass-instance-optics: var(--ww-glass-optics);
+  --ww-glass-instance-fill: var(--ww-glass-panel-fill);
+  --ww-glass-instance-border: var(--ww-glass-panel-border);
+  --ww-glass-instance-shadow: var(--ww-glass-panel-shadow);
+  --ww-glass-instance-blur: var(--ww-glass-panel-blur);
+  position: relative;
+  isolation: isolate;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+:root:not([data-visual-mode='original']) .ww-glass-surface:is(
+  [data-glass-role='control'],
+  [data-glass-role='field'],
+  [data-glass-role='segmented']
+) {
+  --ww-glass-instance-fill: var(--ww-glass-control-fill);
+  --ww-glass-instance-border: var(--ww-glass-control-border);
+  --ww-glass-instance-shadow: var(--ww-glass-control-shadow);
+  --ww-glass-instance-blur: var(--ww-glass-control-blur);
+}
+
+:root:not([data-visual-mode='original']) .ww-glass-surface[data-glass-role='item'] {
+  --ww-glass-instance-fill: var(--ww-glass-item-fill);
+  --ww-glass-instance-border: transparent;
+  --ww-glass-instance-shadow: 0 6px 16px rgba(0, 7, 18, .055);
+  --ww-glass-instance-blur: var(--ww-glass-item-blur);
+}
+
+.ww-glass-lens {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: inherit;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, .03), transparent 24%, transparent 78%, rgba(92, 171, 229, .014)),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--ww-glass-state-color) var(--ww-glass-state-strength), transparent),
+      transparent 44%
+    ),
+    var(--ww-glass-instance-fill);
+  background-clip: padding-box;
+  box-shadow:
+    var(--ww-glass-instance-shadow),
+    inset .45px .45px rgba(255, 255, 255, .035),
+    inset -.35px -.35px rgba(100, 178, 232, .016);
+  pointer-events: none;
+  -webkit-backdrop-filter:
+    var(--ww-glass-instance-optics)
+    blur(var(--ww-glass-instance-blur))
+    saturate(var(--ww-glass-saturation))
+    brightness(var(--ww-glass-brightness));
+  backdrop-filter:
+    var(--ww-glass-instance-optics)
+    blur(var(--ww-glass-instance-blur))
+    saturate(var(--ww-glass-saturation))
+    brightness(var(--ww-glass-brightness));
+}
+
+/* Extremely narrow and quiet chromatic rim. It never paints the centre. */
+.ww-glass-lens::before {
+  position: absolute;
+  inset: -.5px;
+  padding: var(--ww-glass-rim-width, 1.25px);
+  border-radius: inherit;
+  background: linear-gradient(
+    135deg,
+    var(--ww-glass-rim-cyan) 0%,
+    color-mix(in srgb, var(--ww-glass-rim-cyan) 38%, transparent) 24%,
+    transparent 41%,
+    transparent 61%,
+    color-mix(in srgb, var(--ww-glass-rim-violet) 52%, transparent) 77%,
+    var(--ww-glass-rim-violet) 88%,
+    var(--ww-glass-rim-warm) 100%
+  );
+  content: '';
+  opacity: var(--ww-glass-instance-rim-opacity, var(--ww-glass-rim-opacity));
+  filter: blur(var(--ww-glass-instance-rim-softness, var(--ww-glass-rim-softness)));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+.ww-glass-lens::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(132deg, rgba(255, 255, 255, .075), transparent 16%, transparent 83%, rgba(112, 188, 240, .018));
+  content: '';
+  opacity: var(--ww-glass-highlight-opacity);
+}
+
+:root:not([data-visual-mode='original']) .ww-glass-surface:not(.ww-glass-native) > :not(.ww-glass-lens) {
+  position: relative;
+  z-index: 1;
+}
+
+:root:not([data-visual-mode='original']) .ww-glass-surface:is(
+  [data-glass-role='control'],
+  [data-glass-role='field'],
+  [data-glass-role='item']
+) > .ww-glass-lens {
+  z-index: -1;
+}
+
+/* Navigation owns one late-painted lens and fades its optical sampling inward. */
+:root:not([data-visual-mode='original']) .ww-glass-surface[data-glass-role='navigation'] > .ww-glass-lens {
+  -webkit-mask-image: linear-gradient(to bottom, #000 0 70%, rgba(0, 0, 0, .88) 84%, rgba(0, 0, 0, .32) 95%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0 70%, rgba(0, 0, 0, .88) 84%, rgba(0, 0, 0, .32) 95%, transparent 100%);
+}
+
+:root:not([data-visual-mode='original']) .v3-mobile-match-nav[data-glass-role='navigation'] > .ww-glass-lens {
+  -webkit-mask-image: linear-gradient(to top, #000 0 70%, rgba(0, 0, 0, .88) 84%, rgba(0, 0, 0, .32) 95%, transparent 100%);
+  mask-image: linear-gradient(to top, #000 0 70%, rgba(0, 0, 0, .88) 84%, rgba(0, 0, 0, .32) 95%, transparent 100%);
+}
+
+/* QualityController owns the expensive part; paint remains stable in every tier. */
+:root:not([data-visual-mode='original']) .ww-glass-surface:is([data-glass-quality='solid'], [data-glass-quality='paint']) > .ww-glass-lens {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+:root:not([data-visual-mode='original']) .ww-glass-surface[data-glass-visible='false'] > .ww-glass-lens {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* Native fields cannot own a child lens; backdrop-filter never filters their text. */
+:root:not([data-visual-mode='original']) .ww-glass-native {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, rgba(255, 255, 255, .055) 38%, var(--ww-glass-control-fill)),
+      var(--ww-glass-control-fill) 32%,
+      var(--ww-glass-control-fill)
+    ) padding-box,
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--ww-glass-rim-cyan) 18%, transparent),
+      transparent 38%,
+      transparent 64%,
+      color-mix(in srgb, var(--ww-glass-rim-violet) 16%, transparent) 84%,
+      color-mix(in srgb, var(--ww-glass-rim-warm) 14%, transparent)
+    ) border-box;
+  background-clip: padding-box, border-box;
+  box-shadow:
+    var(--ww-glass-control-shadow),
+    inset .45px .45px rgba(255, 255, 255, .035);
+  -webkit-backdrop-filter:
+    var(--ww-glass-instance-optics)
+    blur(var(--ww-glass-control-blur))
+    saturate(var(--ww-glass-saturation));
+  backdrop-filter:
+    var(--ww-glass-instance-optics)
+    blur(var(--ww-glass-control-blur))
+    saturate(var(--ww-glass-saturation));
+}
+
+/* Dense item surfaces share the parent sampling pass and retain the language. */
+:root:not([data-visual-mode='original']) [data-glass-role='item'] {
+  border-block-color: transparent;
+  border-inline-end-color: transparent;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, .018), transparent 34%),
+    linear-gradient(90deg, color-mix(in srgb, var(--ww-glass-state-color) 12%, transparent), transparent 42%),
+    var(--ww-glass-item-fill);
+  box-shadow:
+    inset .4px .4px color-mix(in srgb, var(--ww-glass-rim-cyan) 7%, transparent),
+    inset -.35px -.35px color-mix(in srgb, var(--ww-glass-rim-warm) 5%, transparent),
+    0 6px 16px rgba(0, 7, 18, .055);
+}
+
+:root:not([data-visual-mode='original']) [data-glass-role='item'].ww-glass-has-lens {
+  background: transparent;
+  box-shadow: none;
+}
+
+:root:not([data-visual-mode='original']) :is(.v3-chat-bubble, .v3-player-seat, .ww-seat) {
+  --ww-glass-state-color: var(--v3-seat-color, transparent);
+}
+
+:root:not([data-visual-mode='original']) .v3-chat-bubble {
+  border-inline-start-color: color-mix(in srgb, var(--v3-seat-color, var(--ww-border-strong)) 74%, transparent);
+}
+
+:root:not([data-visual-mode='original']) :is(.v3-chat-bubble--self, .ww-seat.is-selected, .v3-player-seat.is-selected) {
+  --ww-glass-state-strength: 18%;
+}
+
+:root:not([data-visual-mode='original']) .v3-chat-bubble--wolf {
+  --ww-glass-state-color: var(--ww-state-danger);
+  --ww-glass-state-strength: 14%;
+}
+
+:root:not([data-visual-mode='original']) :is(.v3-event-tone-wolf, .v3-alert--error, .v3-button--danger) {
+  --ww-glass-state-color: var(--ww-state-danger);
+  --ww-glass-state-strength: 18%;
+}
+
+:root:not([data-visual-mode='original']) :is(.v3-button--primary, .v3-action-submit--seat) {
+  --ww-glass-instance-fill: color-mix(in srgb, var(--ww-action-primary) 19%, transparent);
+  --ww-glass-instance-border: color-mix(in srgb, var(--ww-action-primary) 34%, transparent);
+  color: #fff;
+}
+
+:root:not([data-visual-mode='original']) .v3-button--danger {
+  --ww-glass-instance-fill: color-mix(in srgb, var(--ww-state-danger) 19%, transparent);
+  --ww-glass-instance-border: color-mix(in srgb, var(--ww-state-danger) 36%, transparent);
+  color: #fff;
+}
+
+:root:not([data-visual-mode='original']) :is(.v3-button, button) :where(span, strong, small),
+:root:not([data-visual-mode='original']) :is(.v3-button, button) {
+  color: #fff;
+}
+
+:root:not([data-visual-mode='original']) :is(.v3-alert, .v3-sync-status, .v3-inline-note) {
+  border-color: transparent;
+  background: var(--ww-glass-item-fill);
+  box-shadow:
+    inset .4px .4px color-mix(in srgb, var(--ww-glass-rim-cyan) 7%, transparent),
+    inset -.35px -.35px color-mix(in srgb, var(--ww-glass-rim-warm) 5%, transparent),
+    0 7px 18px rgba(0, 8, 20, .07);
+}
+
+:root:not([data-visual-mode='original']) .v3-alert--error {
+  --ww-glass-state-color: var(--ww-state-danger);
+  --ww-glass-state-strength: 18%;
+}
+
+/* Semantic badge colour is a local edge tint, not an opaque pill. */
+:root:not([data-visual-mode='original']) .v3-badge {
+  border-color: transparent;
+  background: var(--ww-glass-item-fill);
+}
+
+:root:not([data-visual-mode='original']) :is(.v3-badge--gold, .v3-badge--warning) {
+  --ww-glass-state-color: var(--ww-state-warning);
+  --ww-glass-state-strength: 14%;
+}
+
+:root:not([data-visual-mode='original']) .v3-badge--success {
+  --ww-glass-state-color: var(--ww-state-success);
+  --ww-glass-state-strength: 14%;
+}
+
+:root:not([data-visual-mode='original']) .v3-badge--danger {
+  --ww-glass-state-color: var(--ww-state-danger);
+  --ww-glass-state-strength: 15%;
+}
+
+:root:not([data-visual-mode='original']) :is(.v3-badge--info, .v3-badge--purple) {
+  --ww-glass-state-color: var(--ww-state-info);
+  --ww-glass-state-strength: 14%;
+}
+
+:root:not([data-visual-mode='original']) :is(.v3-card--danger, .v3-action-panel) {
+  --ww-glass-state-color: var(--ww-state-danger);
+  --ww-glass-state-strength: 8%;
+}

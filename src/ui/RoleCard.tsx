@@ -54,11 +54,20 @@ export function RoleCard({
         disabled={disabled}
         aria-pressed={selected}
         onClick={onClick}
+        data-glass-role="panel"
+        data-glass-motion="control"
       >
         {content}
       </button>
     );
   }
 
-  return <article className={cn('ww-role-card', selected && 'is-selected')}>{content}</article>;
+  return (
+    <article
+      className={cn('ww-role-card', selected && 'is-selected')}
+      data-glass-role="panel"
+    >
+      {content}
+    </article>
+  );
 }

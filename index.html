@@ -9,6 +9,60 @@
     <meta name="theme-color" content="#17213B" />
     <meta name="description" content="月光森林狼人杀：邀请朋友，点亮一局对局。" />
     <title>狼人杀·月光森林</title>
+    <script>
+      try {
+        const readVersion = (key, version) => {
+          try {
+            const raw = localStorage.getItem(key)
+            const candidate = raw ? JSON.parse(raw) : null
+            return candidate?.schemaVersion === version ? candidate : null
+          } catch {
+            return null
+          }
+        }
+        const currentValue = readVersion('werewolf-v3-visual-preferences-v4', 4)
+        const legacyValue = currentValue
+          ? null
+          : readVersion('werewolf-v3-visual-preferences-v3', 3)
+            || readVersion('werewolf-v3-visual-preferences-v2', 2)
+            || readVersion('werewolf-v3-visual-preferences-v1', 1)
+        const value = currentValue || legacyValue
+        document.documentElement.dataset.visualMode = value?.visualMode || 'transparent'
+        document.documentElement.dataset.backgroundMode = value?.backgroundMode || 'builtin'
+        document.documentElement.dataset.backgroundPreset = value?.backgroundPreset || 'dream'
+        const colorScheme = value?.colorScheme || 'system'
+        const systemPrefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches === true
+        document.documentElement.dataset.colorScheme = colorScheme
+        document.documentElement.dataset.resolvedColorScheme = colorScheme === 'system'
+          ? systemPrefersDark ? 'dark' : 'light'
+          : colorScheme
+        document.documentElement.dataset.glassTintScope = value?.tintScope || 'none'
+        document.documentElement.dataset.glassTintSource = value?.tintSource || 'auto'
+        document.documentElement.style.setProperty('--ww-glass-tint-intensity', String(value?.tintIntensity ?? 34))
+        document.documentElement.style.setProperty('--ww-glass-tint-day', value?.tintColor || '#1F4C68')
+        document.documentElement.style.setProperty('--ww-glass-tint-night', value?.tintColor || '#1F4C68')
+        const legacyReduced = legacyValue?.motionMode === 'reduced'
+          || localStorage.getItem('werewolf-v3-motion-mode') === 'reduced'
+        document.documentElement.dataset.motion = currentValue
+          && ['none', 'standard', 'full'].includes(currentValue.motionMode)
+          ? currentValue.motionMode
+          : legacyReduced ? 'none' : 'standard'
+      } catch {
+        document.documentElement.dataset.visualMode = 'transparent'
+        document.documentElement.dataset.backgroundMode = 'builtin'
+        document.documentElement.dataset.backgroundPreset = 'dream'
+        document.documentElement.dataset.colorScheme = 'system'
+        document.documentElement.dataset.resolvedColorScheme = window.matchMedia?.('(prefers-color-scheme: dark)').matches
+          ? 'dark'
+          : 'light'
+        document.documentElement.dataset.glassTintScope = 'none'
+        document.documentElement.dataset.glassTintSource = 'auto'
+        document.documentElement.style.setProperty('--ww-glass-tint-intensity', '34')
+        document.documentElement.style.setProperty('--ww-glass-tint-day', '#1F4C68')
+        document.documentElement.style.setProperty('--ww-glass-tint-night', '#1F4C68')
+        document.documentElement.dataset.motion = 'standard'
+      }
+    </script>
     <script type="module">
       if (import.meta.hot?.on) {
         import.meta.hot.on('vite:error', (error) => {

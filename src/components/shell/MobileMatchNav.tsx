@@ -24,7 +24,7 @@ export function MobileMatchNav({
   unreadCounts = {},
 }: MobileMatchNavProps) {
   const navigation = (
-    <nav className="v3-mobile-match-nav" aria-label={ariaLabel}>
+    <nav className="v3-mobile-match-nav" aria-label={ariaLabel} data-glass-role="navigation" data-glass-priority="critical">
       {items.map(({ id, label, icon: Icon }) => {
         const unread = Math.max(0, Math.floor(unreadCounts[id] ?? 0));
         const unreadLabel = unread > 99 ? '99+' : unread.toString();
@@ -32,6 +32,8 @@ export function MobileMatchNav({
           <button
             key={id}
             type="button"
+            data-glass-role="control"
+            data-glass-motion="control"
             className={[
               active === id ? 'is-active' : '',
               unread > 0 ? 'is-unread' : '',

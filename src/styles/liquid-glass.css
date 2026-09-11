@@ -1,0 +1,12 @@
+/*
+ * Global liquid-glass entry point.
+ *
+ * This is the only visual authority loaded after v3.css. Geometry and page
+ * layout remain in v3.css; every file below is paint/compositing only.
+ */
+@import './glass/tokens.css';
+@import './glass/background.css';
+@import './glass/surfaces.css';
+@import './glass/states.css';
+@import './glass/fallbacks.css';
+@import './glass/utilities.css';

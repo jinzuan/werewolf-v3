@@ -83,7 +83,41 @@ export const buildSpeechDecisionContext = (
   const currentRoundSpeeches = nonEmpty(
     promptContext.currentRoundSpeeches ?? promptContext.publicSpeeches,
   );
-  const newInformation = nonEmpty(promptContext.newInformationSinceLastTurn);
+  const rawNewInformation = nonEmpty(promptContext.newInformationSinceLastTurn);
+  const wolfTargetNames = (speech: string): Set<string> => {
+    const speaker = speech.match(/^([^：:]{1,24})[：:]/u)?.[1]?.trim();
+    return new Set(
+      context.players
+        .filter((player) => player.name !== speaker && speech.includes(player.name))
+      .map((player) => player.name),
+    );
+  };
+  const latestWolfSpeech = currentRoundSpeeches.at(-1) ?? '';
+  const priorWolfSpeeches = currentRoundSpeeches.slice(0, -1);
+  const priorWolfTargets = new Set(
+    priorWolfSpeeches.flatMap((speech) => [...wolfTargetNames(speech)]),
+  );
+  const latestIntroducesTarget = [...wolfTargetNames(latestWolfSpeech)]
+    .some((target) => !priorWolfTargets.has(target));
+  const wolfPlanMarker = /换刀|改目标|改刀|反对|风险|备选|自刀|刀队友|不杀|不同意|不赞成|我不认同/u;
+  const hasExplicitPlanMarker = (speech: string): boolean =>
+    wolfPlanMarker.test(speech) || /空刀/u.test(speech.replace(/不空刀/gu, ''));
+  const latestIntroducesPlanMarker = hasExplicitPlanMarker(latestWolfSpeech) &&
+    !priorWolfSpeeches.some((speech) => hasExplicitPlanMarker(speech));
+  const wolfPlanChanged = channel === 'wolf_private' && (
+    latestIntroducesTarget || latestIntroducesPlanMarker
+  );
+  const roundTwoAlreadySummarized = channel === 'wolf_private' &&
+    promptContext.wolfDiscussionRound === 2 &&
+    currentRoundSpeeches.length > 0;
+  // Wolf messages are genuine new events, but repeating the same target and
+  // plan is not new decision value. Treat that consensus as already known so
+  // the next wolf can skip instead of being forced to paraphrase it.
+  const newInformation = channel === 'wolf_private' &&
+    currentRoundSpeeches.length > 0 &&
+    (!wolfPlanChanged || roundTwoAlreadySummarized)
+    ? []
+    : rawNewInformation;
   const recentClaims = nonEmpty(
     promptContext.alreadyStatedClaims ?? promptContext.ownPreviousSpeeches,
   );
@@ -196,6 +230,13 @@ export const formatSpeechDecisionContext = (
     : decision.newInformation.length === 0
       ? '表达长度自适应：没有新信息时一句话也足够，可以直接短说、保留或过，不要为了显得像分析而扩写。'
       : '表达长度自适应：优先 1-2 句说清事实、判断和下一步；只有多个冲突需要拆开时才展开。';
+  const humanConversationGuidance = decision.channel === 'wolf_private'
+    ? promptContext.wolfDiscussionRound === 2
+      ? '真人狼聊是压缩协议包：一人用一句话收束刀口/分工/条件；同轮已有收束且无新风险就 skip_speech，短确认不复述理由。'
+      : '真人首夜狼聊像手势协议：首个提案只说刀口与一个理由；后续只说新目标、新风险或新分工。只是同意就短确认或 skip_speech。'
+    : context.stage === 'discussion'
+      ? '真人自由讨论一次只做一件事：叫人、问一个窄问题或回答一个点，1-2 句后让出话权。'
+      : '真人桌聊只说一个增量：回应一个点、表态或短过；别重做全场总结。';
 
   if (mode === 'compact') {
     return [
@@ -205,11 +246,12 @@ export const formatSpeechDecisionContext = (
       `新增信息：${list(decision.newInformation, '无')}；被点名：${decision.wasAddressed ? '是' : '否'}；必须回应：${decision.requiresResponse ? '是' : '否'}。`,
       `本轮逐条发言（先读再回应）：${list(decision.currentRoundSpeeches, '暂无')}`,
       `近期已说主张/证据：${list([...decision.recentClaims, ...decision.recentEvidence], '无')}。避免复述。`,
-      '已回答不等于没回答；先承认回应，再说新矛盾或保留。首夜查验是盲选，不追问事后动机，不虚构私聊或验人链。',
-      `表达倾向：${decision.persona}。只改变说法，不改变事实、权限或动作；经验只作候选，与当前事实冲突时忽略。`,
+      '内部记住谁已回答；别复读“听到了/回应完整”。有矛盾直说，否则短过。',
+      '表达倾向与经验已在系统层各注入一次；它们只改变说法/候选，不改变事实、权限或动作，与当前事实冲突时忽略。',
       '术语按事实使用；“加分/减分”必须同时说明具体玩家和改变信任的公开事实，只是软判断。',
       noContentGuidance,
       channelGuidance,
+      humanConversationGuidance,
       lengthGuidance,
     ].join('\n');
   }
@@ -227,14 +269,15 @@ export const formatSpeechDecisionContext = (
     `你最近已经用过的证据：${list(decision.recentEvidence, '无结构化记录；仍须避免复述近期发言')}`,
     `是否被最近发言点名：${decision.wasAddressed ? '是，应准确回应被问到的部分' : '否'}`,
     `回应优先级：${decision.requiresResponse ? `高（${list(decision.responseTriggers, '已检测触发')}）` : '常规'}`,
-    '回应完整性：提问前对照本轮发言，区分“没回答”“只回答一部分”“已经回答但我不信”“回答合理但暂时无法证实”。已回答时先承认具体回答，再提出新矛盾或保留；不得把不相信改写成没说。',
+    '回应完整性只在内部判断：区分“没回答”“回答一部分”“已回答但不信”。不要每轮口头复述“这点我听到了/回应完整”；已回答时直接指出剩余矛盾、给当前动作或短过，不得把不相信改写成没说。',
     '第一晚查验边界：首夜是当时的盲选，不要求事后动机；不得要求不存在的私聊、验人链或暗示。',
-    `私有表达倾向：${decision.persona}。只改变表达与关注点，不改变事实、权限或动作。`,
-    `相关经验候选：${decision.experience}。只用于提出行为候选，不强制执行套路；与当前事实冲突时忽略。`,
+    '私有表达倾向已在系统身份层注入；只改变表达与关注点，不改变事实、权限或动作。',
+    '相关经验候选已在系统经验层注入；只用于提出行为候选，不强制执行套路；与当前事实冲突时忽略。',
     '术语建议：金水、查杀、对跳、站边、狼坑、警上/警下、悍跳、倒钩、切割、反水、票型、平安夜等只在事实适配时使用，不为显得专业硬塞。',
     '“加分/减分”只是软判断：若使用，必须同时说清对象和导致信任变化的公开事实；它不是服务端分数，不自动等于金水、查杀或定狼。更自然时直接说“这让我更愿意信他/让我对他降一点信任”。',
     noContentGuidance,
     channelGuidance,
+    humanConversationGuidance,
     lengthGuidance,
   ].join('\n');
 };

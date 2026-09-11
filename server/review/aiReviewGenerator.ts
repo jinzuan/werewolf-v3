@@ -72,13 +72,9 @@ const parseGeneration = (raw: string): ReviewGeneration => {
 const eventVisibleToTeam = (
   event: { visibility: string; audienceIds?: string[] },
   team: 'good' | 'wolf',
-  players: ReviewGeneratorInput['archive']['players'],
 ): boolean =>
   event.visibility === 'public_timeline' ||
-  (team === 'wolf' && event.visibility === 'wolf_private') ||
-  (event.visibility === 'role_private' && (event.audienceIds ?? []).some((id) =>
-    players.some((player) => player.id === id && (team === 'wolf' ? player.role === 'wolf' : player.role !== 'wolf')),
-  ));
+  (team === 'wolf' && event.visibility === 'wolf_private');
 
 const redactNames = (value: unknown, names: readonly string[]): unknown => {
   if (typeof value === 'string') return names.reduce((text, name) => name ? text.split(name).join('某位玩家') : text, value);
@@ -111,7 +107,7 @@ export class AIReviewGenerator implements ReviewGenerator {
     const messages: ReviewMessageDraft[] = [];
     const insights: ReviewInsightDraft[] = [];
     for (const team of teams) {
-      const events = input.events.filter(({ event }) => eventVisibleToTeam(event, team, input.archive.players));
+      const events = input.events.filter(({ event }) => eventVisibleToTeam(event, team));
       const generated = await callPrompt(this.client, `${team === 'wolf' ? '狼人' : '好人'}阵营团队复盘`, '只分析本阵营能看到的事实，讨论协作、交换信息、站边/刀口与关键失误。不要替另一阵营总结。', {
         round: 'team', team, winner: input.archive.winner, events: events.map(({ event }) => event),
       });

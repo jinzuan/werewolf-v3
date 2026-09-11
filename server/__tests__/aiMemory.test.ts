@@ -42,7 +42,7 @@ test('memory boards initialize a complete evidence/target node for every seat', 
   }
 });
 
-test('good memory tracks silence, self-contradiction and graded evidence', () => {
+test('good memory tracks completed speech opportunities without pre-labelling the whole table silent', () => {
   const players = createPlayers();
   players[0].name = '甲';
   players[1].name = '乙';
@@ -52,13 +52,19 @@ test('good memory tracks silence, self-contradiction and graded evidence', () =>
     event(2, 'day.speech', { actorId: 'guardian-1', content: '我怀疑乙可疑，先记为不足' }),
     event(3, 'day.speech', { actorId: 'guardian-1', content: '我相信乙是好人，我改判' }),
     event(4, 'day.speech', { actorId: 'villager-9', content: '我怀疑乙，票型和回避值得警惕' }),
+    event(5, 'day.speech_skipped', { actorId: 'villager-10' }),
+    event(6, 'day.speech_skipped', { actorId: 'villager-10' }),
   ], players);
   const result = updated['guardian-1'];
   assert.equal(result.kind, 'good_evidence');
   if (result.kind !== 'good_evidence') return;
   assert.equal(Object.keys(result.nodes).length, players.length);
   assert.equal(result.nodes['guardian-1'].behavior.contradictionCount, 1);
-  assert.ok(result.nodes['villager-9'].behavior.silenceRate > 0);
+  assert.equal(result.nodes['villager-9'].behavior.speechOpportunities, 1);
+  assert.equal(result.nodes['villager-9'].behavior.silenceRate, 0);
+  assert.equal(result.nodes['villager-10'].behavior.speechOpportunities, 2);
+  assert.equal(result.nodes['villager-10'].behavior.silenceRate, 1);
+  assert.ok(result.nodes['villager-10'].evidence.some((item) => /持续低发言/u.test(item.summary)));
   assert.match(formatAIMemoryBoard(result, players), /不足|存疑/u);
 });
 
@@ -83,7 +89,29 @@ test('wolf memory ranks exposed information and leadership above silent targets'
   if (result.kind !== 'wolf_plan') return;
   assert.equal(recommendedWolfTarget(result, ['seer-2', 'villager-10']), 'seer-2');
   assert.match(formatAIMemoryBoard(result, players), /昼间计划/u);
-  assert.match(formatAIMemoryBoard(result, players), /夜间计划/u);
+  assert.match(formatAIMemoryBoard(result, players), /夜间记录/u);
+});
+
+test('wolf memory labels the previous kill as history and keeps the new high-threat focus authoritative', () => {
+  const players = createPlayers();
+  const wolf = players.find((player) => player.role === 'wolf')!;
+  const seer = players.find((player) => player.role === 'seer')!;
+  const low = players.find((player) => player.role === 'villager')!;
+  const board = initializeAIMemoryBoards(players)[wolf.id];
+  const updated = updateAIMemoryBoards({ [wolf.id]: board }, [
+    event(1, 'wolf.kill_locked', { targetId: low.id }, 'wolf_private', [wolf.id]),
+    event(2, 'day.speech', {
+      actorId: seer.id,
+      content: `我是预言家，查验${wolf.name}是狼人，今天出他。`,
+    }),
+  ], players)[wolf.id];
+  assert.equal(updated.kind, 'wolf_plan');
+  if (updated.kind !== 'wolf_plan') return;
+  assert.equal(updated.focusTargetId, seer.id);
+  const rendered = formatAIMemoryBoard(updated, players);
+  assert.match(rendered, /历史刀口/u);
+  assert.match(rendered, /旧刀口.*不是本夜锁定/u);
+  assert.match(rendered, new RegExp(`当前焦点：${seer.name}`, 'u'));
 });
 
 test('prompt injection keeps the board private to the requesting role', () => {

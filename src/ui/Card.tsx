@@ -10,6 +10,7 @@ export function Card({ tone = 'surface', className, ...props }: CardProps) {
     <section
       className={cn('v3-card', `v3-card--${tone}`, className)}
       {...props}
+      data-glass-role="panel"
     />
   );
 }

@@ -208,7 +208,6 @@ export function GamePage() {
   const turnTakingSpeech = state?.phase === 'day' &&
     (dayStage === 'speech' || dayStage === 'discussion');
   const discussionCycle = state?.discussionCycle ?? 1;
-  const discussionCyclesRequired = state?.discussionCyclesRequired ?? 2;
   const discussionSpeechQuota = state?.discussionSpeechQuota ?? 2;
   const discussionSpeechCounts = state?.discussionSpeechCounts ?? {};
   const discussionRemainingQuota = players.filter((player) => player.isAlive)
@@ -1125,7 +1124,7 @@ export function GamePage() {
                             playerStatus={actorId ? seatStatus.get(actorId) : undefined}
                             time={formatEventTime(event.occurredAt)}
                             variant={
-                              event.eventType === 'wolf.message'
+                              event.eventType === 'wolf.message' || event.eventType === 'wolf.speech_skipped'
                                 ? 'wolf'
                                 : actorId === myId
                                   ? 'self'

@@ -122,7 +122,11 @@ const parseSkipSpeech = (
   if (isLastWordsContext(context) && !cleanReason) {
     return fail('REASON_REQUIRED', 'A last-words skip reason is required.');
   }
-  if (!isLastWordsContext(context) && !shouldPreferSpeechSkip(context)) {
+  if (
+    !isLastWordsContext(context) &&
+    context.stage !== 'wolf_discussion' &&
+    !shouldPreferSpeechSkip(context)
+  ) {
     return fail(
       'ACTION_NOT_ALLOWED',
       'skip_speech is allowed only when there is no new information, no direct address, and no response trigger.',
@@ -253,6 +257,37 @@ const parseVote = (
   };
 };
 
+/** Preserve a premature vote-shaped model response as discussion intent. */
+const parseWolfVoteOrProposal = (
+  target: unknown,
+  reason: unknown,
+  context: ParseContext,
+): ParsedAIOutput => {
+  if (
+    context.stage !== 'wolf_discussion' ||
+    !allowed(context, 'game.wolf_speak') ||
+    allowed(context, 'game.wolf_vote')
+  ) {
+    return parseVote(target, reason, context, 'game.wolf_vote');
+  }
+  const explanation = cleanText(reason).slice(0, 28);
+  if (target === null || target === undefined || isSkip(target)) {
+    return parseSpeech(
+      explanation ? `我提议空刀，${explanation}。` : '我提议空刀。',
+      context,
+      'game.wolf_speak',
+    );
+  }
+  const resolved = targetId(target, context);
+  if (resolved.ok === false) return resolved.result;
+  const name = legalTargets(context).find((item) => item.id === resolved.id)?.name ?? resolved.id;
+  return parseSpeech(
+    explanation ? `我建议刀${name}，${explanation}。` : `我建议刀${name}。`,
+    context,
+    'game.wolf_speak',
+  );
+};
+
 const parseNightAction = (
   skillValue: unknown,
   target: unknown,
@@ -364,7 +399,7 @@ const parseObject = (
       case 'game.vote':
         return parseVote(payload.targetId, payload.reason, context, 'game.vote');
       case 'game.wolf_vote':
-        return parseVote(payload.targetId, payload.reason, context, 'game.wolf_vote');
+        return parseWolfVoteOrProposal(payload.targetId, payload.reason, context);
       case 'game.night_action':
         if (payload.playerId !== undefined && payload.playerId !== context.playerId) {
           return fail('ACTION_NOT_ALLOWED', 'The night action actor is not the current player.');
@@ -398,7 +433,7 @@ const parseObject = (
       return parseVote(object.target ?? object.targetId, object.reason, context, 'game.vote');
     case 'wolf_vote':
     case 'kill':
-      return parseVote(object.target ?? object.targetId, object.reason, context, 'game.wolf_vote');
+      return parseWolfVoteOrProposal(object.target ?? object.targetId, object.reason, context);
     case 'night_action':
       return parseNightAction(object.skill ?? object.actionType, object.target ?? object.targetId, context);
     case 'check':

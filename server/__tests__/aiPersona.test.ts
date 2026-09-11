@@ -198,7 +198,12 @@ test('only the requesting prompt receives its persona voice without changing fac
   assert.doesNotMatch(first.system, new RegExp(secondContext.promptContext!.personaVoiceProfile!.promptDescription, 'u'));
   assert.doesNotMatch(first.system, /cautious_observer|谨慎观察者/u);
   assert.doesNotMatch(second.system, /assertive_driver|主张推动者/u);
-  assert.notEqual(first.user, second.user);
+  // Persona changes the private voice layer only; the user facts and action
+  // contract must remain identical so the model cannot treat a style profile
+  // as an additional game fact.
+  assert.equal(first.user, second.user);
+  assert.doesNotMatch(first.user, new RegExp(firstContext.promptContext!.personaVoiceProfile!.promptDescription, 'u'));
+  assert.doesNotMatch(second.user, new RegExp(secondContext.promptContext!.personaVoiceProfile!.promptDescription, 'u'));
   assert.equal(
     first.user.replace(firstVoice, '<VOICE>'),
     second.user.replace(secondVoice, '<VOICE>'),

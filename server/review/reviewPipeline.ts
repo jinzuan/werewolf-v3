@@ -345,7 +345,10 @@ export class ReviewPipeline {
         if (!insight) continue;
         insightKeys.add(key);
         insights.push(insight);
-        if (insight.round === 'self' && insight.playerId && insight.experienceInstanceId && insight.experienceUpdate) {
+        if (insight.round === 'self') {
+          if (!insight.playerId || !insight.experienceInstanceId || !insight.experienceUpdate) {
+            continue;
+          }
           await this.insightStore.add({
             id: `${insight.id}:experience`,
             role: insight.role,
@@ -475,10 +478,13 @@ export class ReviewPipeline {
     if (!ROLE_ORDER.includes(draft.role) || !insightText || !Array.isArray(draft.evidenceEventIds)) return undefined;
     const playerNames = job.archive.players.map((player) => player.name.trim()).filter((name) => name.length >= 2);
     if (playerNames.some((name) => insightText.includes(name))) return undefined;
-    if (draft.round === 'self' && (!draft.playerId || !draft.experienceInstanceId)) return undefined;
+    const experienceUpdate = text(draft.experienceUpdate);
+    if (draft.round === 'self' && (!draft.playerId || !draft.experienceInstanceId || !experienceUpdate)) return undefined;
     if (draft.round === 'self') {
       const owner = job.archive.players.find((player) => player.id === draft.playerId && player.isAI);
       if (!owner || owner.role !== draft.role || owner.experienceInstanceId !== draft.experienceInstanceId) return undefined;
+      if (playerNames.some((name) => experienceUpdate.includes(name))) return undefined;
+      if (!isEvidenceBackedInsight(experienceUpdate)) return undefined;
     }
     const refs = this.refs(draft.evidenceEventIds, eventsById);
     if (refs.length === 0) return undefined;
@@ -496,7 +502,7 @@ export class ReviewPipeline {
       ...(draft.playerId ? { playerId: draft.playerId } : {}),
       ...(draft.experienceInstanceId ? { experienceInstanceId: draft.experienceInstanceId } : {}),
       text: insightText,
-      ...(draft.experienceUpdate ? { experienceUpdate: text(draft.experienceUpdate) } : {}),
+      ...(draft.round === 'self' ? { experienceUpdate } : {}),
       evidence: refs,
       createdAt: job.archive.endedAt,
     };

@@ -68,6 +68,8 @@ export function Modal({
         aria-modal="true"
         aria-labelledby={titleId}
         onMouseDown={(event) => event.stopPropagation()}
+        data-glass-role="panel"
+        data-glass-priority="high"
       >
         <header className="v3-modal__header">
           <div>

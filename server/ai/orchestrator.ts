@@ -1,11 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import type { GameCommand, GameCommandMeta } from '../../shared/protocol';
+import type { CommandOrigin } from '../../shared/events';
 import type { GameAction } from '../../shared/types';
 import { projectAIContext } from './contextProjector';
 import type {
   AIProvider,
+  AIResolvedSuggestion,
   AIRequestContext,
   AISuggestion,
+  AISuggestionProvenance,
   AITelemetryEntry,
 } from './types';
 import { AIProviderError as ProviderError } from './types';
@@ -22,6 +25,7 @@ import { randomElement } from './randomSelection';
 import { recommendedWolfTarget } from './memory';
 import { shouldPreferSpeechSkip } from './speechDecisionContext';
 import { fallbackSpeechContent, fallbackWolfSpeechContent } from './fallbackSpeech';
+import { validateProviderSpeech } from './speechValidation';
 
 export interface AIOrchestratorOptions {
   timeoutMs?: number;
@@ -125,7 +129,7 @@ export class AIOrchestrator {
   async act(
     session: GameSession,
     context: Omit<AIRequestContext, 'callId'>,
-  ): Promise<{ suggestion: AISuggestion; accepted: boolean }> {
+  ): Promise<{ suggestion: AIResolvedSuggestion | null; accepted: boolean }> {
     const callId = randomUUID();
     const startedAt = this.now();
     this.aggregateTelemetry.start();
@@ -163,7 +167,7 @@ export class AIOrchestrator {
       },
     };
 
-    let suggestion: AISuggestion | null = null;
+    let suggestion: AIResolvedSuggestion | null = null;
     let usedFallback = false;
     let retryCount = 0;
     let errorClass: string | undefined;
@@ -179,7 +183,7 @@ export class AIOrchestrator {
 
     try {
       if (deadlineRemaining <= 0) throw new ProviderError('timeout', 0);
-      suggestion = await this.withTimeout(
+      const providerSuggestion = await this.withTimeout(
         Promise.resolve().then(() => this.provider.suggest({
           ...providerContext,
           signal: controller.signal,
@@ -188,8 +192,10 @@ export class AIOrchestrator {
         deadlineRemaining,
         parentSignal,
       );
+      suggestion = this.resolveSuggestion(providerSuggestion, 'provider');
       retryCount = suggestion.providerMeta?.retryCount ?? 0;
-      if (!allowedCommandTypes.includes(suggestion.command.type)) {
+      if (!allowedCommandTypes.includes(suggestion.command.type) ||
+          !this.isDispatchAllowed(suggestion, providerContext)) {
         throw new ProviderError('invalid_output', retryCount);
       }
     } catch (error) {
@@ -204,16 +210,25 @@ export class AIOrchestrator {
         context.stageRevision,
         context.playerId,
       );
-      suggestion = fallbackAllowed
-        ? this.fallback(providerContext, timeoutOrCancellation)
+      const fallback = fallbackAllowed
+        ? this.fallback(
+            providerContext,
+            timeoutOrCancellation,
+            errorClass === 'invalid_output',
+          )
         : this.unavailableSuggestion(providerContext);
+      suggestion = fallback
+        ? this.resolveSuggestion(
+            fallback,
+            fallbackAllowed ? 'orchestrator-fallback' : 'orchestrator-unavailable',
+          )
+        : null;
       usedFallback = true;
     } finally {
       parentSignal?.removeEventListener('abort', abortParent);
     }
 
     if (!suggestion) {
-      const unavailable = this.unavailableSuggestion(providerContext);
       this.recordFinal(
         context,
         callId,
@@ -237,11 +252,37 @@ export class AIOrchestrator {
         retryCount,
         durationMs: Math.max(0, this.now() - startedAt),
       });
-      return { suggestion: unavailable, accepted: false };
+      return { suggestion: null, accepted: false };
+    }
+
+    if (!this.isDispatchAllowed(suggestion, providerContext)) {
+      this.recordFinal(
+        context,
+        callId,
+        'failed',
+        startedAt,
+        retryCount,
+        errorClass ?? 'unsafe_fallback',
+      );
+      this.aggregateTelemetry.finish('failed', this.now() - startedAt);
+      this.logger({
+        layer: 'orchestrator',
+        status: 'failed',
+        roomId: context.roomId,
+        gameId: context.gameId,
+        playerId: context.playerId,
+        callId,
+        stage: context.stage,
+        commandType: suggestion.command.type,
+        errorClass: errorClass ?? 'unsafe_fallback',
+        retryCount,
+        durationMs: Math.max(0, this.now() - startedAt),
+      });
+      return { suggestion: null, accepted: false };
     }
 
     let result = await session.dispatch(
-      this.meta(session, context, callId),
+      this.meta(session, context, callId, this.commandOrigin(suggestion)),
       suggestion.command,
     );
     if (!result.ok && !usedFallback) {
@@ -251,17 +292,28 @@ export class AIOrchestrator {
         context.stageRevision,
         context.playerId,
       );
-      suggestion = fallbackAllowed
-        ? this.fallback(providerContext, false)
+      const fallback = fallbackAllowed
+        ? this.fallback(providerContext, false, true)
         : this.unavailableSuggestion(providerContext);
+      suggestion = fallback
+        ? this.resolveSuggestion(
+            fallback,
+            fallbackAllowed ? 'orchestrator-fallback' : 'orchestrator-unavailable',
+          )
+        : null;
       usedFallback = true;
-      if (suggestion) {
+      if (suggestion && this.isDispatchAllowed(suggestion, providerContext)) {
         result = await session.dispatch(
-          this.meta(session, context, `${callId}:fallback`),
+          this.meta(
+            session,
+            context,
+            `${callId}:fallback`,
+            this.commandOrigin(suggestion),
+          ),
           suggestion.command,
         );
       } else {
-        suggestion = this.unavailableSuggestion(providerContext);
+        suggestion = null;
       }
     }
 
@@ -285,13 +337,73 @@ export class AIOrchestrator {
       playerId: context.playerId,
       callId,
       stage: context.stage,
-      commandType: suggestion.command.type,
+      commandType: suggestion?.command.type,
       ...(errorClass ? { errorClass } : {}),
       ...(errorDetail ? { detail: errorDetail } : {}),
       retryCount,
       durationMs: Math.max(0, this.now() - startedAt),
     });
     return { suggestion, accepted: result.ok };
+  }
+
+  private providerMode(): AISuggestionProvenance['providerMode'] {
+    return this.provider.mode ?? 'real_ai';
+  }
+
+  private resolveSuggestion(
+    suggestion: AISuggestion,
+    origin: AISuggestionProvenance['origin'],
+  ): AIResolvedSuggestion {
+    return {
+      ...suggestion,
+      provenance: {
+        providerMode: this.providerMode(),
+        origin,
+      },
+    };
+  }
+
+  private isDispatchAllowed(
+    suggestion: AIResolvedSuggestion,
+    context: AIRequestContext,
+  ): boolean {
+    if (
+      suggestion.command.type === 'game.speak' ||
+      suggestion.command.type === 'game.wolf_speak'
+    ) {
+      const validation = validateProviderSpeech(
+        suggestion.command.payload.content,
+        context,
+        suggestion.command.type,
+      );
+      if (!validation.ok) return false;
+    }
+    if (suggestion.provenance.origin === 'provider') return true;
+    if (suggestion.provenance.providerMode !== 'real_ai') return true;
+    const allowed = new Set(context.allowedActions ?? []);
+    switch (suggestion.command.type) {
+      case 'game.confirm_role':
+        return allowed.has('confirm_role');
+      case 'game.skip_speech':
+        return allowed.has('skip_speech');
+      case 'game.request_speech':
+        return allowed.has('request_speech');
+      case 'game.skip_night':
+        return allowed.has('skip_night');
+      case 'game.vote':
+        return suggestion.command.payload.targetId === null && allowed.has('abstain');
+      case 'game.hunter_shoot':
+        return suggestion.command.payload.targetId === null && allowed.has('skip_hunter_shot');
+      default:
+        return false;
+    }
+  }
+
+  private commandOrigin(suggestion: AIResolvedSuggestion): CommandOrigin {
+    if (suggestion.provenance.origin === 'provider') return 'model';
+    if (suggestion.provenance.providerMode === 'test-deterministic') return 'test';
+    if (suggestion.provenance.providerMode === 'rules-degraded') return 'rules_degraded';
+    return 'safe_degradation';
   }
 
   telemetry(): AITelemetryEntry[] {
@@ -322,6 +434,7 @@ export class AIOrchestrator {
     session: GameSession,
     context: Omit<AIRequestContext, 'callId'>,
     callId: string,
+    origin: CommandOrigin,
   ): GameCommandMeta {
     return {
       roomId: context.roomId,
@@ -330,6 +443,7 @@ export class AIOrchestrator {
       commandId: `ai:${callId}`,
       sentAt: this.now(),
       expectedStageRevision: context.stageRevision,
+      origin,
     };
   }
 
@@ -370,7 +484,11 @@ export class AIOrchestrator {
   private fallback(
     context: AIRequestContext,
     timeoutOrCancellation = false,
+    invalidProviderOutput = false,
   ): AISuggestion | null {
+    if (this.providerMode() === 'real_ai') {
+      return this.safeFailureSuggestion(context, timeoutOrCancellation);
+    }
     const actor = context.players.find(
       (player) => player.id === context.playerId,
     );
@@ -400,6 +518,18 @@ export class AIOrchestrator {
       return {
         command: { type: 'game.confirm_role', payload: {} },
         reason: 'deterministic role confirmation',
+      };
+    }
+
+    if (invalidProviderOutput && allowed.has('skip_speech')) {
+      return {
+        command: {
+          type: 'game.skip_speech',
+          payload: isLastWordsContext(context)
+            ? { reason: 'AI 发言未通过校验' }
+            : {},
+        },
+        reason: 'invalid AI speech safely skipped',
       };
     }
 
@@ -625,7 +755,70 @@ export class AIOrchestrator {
     return null;
   }
 
-  private unavailableSuggestion(context: AIRequestContext): AISuggestion {
+  private safeFailureSuggestion(
+    context: AIRequestContext,
+    timeoutOrCancellation = false,
+  ): AISuggestion | null {
+    const actor = context.players.find((player) => player.id === context.playerId);
+    const allowed = new Set(context.allowedActions ?? []);
+    if (allowed.has('skip_speech')) {
+      return {
+        command: {
+          type: 'game.skip_speech',
+          payload: isLastWordsContext(context)
+            ? { reason: timeoutOrCancellation ? '行动时间已结束' : 'AI 服务暂不可用' }
+            : {
+                reason: timeoutOrCancellation
+                  ? 'AI服务超时，已自动跳过'
+                  : 'AI输出未通过校验，已自动跳过',
+              },
+        },
+        reason: 'safe speech skip while real AI is unavailable',
+      };
+    }
+    // A failed real-AI queue decision must decline, not manufacture an
+    // insertion command. The coordinator will either try another mentioned
+    // player or leave the stage to its idle deadline.
+    if (allowed.has('skip_hunter_shot')) {
+      return {
+        command: { type: 'game.hunter_shoot', payload: { targetId: null } },
+        reason: 'safe hunter pause while real AI is unavailable',
+      };
+    }
+    if (allowed.has('abstain')) {
+      return {
+        command: { type: 'game.vote', payload: { targetId: null } },
+        reason: 'safe abstention while real AI is unavailable',
+      };
+    }
+    if (allowed.has('skip_night')) {
+      const action =
+        actor?.role === 'guardian'
+          ? 'guard'
+          : actor?.role === 'seer'
+            ? 'check'
+            : actor?.role === 'witch'
+              ? 'heal'
+              : 'poison';
+      return {
+        command: { type: 'game.skip_night', payload: { action } },
+        reason: 'safe night pause while real AI is unavailable',
+      };
+    }
+    if (allowed.has('confirm_role')) {
+      return {
+        command: { type: 'game.confirm_role', payload: {} },
+        reason: 'safe role confirmation while real AI is unavailable',
+      };
+    }
+
+    return null;
+  }
+
+  private unavailableSuggestion(context: AIRequestContext): AISuggestion | null {
+    if (this.providerMode() === 'real_ai') {
+      return this.safeFailureSuggestion(context);
+    }
     const actor = context.players.find(
       (player) => player.id === context.playerId,
     );

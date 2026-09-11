@@ -12,6 +12,7 @@ export function Badge({ tone = 'neutral', className, ...props }: BadgeProps) {
     <span
       className={cn('v3-badge', `v3-badge--${tone}`, className)}
       {...props}
+      data-glass-role="item"
     />
   );
 }

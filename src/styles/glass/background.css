@@ -1,0 +1,81 @@
+:root:not([data-visual-mode='original']) .v3-app-shell {
+  position: relative;
+  isolation: isolate;
+  background: transparent;
+}
+
+.v3-visual-backdrop {
+  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: var(--ww-visual-backdrop-opacity);
+}
+
+:root:not([data-visual-mode='original']) .v3-visual-backdrop { display: block; }
+
+.v3-visual-backdrop__layer,
+.v3-visual-backdrop__scrim {
+  position: absolute;
+  inset: -2%;
+}
+
+.v3-visual-backdrop__layer {
+  background-position: center;
+  background-size: cover;
+  opacity: 0;
+  transform: scale(1.018);
+  filter: brightness(1);
+  transition:
+    opacity 760ms var(--ww-motion-easing),
+    transform 920ms var(--ww-motion-easing),
+    filter 360ms var(--ww-motion-easing);
+}
+
+.v3-visual-backdrop__layer--day { background-image: var(--ww-visual-day-image); }
+.v3-visual-backdrop__layer--night { background-image: var(--ww-visual-night-image); }
+
+.v3-app-shell:is([data-scene='night'], [data-scene='dusk']) .v3-visual-backdrop__layer--night,
+.v3-app-shell:not([data-scene='night']):not([data-scene='dusk']) .v3-visual-backdrop__layer--day {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.v3-app-shell[data-visual-tone='dark'] .v3-visual-backdrop__layer { filter: brightness(.9); }
+
+:root[data-background-mode='single'] .v3-app-shell .v3-visual-backdrop__layer--day {
+  opacity: 1;
+  transform: scale(1);
+}
+
+:root[data-background-mode='single'] .v3-app-shell .v3-visual-backdrop__layer--night { opacity: 0; }
+
+.v3-visual-backdrop__scrim {
+  background:
+    linear-gradient(180deg, rgba(3, 9, 17, .1), rgba(3, 9, 17, .025) 34%, rgba(3, 9, 17, .17)),
+    radial-gradient(circle at 50% 24%, transparent 0 34%, rgba(1, 7, 14, .08) 78%, rgba(1, 6, 13, .18));
+}
+
+:root:not([data-visual-mode='original']) .v3-app-shell__body {
+  --glass-motion-active-z: 29;
+  position: relative;
+  z-index: 10;
+}
+
+:root:not([data-visual-mode='original']) :is(.v3-topbar, .v3-room-header, .v3-mobile-match-nav) { z-index: 30; }
+:root:not([data-visual-mode='original']) .v3-modal-backdrop { z-index: 40; }
+:root:not([data-visual-mode='original']) :is(.v3-toast, .v3-sync-status) { z-index: 50; }
+
+:root:is([data-motion='none'], [data-motion='reduced']) .v3-visual-backdrop__layer {
+  transform: none;
+  transition-duration: 120ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v3-visual-backdrop__layer {
+    transform: none;
+    transition-duration: 120ms;
+  }
+}

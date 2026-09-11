@@ -28,6 +28,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         className,
       )}
       {...props}
+      data-glass-role="control"
+      data-glass-motion="control"
     />
   );
 });

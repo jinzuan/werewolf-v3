@@ -29,6 +29,7 @@ export const DOMAIN_EVENT_MESSAGE_KEYS = {
   'night.resolution_detail': 'night_resolution_detail',
   'night.started': 'night_started',
   'wolf.message': 'wolf_message',
+  'wolf.speech_skipped': 'wolf_speech_skipped',
   'wolf.vote_cast': 'wolf_vote_cast',
   'wolf.vote_unresolved': 'wolf_vote_unresolved',
   'wolf.kill_locked': 'wolf_kill_locked',
@@ -70,6 +71,7 @@ export const DOMAIN_EVENT_MESSAGES = {
   'night.resolution_detail': '夜间结算明细已生成。',
   'night.started': '第 {day} 夜开始。',
   'wolf.message': '{actor}：{content}',
+  'wolf.speech_skipped': '{actor}选择跳过本轮狼聊。',
   'wolf.vote_cast': '{actor}已提交狼人投票。',
   'wolf.vote_unresolved': '狼人尚未选出今晚的目标。',
   'wolf.kill_locked': '狼人已决定今晚的目标。',
@@ -259,6 +261,10 @@ export const describeEvent = (
       return `第 ${dayFrom(payload)} 夜开始。`;
     case 'wolf.message':
       return `${actor}：${textValue(payload.content, '')}`.replace(/：$/, '');
+    case 'wolf.speech_skipped': {
+      const reason = textValue(payload.reason, '');
+      return reason ? `${actor}：${reason}` : `${actor}选择跳过本轮狼聊。`;
+    }
     case 'wolf.vote_cast':
       if (
         isAdvancedView(event, options) ||

@@ -54,3 +54,34 @@ __pycache__/
 *.sln
 *.sw?
 w2-*/
+_archived_bak/
+src.bak.v2.4.11-UI/
+
+# ===== 开源发布：以下内部过程文件/调试残留绝不入公库 =====
+# _ 前缀 = 苏达/小弟的内部任务书、检查报告、调试探针、诊断脚本
+/_[a-z]*_*.md
+/_TASK_*.md
+/_*.cjs
+/_*.mjs
+/_*.sh
+/_*.txt
+/_public_drafts/
+# 内部开发文档（过程记录、竞品对照、实现指令），不对外
+/CC_INSTRUCTION.md
+/CHANGELOG.md
+/EXPERIENCE_REVIEW.md
+/V3_INTEGRATION_REPORT.md
+/BEHAVIOR_FREEZE.md
+/ARCHIVE_FORMAT.md
+/PROTOCOL.md
+# 内部目录
+/v3plan/
+/overnight/
+/mail/
+/.trae/
+/.learnings/
+/_archived_bak/
+# .env 及本地配置全部不入库
+.env
+.env.*
+!.env.example

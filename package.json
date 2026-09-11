@@ -8,9 +8,9 @@
   },
   "scripts": {
     "dev": "vite",
-    "test": "tsx --import ./test/setup.mjs --test --test-concurrency=1 test/architecture.skeleton.test.ts src/core/__tests__/*.test.ts src/v3/__tests__/*.test.ts src/v3/presentation/__tests__/*.test.ts src/features/**/__tests__/*.test.ts src/pages/**/__tests__/*.test.ts src/ui/__tests__/*.test.ts server/__tests__/*.test.ts",
+    "test": "tsx --import ./test/setup.mjs --test --test-concurrency=1 test/architecture.skeleton.test.ts src/core/__tests__/*.test.ts src/v3/__tests__/*.test.ts src/v3/presentation/__tests__/*.test.ts src/features/**/__tests__/*.test.ts src/pages/**/__tests__/*.test.ts src/runtime/__tests__/*.test.ts src/ui/__tests__/*.test.ts src/visual/**/__tests__/*.test.ts server/__tests__/*.test.ts",
     "test:contract": "tsx --import ./test/setup.mjs --test --test-concurrency=1 test/architecture.skeleton.test.ts",
-    "test:ui": "tsx --import ./test/setup.mjs --test --test-concurrency=1 src/v3/__tests__/*.test.ts src/v3/presentation/__tests__/*.test.ts src/pages/**/__tests__/*.test.ts src/ui/__tests__/*.test.ts",
+    "test:ui": "tsx --import ./test/setup.mjs --test --test-concurrency=1 src/v3/__tests__/*.test.ts src/v3/presentation/__tests__/*.test.ts src/pages/**/__tests__/*.test.ts src/runtime/__tests__/*.test.ts src/ui/__tests__/*.test.ts src/visual/**/__tests__/*.test.ts",
     "test:server": "tsx --import ./test/setup.mjs --test --test-concurrency=1 server/__tests__/*.test.ts",
     "test:integration": "tsx --import ./test/setup.mjs --test --test-concurrency=1 server/__tests__/connectionLease.test.ts server/__tests__/createIdempotency.test.ts server/__tests__/dataIsolation.integration.test.ts server/__tests__/dissolveBroadcast.test.ts server/__tests__/startingRecovery.test.ts",
     "test:e2e": "VITE_WW_ENV=test npm run build -- --mode test && playwright test",
@@ -45,7 +45,6 @@
     "react-router-dom": "^7.15.1",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
-    "tailwind-merge": "^3.0.2",
     "zustand": "^4.5.0"
   },
   "devDependencies": {
